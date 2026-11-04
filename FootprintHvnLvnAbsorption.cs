@@ -1041,7 +1041,7 @@ namespace ATAS.Indicators.Custom
             hvnCandidates.Sort((a, b) => b.vol.CompareTo(a.vol));
             lvnCandidates.Sort((a, b) => a.vol.CompareTo(b.vol));
 
-            int xLeft = Math.Max(chartRegion.Left, ChartInfo.GetXByBar(startBar, true));
+            int xLeft = Math.Max(chartRegion.Left, ChartInfo!.GetXByBar(startBar, true));
             int xRight = chartRegion.Right;
             if (xRight <= xLeft)
                 return;
@@ -1132,7 +1132,7 @@ namespace ATAS.Indicators.Custom
                 if (endBar <= ev.Bar)
                     continue;
 
-                int x1 = ChartInfo.GetXByBar(ev.Bar, true);
+                int x1 = ChartInfo!.GetXByBar(ev.Bar, true);
                 int x2 = ChartInfo.GetXByBar(Math.Min(lastVisibleBar + 1, endBar + 1), true);
                 if (x2 <= x1)
                     continue;
@@ -1169,8 +1169,8 @@ namespace ATAS.Indicators.Custom
             int size = BarMarkerSize;
             int gap = Math.Max(6, rowHeight / 2 + 4);
             int y = side > 0
-                ? ChartInfo.GetYByPrice(candle.Low, false) + gap + size
-                : ChartInfo.GetYByPrice(candle.High, false) - gap - size;
+                ? ChartInfo!.GetYByPrice(candle.Low, false) + gap + size
+                : ChartInfo!.GetYByPrice(candle.High, false) - gap - size;
 
             switch (BarMarkerStyle)
             {

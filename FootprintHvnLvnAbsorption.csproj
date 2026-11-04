@@ -6,6 +6,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
     <Version>1.0.0</Version>
     <Product>Footprint HVN / LVN &amp; Heavy Absorption (ATAS X)</Product>
     <Description>Indicateur Order Flow pour ATAS X (.NET 10) : détection et affichage des HVN (High Volume Nodes), LVN (Low Volume Nodes) et Heavy Absorptions directement sur le Footprint.</Description>

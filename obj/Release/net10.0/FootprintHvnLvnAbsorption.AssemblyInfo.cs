@@ -16,7 +16,7 @@ using System.Reflection;
     "h Volume Nodes), LVN (Low Volume Nodes) et Heavy Absorptions directement sur le " +
     "Footprint."))]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f8de7d81baf7d2427aa9cd2a31f37b61b0b624a7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+675dce1ae6dc03b44d262277151f2f357a75352d")]
 [assembly: System.Reflection.AssemblyProductAttribute("Footprint HVN / LVN & Heavy Absorption (ATAS X)")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FootprintHvnLvnAbsorption")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
