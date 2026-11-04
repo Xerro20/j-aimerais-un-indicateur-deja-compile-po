@@ -1053,7 +1053,7 @@ namespace ATAS.Indicators.Custom
             for (int i = 0; i < hCount; i++)
             {
                 var node = hvnCandidates[i];
-                int y = ChartInfo.GetYByPrice(node.price, false);
+                int y = ChartInfo!.GetYByPrice(node.price, false);
                 if (y < chartRegion.Top || y > chartRegion.Bottom)
                     continue;
 
@@ -1077,7 +1077,7 @@ namespace ATAS.Indicators.Custom
             for (int i = 0; i < lCount; i++)
             {
                 var node = lvnCandidates[i];
-                int y = ChartInfo.GetYByPrice(node.price, false);
+                int y = ChartInfo!.GetYByPrice(node.price, false);
                 if (y < chartRegion.Top || y > chartRegion.Bottom)
                     continue;
 
@@ -1133,11 +1133,11 @@ namespace ATAS.Indicators.Custom
                     continue;
 
                 int x1 = ChartInfo!.GetXByBar(ev.Bar, true);
-                int x2 = ChartInfo.GetXByBar(Math.Min(lastVisibleBar + 1, endBar + 1), true);
+                int x2 = ChartInfo!.GetXByBar(Math.Min(lastVisibleBar + 1, endBar + 1), true);
                 if (x2 <= x1)
                     continue;
 
-                int y = ChartInfo.GetYByPrice(ev.Price, false);
+                int y = ChartInfo!.GetYByPrice(ev.Price, false);
                 Color baseCol = ev.Side > 0 ? BullishAbsorptionColor : BearishAbsorptionColor;
                 Color rayCol = Color.FromArgb(200, baseCol.R, baseCol.G, baseCol.B);
 
