@@ -4,5 +4,18 @@
   "createdAt": "2026-11-04T17:23:48.824Z",
   "filename": "d48b798e-e678-4f78-ba60-4dc525954fa2.json",
   "geminiStarted": false,
-  "messages": []
+  "messages": [
+    {
+      "id": "16476702-5707-4b38-ac57-7ff9b6d722ba",
+      "role": "user",
+      "content": "j'aimerais un indicateur pour Atas x déjà compilé qui indique les hvn, les lvn, et les heavy absorption sur le footprint",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-04T17:32:26.901Z",
+      "sender": "ios",
+      "is_cancelled": false
+    }
+  ]
 }
