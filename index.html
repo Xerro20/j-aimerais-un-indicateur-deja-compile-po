@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Footprint HVN / LVN & Heavy Absorption — Indicateur compilé pour ATAS X</title>
+  <style>
+    :root {
+      --bg-main: #090d16;
+      --bg-card: #111827;
+      --bg-panel: #161f33;
+      --border: #26334d;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --hvn: #f59e0b;
+      --poc: #ff8c00;
+      --lvn: #a855f7;
+      --bull-abs: #00f0ff;
+      --bear-abs: #ff2d87;
+      --accent: #38bdf8;
+      --success: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at top right, #132038 0%, var(--bg-main) 55%);
+      color: var(--text);
+      line-height: 1.6;
+      padding-bottom: 60px;
+    }
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    header {
+      padding: 40px 0 28px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 13, 22, 0.85);
+      backdrop-filter: blur(8px);
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .badge.ok {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    h1 {
+      font-size: 2.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      color: #ffffff;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 840px;
+      margin-bottom: 24px;
+    }
+    .cta-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 24px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.98rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      border: none;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+      color: #fff;
+      box-shadow: 0 8px 22px -6px rgba(14, 165, 233, 0.55);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 26px -6px rgba(14, 165, 233, 0.75);
+    }
+    .btn-secondary {
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .meta-strip {
+      margin-top: 18px;
+      padding: 12px 16px;
+      background: rgba(17, 24, 39, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 0.82rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+    .meta-strip span strong {
+      color: var(--text);
+    }
+
+    /* Simulator Section */
+    .section {
+      margin-top: 34px;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 980px) {
+      .sim-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .control-group {
+      margin-bottom: 16px;
+    }
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #cbd5e1;
+    }
+    .control-val {
+      color: var(--accent);
+      font-family: "Consolas", monospace;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .toggle-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.86rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-item input {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+    .legend-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 11px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+    }
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+    .canvas-wrap {
+      background: #070a12;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    /* Feature & Install Cards */
+    .three-col {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 20px;
+    }
+    .feature-card h3 {
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-card ul {
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .feature-card li {
+      margin-bottom: 7px;
+    }
+    .feature-card li strong {
+      color: var(--text);
+    }
+    .code-box {
+      background: #070a12;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-family: "Consolas", monospace;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 10px 0;
+    }
+    .copy-btn {
+      background: var(--bg-panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.76rem;
+      cursor: pointer;
+    }
+    .copy-btn:hover {
+      border-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="badge-row">
+        <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0)</span>
+        <span class="badge">Compatible ATAS X (Windows & macOS)</span>
+        <span class="badge">0 Erreur • 0 Dépendance Externe</span>
+      </div>
+      <h1>Footprint HVN / LVN &amp; Heavy Absorption (ATAS X)</h1>
+      <p class="subtitle">
+        Indicateur Order Flow prêt à l'emploi pour <strong>ATAS X</strong> qui détecte et encadre automatiquement les
+        <strong>HVN</strong> (High Volume Nodes &amp; POC), les <strong>LVN</strong> (Low Volume Nodes / poches de vide) et les
+        <strong>Heavy Absorptions</strong> (Bid &amp; Ask) directement sur votre graphique Footprint.
+      </p>
+
+      <div class="cta-bar">
+        <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (39.5 Ko)
+        </a>
+        <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
+          📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
+        </a>
+        <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.csproj" download="FootprintHvnLvnAbsorption.csproj">
+          ⚙ Projet .csproj (.NET 10)
+        </a>
+      </div>
+
+      <div class="meta-strip">
+        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll</span>
+        <span><strong>Nom dans ATAS X :</strong> Footprint HVN / LVN &amp; Heavy Absorption</span>
+        <span><strong>Catégorie :</strong> Order Flow - Custom</span>
+        <span><strong>SHA-256 :</strong> c744068c521de62b...03adb39fa</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Interactive Footprint Preview -->
+    <section class="section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Aperçu Interactif du Rendu sur le Footprint ATAS X</h2>
+          <p style="color: var(--muted); font-size: 0.92rem;">
+            Ajustez les seuils ci-dessous pour visualiser en temps réel comment l'indicateur filtre les HVN, LVN et Heavy Absorptions sur chaque cluster Bid × Ask.
+          </p>
+        </div>
+      </div>
+
+      <div class="sim-grid">
+        <div class="card">
+          <h3 style="font-size: 1rem; margin-bottom: 14px; color: #fff;">Paramètres de l'Indicateur</h3>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Seuil HVN (% du POC Bougie)</span>
+              <span class="control-val" id="valHvn">70%</span>
+            </div>
+            <input type="range" id="rngHvn" min="45" max="95" value="70" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Seuil Max LVN (% du POC Bougie)</span>
+              <span class="control-val" id="valLvn">25%</span>
+            </div>
+            <input type="range" id="rngLvn" min="5" max="50" value="25" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Multiplicateur Heavy Absorption</span>
+              <span class="control-val" id="valAbsMult">1.6x</span>
+            </div>
+            <input type="range" id="rngAbsMult" min="11" max="30" value="16" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Dominance Min Bid/Ask (%)</span>
+              <span class="control-val" id="valAbsDom">62%</span>
+            </div>
+            <input type="range" id="rngAbsDom" min="52" max="85" value="62" />
+          </div>
+
+          <div class="toggle-list">
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBarHvn" checked />
+              <span>Afficher HVN &amp; POC Intra-Bougie</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBarLvn" checked />
+              <span>Afficher LVN Intra-Bougie (Creux)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkAbs" checked />
+              <span>Afficher Heavy Absorption (Bid / Ask)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkRays" checked />
+              <span>Projeter Rayons S/R d'Absorption</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkComp" checked />
+              <span>Afficher Zones HVN/LVN Profil Composite</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkHud" checked />
+              <span>Afficher le Tableau de Bord HUD</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 16px;">
+          <div class="legend-pills">
+            <span class="pill"><span class="dot" style="background: #ff8c00;"></span> POC (Point of Control)</span>
+            <span class="pill"><span class="dot" style="background: #f59e0b;"></span> HVN (High Volume Node)</span>
+            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN (Low Volume Node)</span>
+            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bullish Heavy Absorption (Bid absorbé)</span>
+            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bearish Heavy Absorption (Ask absorbé)</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="fpCanvas" width="860" height="520"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Guide -->
+    <section class="section">
+      <h2 class="section-title" style="margin-bottom: 16px;">Installation Rapide dans ATAS X</h2>
+      <div class="three-col">
+        <div class="card feature-card">
+          <h3>🪟 1. Installation sous Windows</h3>
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+            Copiez le fichier <strong>FootprintHvnLvnAbsorption.dll</strong> téléchargé ci-dessus dans votre dossier d'indicateurs ATAS :
+          </p>
+          <div class="code-box">
+            <span id="winPath">%USERPROFILE%\Documents\ATAS\Indicators</span>
+            <button class="copy-btn" onclick="copyText('winPath', this)">Copier</button>
+          </div>
+          <ul>
+            <li>Si Windows affiche un blocage de sécurité externe : clic droit sur la <code>.dll</code> → <strong>Propriétés</strong> → cochez <strong>Débloquer (Unblock)</strong>.</li>
+            <li>Dans ATAS X, ouvrez <strong>Indicators (Ctrl+I)</strong> → catégorie <strong>Order Flow - Custom</strong> → ajoutez <strong>Footprint HVN / LVN &amp; Heavy Absorption</strong>.</li>
+          </ul>
+        </div>
+
+        <div class="card feature-card">
+          <h3>🍎 2. Installation sous macOS (ATAS X)</h3>
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+            Placez le fichier <strong>FootprintHvnLvnAbsorption.dll</strong> dans le répertoire utilisateur ATAS sur votre Mac :
+          </p>
+          <div class="code-box">
+            <span id="macPath">~/Documents/ATAS/Indicators/</span>
+            <button class="copy-btn" onclick="copyText('macPath', this)">Copier</button>
+          </div>
+          <ul>
+            <li>Binaire compilé en <strong>.NET 10.0 multi-plateforme</strong> compatible nativement avec le moteur de rendu <code>OFT.Rendering</code> d'ATAS X.</li>
+            <li>Aucune dépendance tierce requise : le fichier <code>.dll</code> unique suffit.</li>
+          </ul>
+        </div>
+
+        <div class="card feature-card">
+          <h3>🎯 3. Détails de la Détection Order Flow</h3>
+          <ul>
+            <li><strong>HVN Intra-Bar &amp; Composite :</strong> Identifie les pics locaux de volume (&ge; % du POC) par bougie ainsi que les bandes HVN du profil de volume glissant ou de session.</li>
+            <li><strong>LVN Intra-Bar &amp; Composite :</strong> Cible les creux de liquidité internes situés entre deux zones denses (&le; % du POC, hors dernier tick de mèche).</li>
+            <li><strong>Heavy Absorption :</strong> Détecte les volumes extrêmes (&ge; 1.6x la moyenne de la bougie) avec forte dominance Bid ou Ask (&ge; 62%), imbalance diagonale et clôture de rejet, puis projette un rayon S/R jusqu'à cassure du niveau.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function copyText(id, btn) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text);
+      const old = btn.textContent;
+      btn.textContent = "Copié !";
+      setTimeout(() => (btn.textContent = old), 1500);
+    }
+
+    // Realistic Footprint dataset (5 candles across 14 price ticks: 5890.00 to 5893.25)
+    const prices = [
+      5893.25, 5893.00, 5892.75, 5892.50, 5892.25, 5892.00, 5891.75,
+      5891.50, 5891.25, 5891.00, 5890.75, 5890.50, 5890.25, 5890.00
+    ];
+
+    const bars = [
+      {
+        time: "15:30",
+        openIdx: 9, closeIdx: 4, highIdx: 3, lowIdx: 12,
+        levels: {
+          3:  { bid: 22,  ask: 48 },
+          4:  { bid: 140, ask: 215 }, // HVN
+          5:  { bid: 95,  ask: 130 },
+          6:  { bid: 18,  ask: 14 },  // LVN pocket
+          7:  { bid: 185, ask: 260 }, // POC
+          8:  { bid: 110, ask: 125 },
+          9:  { bid: 80,  ask: 90 },
+          10: { bid: 64,  ask: 45 },
+          11: { bid: 420, ask: 85 },  // Bullish Heavy Absorption at Bid!
+          12: { bid: 310, ask: 40 }   // Bullish Heavy Absorption at Bid!
+        }
+      },
+      {
+        time: "15:35",
+        openIdx: 4, closeIdx: 6, highIdx: 1, lowIdx: 8,
+        levels: {
+          1: { bid: 45,  ask: 390 }, // Bearish Heavy Absorption at Ask!
+          2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption at Ask!
+          3: { bid: 90,  ask: 110 },
+          4: { bid: 170, ask: 195 }, // HVN
+          5: { bid: 20,  ask: 15 },  // LVN pocket
+          6: { bid: 210, ask: 185 },
+          7: { bid: 120, ask: 95 },
+          8: { bid: 45,  ask: 30 }
+        }
+      },
+      {
+        time: "15:40",
+        openIdx: 6, closeIdx: 10, highIdx: 5, lowIdx: 11,
+        levels: {
+          5:  { bid: 40,  ask: 55 },
+          6:  { bid: 130, ask: 90 },
+          7:  { bid: 280, ask: 240 }, // POC / HVN
+          8:  { bid: 25,  ask: 18 },  // LVN pocket
+          9:  { bid: 190, ask: 165 }, // HVN
+          10: { bid: 115, ask: 95 },
+          11: { bid: 55,  ask: 35 }
+        }
+      },
+      {
+        time: "15:45",
+        openIdx: 10, closeIdx: 5, highIdx: 4, lowIdx: 13,
+        levels: {
+          4:  { bid: 60,  ask: 95 },
+          5:  { bid: 175, ask: 230 }, // HVN
+          6:  { bid: 14,  ask: 19 },  // LVN
+          7:  { bid: 210, ask: 245 }, // HVN
+          8:  { bid: 110, ask: 130 },
+          9:  { bid: 85,  ask: 90 },
+          10: { bid: 70,  ask: 60 },
+          11: { bid: 95,  ask: 50 },
+          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption at Bid!
+          13: { bid: 360, ask: 55 }   // Bullish Heavy Absorption at Bid!
+        }
+      },
+      {
+        time: "15:50",
+        openIdx: 5, closeIdx: 3, highIdx: 0, lowIdx: 7,
+        levels: {
+          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption at Ask!
+          1: { bid: 85,  ask: 140 },
+          2: { bid: 120, ask: 160 },
+          3: { bid: 245, ask: 290 }, // POC / HVN
+          4: { bid: 190, ask: 215 }, // HVN
+          5: { bid: 22,  ask: 16 },  // LVN
+          6: { bid: 160, ask: 140 },
+          7: { bid: 50,  ask: 40 }
+        }
+      }
+    ];
+
+    const canvas = document.getElementById("fpCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function analyzeAndRender() {
+      const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
+      const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
+      const absMult = parseInt(document.getElementById("rngAbsMult").value, 10) / 10;
+      const absDom = parseInt(document.getElementById("rngAbsDom").value, 10);
+
+      document.getElementById("valHvn").textContent = hvnPct + "%";
+      document.getElementById("valLvn").textContent = lvnPct + "%";
+      document.getElementById("valAbsMult").textContent = absMult.toFixed(1) + "x";
+      document.getElementById("valAbsDom").textContent = absDom + "%";
+
+      const showBarHvn = document.getElementById("chkBarHvn").checked;
+      const showBarLvn = document.getElementById("chkBarLvn").checked;
+      const showAbs = document.getElementById("chkAbs").checked;
+      const showRays = document.getElementById("chkRays").checked;
+      const showComp = document.getElementById("chkComp").checked;
+      const showHud = document.getElementById("chkHud").checked;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Background grid
+      const topPad = 42;
+      const rowH = 31;
+      const leftPad = 18;
+      const priceAxisX = 785;
+
+      ctx.fillStyle = "#070a12";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let r = 0; r < prices.length; r++) {
+        const y = topPad + r * rowH;
+        ctx.strokeStyle = "rgba(38, 51, 77, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(priceAxisX, y);
+        ctx.stroke();
+
+        ctx.fillStyle = "#64748b";
+        ctx.font = "11px Consolas, monospace";
+        ctx.fillText(prices[r].toFixed(2), priceAxisX + 10, y + rowH / 2 + 4);
+      }
+
+      // Composite Volume Profile calculation
+      const compVols = new Array(prices.length).fill(0);
+      bars.forEach(b => {
+        Object.keys(b.levels).forEach(k => {
+          const idx = parseInt(k, 10);
+          compVols[idx] += b.levels[idx].bid + b.levels[idx].ask;
+        });
+      });
+      const compMax = Math.max(...compVols);
+      const compPocIdx = compVols.indexOf(compMax);
+
+      let compHvnCount = 0;
+      let compLvnCount = 0;
+
+      if (showComp) {
+        for (let r = 1; r < prices.length - 1; r++) {
+          const v = compVols[r];
+          const y = topPad + r * rowH;
+          if (v >= compMax * 0.65 && v >= compVols[r - 1] && v >= compVols[r + 1]) {
+            compHvnCount++;
+            ctx.fillStyle = "rgba(250, 204, 21, 0.09)";
+            ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
+            ctx.strokeStyle = "rgba(250, 204, 21, 0.45)";
+            ctx.beginPath();
+            ctx.moveTo(leftPad, y + rowH / 2);
+            ctx.lineTo(priceAxisX, y + rowH / 2);
+            ctx.stroke();
+          } else if (v > 0 && v <= compMax * 0.25 && v < compVols[r - 1] && v < compVols[r + 1]) {
+            compLvnCount++;
+            ctx.fillStyle = "rgba(192, 132, 252, 0.08)";
+            ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
+            ctx.save();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = "rgba(192, 132, 252, 0.5)";
+            ctx.beginPath();
+            ctx.moveTo(leftPad, y + rowH / 2);
+            ctx.lineTo(priceAxisX, y + rowH / 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+
+      let totalHvn = 0;
+      let totalLvn = 0;
+      let totalBullAbs = 0;
+      let totalBearAbs = 0;
+      let lastAbsEvent = null;
+      const rays = [];
+
+      const colStep = 148;
+      const cellW = 126;
+
+      bars.forEach((bar, bIdx) => {
+        const xLeft = leftPad + bIdx * colStep;
+        const xMid = xLeft + cellW / 2;
+
+        // Compute bar stats
+        const keys = Object.keys(bar.levels).map(Number).sort((a, b) => a - b);
+        let pocVol = 0;
+        let pocRow = -1;
+        let sumVol = 0;
+
+        keys.forEach(r => {
+          const tot = bar.levels[r].bid + bar.levels[r].ask;
+          sumVol += tot;
+          if (tot > pocVol) {
+            pocVol = tot;
+            pocRow = r;
+          }
+        });
+        const avgVol = sumVol / keys.length;
+
+        // O/C side bar
+        const yOpen = topPad + bar.openIdx * rowH + rowH / 2;
+        const yClose = topPad + bar.closeIdx * rowH + rowH / 2;
+        const isBullBar = bar.closeIdx < bar.openIdx;
+        ctx.fillStyle = isBullBar ? "#10b981" : "#ef4444";
+        ctx.fillRect(xLeft - 6, Math.min(yOpen, yClose) - 6, 3, Math.abs(yClose - yOpen) + 12);
+
+        let barAbsSide = 0;
+
+        keys.forEach((r, kPos) => {
+          const lv = bar.levels[r];
+          const tot = lv.bid + lv.ask;
+          const delta = lv.ask - lv.bid;
+          const yTop = topPad + r * rowH + 1;
+          const h = rowH - 2;
+
+          const isPoc = r === pocRow;
+          const prevTot = kPos > 0 ? bar.levels[keys[kPos - 1]].bid + bar.levels[keys[kPos - 1]].ask : 0;
+          const nextTot = kPos < keys.length - 1 ? bar.levels[keys[kPos + 1]].bid + bar.levels[keys[kPos + 1]].ask : 0;
+
+          const isHvn = showBarHvn && tot >= pocVol * (hvnPct / 100) && (tot >= prevTot && tot >= nextTot);
+          const isInternal = kPos > 0 && kPos < keys.length - 1;
+          const isLvn = showBarLvn && isInternal && tot <= pocVol * (lvnPct / 100) && tot < prevTot && tot < nextTot;
+
+          // Heavy Absorption check
+          let absSide = 0;
+          let domPct = 0;
+          if (showAbs && tot >= avgVol * absMult) {
+            const inLower = r >= bar.lowIdx - 1;
+            const inUpper = r <= bar.highIdx + 1;
+            if (inLower && lv.bid > lv.ask) {
+              domPct = Math.round((lv.bid / tot) * 100);
+              if (domPct >= absDom && bar.closeIdx <= r) absSide = 1;
+            } else if (inUpper && lv.ask > lv.bid) {
+              domPct = Math.round((lv.ask / tot) * 100);
+              if (domPct >= absDom && bar.closeIdx >= r) absSide = -1;
+            }
+          }
+
+          // Base cell
+          ctx.fillStyle = "rgba(22, 31, 51, 0.82)";
+          ctx.fillRect(xLeft, yTop, cellW, h);
+          ctx.strokeStyle = "rgba(51, 65, 85, 0.6)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(xLeft, yTop, cellW, h);
+
+          if (absSide !== 0) {
+            barAbsSide = absSide;
+            if (absSide > 0) totalBullAbs++; else totalBearAbs++;
+            const col = absSide > 0 ? "#00f0ff" : "#ff2d87";
+            ctx.fillStyle = absSide > 0 ? "rgba(0, 240, 255, 0.34)" : "rgba(255, 45, 135, 0.34)";
+            ctx.fillRect(xLeft, yTop, cellW, h);
+            ctx.strokeStyle = col;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(xLeft, yTop, cellW, h);
+            ctx.fillStyle = col;
+            ctx.fillRect(xLeft, yTop, 4, h);
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 10px Consolas, monospace";
+            const txt = (absSide > 0 ? "ABS▲ " : "ABS▼ ") + lv.bid + "x" + lv.ask + " " + domPct + "%";
+            ctx.fillText(txt, xLeft + 7, yTop + h / 2 + 3.5);
+
+            lastAbsEvent = { price: prices[r], vol: tot, delta, side: absSide };
+            rays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], vol: tot, side: absSide, xStart: xLeft + cellW });
+          } else if (isHvn) {
+            totalHvn++;
+            const col = isPoc ? "#ff8c00" : "#f59e0b";
+            ctx.fillStyle = isPoc ? "rgba(255, 140, 0, 0.32)" : "rgba(245, 158, 11, 0.24)";
+            ctx.fillRect(xLeft, yTop, cellW, h);
+            ctx.strokeStyle = col;
+            ctx.lineWidth = isPoc ? 2 : 1.3;
+            ctx.strokeRect(xLeft, yTop, cellW, h);
+
+            ctx.fillStyle = col;
+            ctx.font = "bold 10px Consolas, monospace";
+            ctx.fillText(isPoc ? "POC" : "HVN", xLeft + 5, yTop + h / 2 + 3.5);
+
+            ctx.fillStyle = "#e2e8f0";
+            ctx.font = "10.5px Consolas, monospace";
+            ctx.fillText(lv.bid + " x " + lv.ask, xLeft + 34, yTop + h / 2 + 3.5);
+          } else if (isLvn) {
+            totalLvn++;
+            ctx.fillStyle = "rgba(168, 85, 247, 0.26)";
+            ctx.fillRect(xLeft, yTop, cellW, h);
+            ctx.save();
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = "#a855f7";
+            ctx.lineWidth = 1.4;
+            ctx.strokeRect(xLeft, yTop, cellW, h);
+            ctx.restore();
+
+            ctx.fillStyle = "#d8b4fe";
+            ctx.font = "bold 10px Consolas, monospace";
+            ctx.fillText("LVN", xLeft + 5, yTop + h / 2 + 3.5);
+
+            ctx.fillStyle = "#cbd5e1";
+            ctx.font = "10.5px Consolas, monospace";
+            ctx.fillText(lv.bid + " x " + lv.ask, xLeft + 34, yTop + h / 2 + 3.5);
+          } else {
+            ctx.fillStyle = delta >= 0 ? "#86efac" : "#fca5a5";
+            ctx.font = "10.5px Consolas, monospace";
+            ctx.fillText(lv.bid + " x " + lv.ask, xLeft + 26, yTop + h / 2 + 3.5);
+          }
+        });
+
+        // Extreme Diamond Marker for Heavy Absorption
+        if (barAbsSide !== 0) {
+          const isBull = barAbsSide > 0;
+          const mCol = isBull ? "#00f0ff" : "#ff2d87";
+          const yExt = isBull
+            ? topPad + (bar.lowIdx + 1) * rowH + 11
+            : topPad + bar.highIdx * rowH - 11;
+          const sz = 7;
+          ctx.fillStyle = mCol;
+          ctx.beginPath();
+          ctx.moveTo(xMid, yExt - sz);
+          ctx.lineTo(xMid + sz, yExt);
+          ctx.lineTo(xMid, yExt + sz);
+          ctx.lineTo(xMid - sz, yExt);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Time footer
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "11px Consolas, monospace";
+        ctx.fillText(bar.time, xMid - 16, canvas.height - 12);
+      });
+
+      // Draw Projected Absorption S/R Rays
+      if (showRays) {
+        rays.forEach(ray => {
+          const y = topPad + ray.rowIdx * rowH + rowH / 2;
+          const col = ray.side > 0 ? "#00f0ff" : "#ff2d87";
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(ray.xStart, y);
+          ctx.lineTo(priceAxisX - 6, y);
+          ctx.stroke();
+
+          ctx.fillStyle = col;
+          ctx.font = "bold 9.5px Consolas, monospace";
+          const lbl = (ray.side > 0 ? "Bull ABS Support " : "Bear ABS Resist ") + ray.price.toFixed(2);
+          ctx.fillText(lbl, priceAxisX - 155, y - 4);
+        });
+      }
+
+      // Draw HUD Panel
+      if (showHud) {
+        const hudW = 315;
+        const hudH = 116;
+        const hx = priceAxisX - hudW - 10;
+        const hy = 10;
+
+        ctx.fillStyle = "rgba(13, 18, 30, 0.92)";
+        ctx.fillRect(hx, hy, hudW, hudH);
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.4;
+        ctx.strokeRect(hx, hy, hudW, hudH);
+
+        ctx.font = "bold 10.5px Consolas, monospace";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText("FOOTPRINT HVN / LVN / ABSORPTION [ES]", hx + 10, hy + 18);
+
+        ctx.font = "10px Consolas, monospace";
+        ctx.fillStyle = "#f59e0b";
+        ctx.fillText(`HVN Intra-Bar: ${totalHvn}  | Zones HVN Profil: ${compHvnCount}`, hx + 10, hy + 36);
+
+        ctx.fillStyle = "#c084fc";
+        ctx.fillText(`LVN Intra-Bar: ${totalLvn}  | Zones LVN Profil: ${compLvnCount}`, hx + 10, hy + 53);
+
+        ctx.fillStyle = "#fde047";
+        ctx.fillText(`VPOC Composite: ${prices[compPocIdx].toFixed(2)} (Vol ${compMax})`, hx + 10, hy + 70);
+
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 87);
+
+        if (lastAbsEvent) {
+          ctx.font = "bold 10px Consolas, monospace";
+          ctx.fillStyle = lastAbsEvent.side > 0 ? "#00f0ff" : "#ff2d87";
+          const tag = lastAbsEvent.side > 0 ? "▲ DERNIÈRE ABS BULL" : "▼ DERNIÈRE ABS BEAR";
+          ctx.fillText(`${tag}: ${lastAbsEvent.price.toFixed(2)} (Vol ${lastAbsEvent.vol})`, hx + 10, hy + 105);
+        }
+      }
+    }
+
+    ["rngHvn", "rngLvn", "rngAbsMult", "rngAbsDom", "chkBarHvn", "chkBarLvn", "chkAbs", "chkRays", "chkComp", "chkHud"]
+      .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
+
+    analyzeAndRender();
+  </script>
+</body>
+</html>
