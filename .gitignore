@@ -12,3 +12,4 @@ DerivedData/
 .cache/
 .DS_Store
 *.log
+obj/
