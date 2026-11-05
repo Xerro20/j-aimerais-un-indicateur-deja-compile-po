@@ -878,15 +878,15 @@ namespace ATAS.Indicators.Custom
                             {
                                 if (s.Expiration >= DateTime.UtcNow.Date)
                                 {
-                                    if (frontSeries == null || s.Expiration < frontSeries.Expiration)
+                                    if (!frontSeries.HasValue || s.Expiration < frontSeries.Value.Expiration)
                                         frontSeries = s;
                                 }
                             }
 
-                            if (frontSeries == null)
+                            if (!frontSeries.HasValue)
                                 return;
 
-                            var options = await optionsFeed.GetOptionsAsync(frontSeries).ConfigureAwait(false);
+                            var options = await optionsFeed.GetOptionsAsync(frontSeries.Value).ConfigureAwait(false);
                             if (options == null)
                                 return;
 
@@ -1151,11 +1151,13 @@ namespace ATAS.Indicators.Custom
                     sweeps += _liveTapeSweepCount;
                 }
 
-                // Déséquilibre carnet de commandes ATAS X (CumulativeDomBids vs CumulativeDomAsks)
-                if (CumulativeDomBids > 0m && CumulativeDomAsks > 0m)
+                // Déséquilibre carnet de commandes ATAS X (MarketDepthInfo.CumulativeDomBids vs CumulativeDomAsks)
+                decimal domBids = MarketDepthInfo?.CumulativeDomBids ?? 0m;
+                decimal domAsks = MarketDepthInfo?.CumulativeDomAsks ?? 0m;
+                if (domBids > 0m && domAsks > 0m)
                 {
-                    decimal domTotal = CumulativeDomBids + CumulativeDomAsks;
-                    decimal domBidShare = CumulativeDomBids / domTotal;
+                    decimal domTotal = domBids + domAsks;
+                    decimal domBidShare = domBids / domTotal;
                     if (domBidShare >= 0.56m)
                         callFlow *= 1.12m;
                     else if (domBidShare <= 0.44m)
