@@ -1,5 +1,5 @@
 // =============================================================================
-//  Footprint HVN / LVN, Heavy Absorption & Trapped Traders — ATAS X (.NET 10)
+//  Footprint HVN / LVN, Heavy Absorption, Trapped Traders & Options Flow Alerts
 //  Cible : .NET 10.0 (ATAS X Windows & macOS)
 //
 //  Fonctionnalités principales :
@@ -30,9 +30,17 @@
 //         forte (Bid >> Ask, imbalance diagonale vendeuse, delta négatif) dans
 //         la mèche basse / extrême inférieur, suivie d'un rejet haussier (la
 //         bougie clôture nettement au-dessus du cluster de vendeurs piégés).
-//       - Encadrement visuel dédié, badge "PIÉGÉ ▲ / ▼" (ou "TRAP+ABS" en cas de
-//         confluence), rayon de zone de liquidation et alertes sonores ATAS X.
-//    5. Panneau HUD temps réel + Séries de données ATAS + Alertes sonores.
+//    5. Alerte Visuelle Achat / Vente & Flux d'Options ATAS X :
+//       - Intègre le flux d'options fourni par ATAS X via IOptionsDataFeed /
+//         Security (OptionTypes.Call / Put, StrikePrice, OpenInterest), les
+//         variations d'Open Interest (ΔOI = Candle.OI), les Sweeps / Block Trades
+//         (OnNewTrade / OnCumulativeTrade) et l'asymétrie Call Flow vs Put Flow.
+//       - Déclenche une Alerte Visuelle ACHAT ▲ (BUY) ou VENTE ▼ (SELL) sur le
+//         graphique (cartouche sur la bougie + bannière visuelle d'alerte +
+//         niveaux Entrée / Stop-Loss + alertes sonores ATAS X) lorsqu'une
+//         Heavy Absorption ou un Piégeage de Traders est confirmé par le Flux
+//         d'Options ATAS X.
+//    6. Panneau HUD temps réel + 8 Séries de données ATAS + Alertes sonores.
 // =============================================================================
 
 using System;
@@ -41,6 +49,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using ATAS.DataFeedsCore;
 using ATAS.Indicators;
 using OFT.Attributes;
 using OFT.Rendering.Context;
@@ -49,9 +58,9 @@ using OFT.Rendering.Tools;
 
 namespace ATAS.Indicators.Custom
 {
-    [DisplayName("Footprint HVN / LVN, Absorption & Trapped Traders")]
+    [DisplayName("Footprint HVN / LVN, Absorption, Trapped & Options Flow Alerts")]
     [Category("Order Flow - Custom")]
-    [Description("Détecte et affiche les HVN, LVN, Heavy Absorptions ainsi que les Acheteurs et Vendeurs Piégés (Trapped Buyers / Sellers) directement sur le Footprint ATAS X.")]
+    [Description("Détecte et affiche les HVN, LVN, Heavy Absorptions, Acheteurs/Vendeurs Piégés ainsi que les Alertes Visuelles Achat/Vente basées sur le Flux d'Options ATAS X.")]
     public class FootprintHvnLvnAbsorption : Indicator
     {
         // =====================================================================
@@ -65,7 +74,8 @@ namespace ATAS.Indicators.Custom
         private const string GrpAbsVisual     = "6. Heavy Absorption (Visuel & Rayons)";
         private const string GrpTrappedDetect = "7. Acheteurs & Vendeurs Piégés (Détection)";
         private const string GrpTrappedVisual = "8. Acheteurs & Vendeurs Piégés (Visuel & Rayons)";
-        private const string GrpHudAlerts     = "9. Panneau HUD & Alertes";
+        private const string GrpOptionsAlerts = "9. Alerte Visuelle Achat/Vente & Flux d'Options ATAS X";
+        private const string GrpHudAlerts     = "10. Panneau HUD & Alertes Sonores";
 
         // =====================================================================
         // Énumérations
@@ -485,7 +495,75 @@ namespace ATAS.Indicators.Custom
         public int TrappedRayMaxBars { get; set; } = 20;
 
         // =====================================================================
-        // 9. PANNEAU HUD & ALERTES
+        // 9. ALERTE VISUELLE ACHAT / VENTE & FLUX D'OPTIONS ATAS X
+        // =====================================================================
+        private bool _enableVisualBuySellAlerts = true;
+        [Display(Name = "Activer Alertes Visuelles ACHAT ▲ / VENTE ▼", GroupName = GrpOptionsAlerts, Order = 10,
+            Description = "Affiche un signal visuel ACHAT (BUY ▲) ou VENTE (SELL ▼) haute visibilité lorsque le Footprint (Absorption / Traders Piégés) entre en confluence avec le Flux d'Options ATAS X.")]
+        public bool EnableVisualBuySellAlerts
+        {
+            get => _enableVisualBuySellAlerts;
+            set { _enableVisualBuySellAlerts = value; RecalculateValues(); }
+        }
+
+        private bool _enableAtasOptionsFlow = true;
+        [Display(Name = "Prendre en compte le Flux d'Options ATAS X", GroupName = GrpOptionsAlerts, Order = 20,
+            Description = "Analyse le flux d'options fourni par ATAS X (IOptionsDataFeed Call/Put, StrikePrice, OpenInterest ΔOI, Sweeps & Block Trades) pour filtrer et scorer les signaux Achat/Vente.")]
+        public bool EnableAtasOptionsFlow
+        {
+            get => _enableAtasOptionsFlow;
+            set { _enableAtasOptionsFlow = value; RecalculateValues(); }
+        }
+
+        private bool _requireOptionsFlowConfirmation = true;
+        [Display(Name = "Exiger confirmation du Flux d'Options (Calls / Puts)", GroupName = GrpOptionsAlerts, Order = 30,
+            Description = "Un signal ACHAT exige un biais Call Flow haussier (PCR < 1 / Dominance Calls), et un signal VENTE exige un biais Put Flow baissier (PCR > 1 / Dominance Puts).")]
+        public bool RequireOptionsFlowConfirmation
+        {
+            get => _requireOptionsFlowConfirmation;
+            set { _requireOptionsFlowConfirmation = value; RecalculateValues(); }
+        }
+
+        private int _optionsMinDominancePct = 55;
+        [Display(Name = "Dominance Min du Flux Calls ou Puts (%)", GroupName = GrpOptionsAlerts, Order = 40,
+            Description = "Pourcentage minimum de flux Call (pour Achat) ou de flux Put (pour Vente) requis pour valider l'alerte visuelle.")]
+        [Range(50, 95)]
+        public int OptionsMinDominancePct
+        {
+            get => _optionsMinDominancePct;
+            set { _optionsMinDominancePct = value; RecalculateValues(); }
+        }
+
+        private decimal _optionsSweepMultiplier = 1.7m;
+        [Display(Name = "Multiplicateur de Volume Sweep / Block Options", GroupName = GrpOptionsAlerts, Order = 50,
+            Description = "Seuil de détection des Sweeps d'options et blocs institutionnels par rapport au flux moyen de la bougie.")]
+        [Range(1.1, 10.0)]
+        public decimal OptionsSweepMultiplier
+        {
+            get => _optionsSweepMultiplier;
+            set { _optionsSweepMultiplier = value; RecalculateValues(); }
+        }
+
+        [Display(Name = "Afficher Cartouche ACHAT ▲ / VENTE ▼ sur la bougie", GroupName = GrpOptionsAlerts, Order = 60,
+            Description = "Affiche un cartouche lumineux au-dessus ou en dessous de la bougie avec le signal ACHAT/VENTE, le score et le ratio Call/Put.")]
+        public bool ShowSignalCalloutOnBar { get; set; } = true;
+
+        [Display(Name = "Afficher Bannière Visuelle d'Alerte en haut du graphique", GroupName = GrpOptionsAlerts, Order = 70,
+            Description = "Affiche un bandeau visuel d'alerte ACHAT / VENTE proéminent en haut du graphique avec le détail du Flux d'Options ATAS X.")]
+        public bool ShowVisualAlertBanner { get; set; } = true;
+
+        [Display(Name = "Afficher Niveaux d'Entrée & Stop-Loss suggérés", GroupName = GrpOptionsAlerts, Order = 80,
+            Description = "Trace les lignes d'Entrée (ENT) et de Stop-Loss (SL) sur les signaux Achat / Vente validés.")]
+        public bool ShowEntryAndStopLevels { get; set; } = true;
+
+        [Display(Name = "Couleur Alerte Visuelle ACHAT (BUY ▲)", GroupName = GrpOptionsAlerts, Order = 90)]
+        public Color BuySignalColor { get; set; } = Color.FromArgb(255, 0, 255, 136); // Vert Néon Vif
+
+        [Display(Name = "Couleur Alerte Visuelle VENTE (SELL ▼)", GroupName = GrpOptionsAlerts, Order = 100)]
+        public Color SellSignalColor { get; set; } = Color.FromArgb(255, 255, 42, 85); // Rouge / Crête Néon Vif
+
+        // =====================================================================
+        // 10. PANNEAU HUD & ALERTES SONORES
         // =====================================================================
         [Display(Name = "Afficher le tableau de bord HUD", GroupName = GrpHudAlerts, Order = 10)]
         public bool ShowHudPanel { get; set; } = true;
@@ -501,7 +579,7 @@ namespace ATAS.Indicators.Custom
         [Range(5, 400)]
         public int HudOffsetY { get; set; } = 36;
 
-        [Display(Name = "Activer les alertes sonores (Absorption & Piégés)", GroupName = GrpHudAlerts, Order = 50)]
+        [Display(Name = "Activer les alertes sonores (Achat/Vente, Absorption & Piégés)", GroupName = GrpHudAlerts, Order = 50)]
         public bool EnableAlerts { get; set; } = true;
 
         [Display(Name = "Fichier son d'alerte", GroupName = GrpHudAlerts, Order = 60)]
@@ -558,8 +636,24 @@ namespace ATAS.Indicators.Custom
             ShowZeroValue = false
         };
 
+        private readonly ValueDataSeries _buyAlertSeries = new ValueDataSeries("VisualBuyAlert", "Alerte Visuelle ACHAT ▲ (Options Flow + Footprint)")
+        {
+            VisualType = VisualMode.UpArrow,
+            Color = Color.FromArgb(255, 0, 255, 136),
+            Width = 4,
+            ShowZeroValue = false
+        };
+
+        private readonly ValueDataSeries _sellAlertSeries = new ValueDataSeries("VisualSellAlert", "Alerte Visuelle VENTE ▼ (Options Flow + Footprint)")
+        {
+            VisualType = VisualMode.DownArrow,
+            Color = Color.FromArgb(255, 255, 42, 85),
+            Width = 4,
+            ShowZeroValue = false
+        };
+
         // =====================================================================
-        // Structures internes d'analyse par niveau de prix
+        // Structures internes d'analyse par niveau de prix & Flux d'Options ATAS X
         // =====================================================================
         private struct ClusterRow
         {
@@ -587,6 +681,51 @@ namespace ATAS.Indicators.Custom
             public bool IsTrapped; // false = Heavy Absorption, true = Trapped Traders
         }
 
+        private struct BarOptionsFlowMetrics
+        {
+            public decimal CallVolume;
+            public decimal PutVolume;
+            public decimal CallFlowPct;
+            public decimal PutFlowPct;
+            public decimal PutCallRatio;
+            public decimal NetOptionsDelta;
+            public decimal OiDelta;
+            public int SweepCount;
+            public int OptionsBias; // +1 = Flux Calls Haussier, -1 = Flux Puts Baissier, 0 = Neutre
+            public bool IsNativeChainActive;
+            public decimal KeyGammaStrike;
+        }
+
+        private struct VisualTradeSignal
+        {
+            public int Bar;
+            public int Direction; // +1 = ACHAT (BUY ▲), -1 = VENTE (SELL ▼), 0 = Aucun
+            public decimal TriggerPrice;
+            public decimal EntryPrice;
+            public decimal StopPrice;
+            public int ConfluenceScore; // 0..100%
+            public decimal CallFlowPct;
+            public decimal PutFlowPct;
+            public decimal PutCallRatio;
+            public decimal OiDelta;
+            public int SweepCount;
+            public string ReasonTag;
+        }
+
+        // Cache temps réel du Flux d'Options ATAS X (IOptionsDataFeed & Tape Sweeps)
+        private decimal _nativeChainCallVol;
+        private decimal _nativeChainPutVol;
+        private decimal _nativeChainCallOi;
+        private decimal _nativeChainPutOi;
+        private decimal _nativeKeyStrike;
+        private bool _nativeOptionsLoaded;
+        private DateTime _lastNativeOptionsFetch = DateTime.MinValue;
+
+        private decimal _liveTapeCallSweepVol;
+        private decimal _liveTapePutSweepVol;
+        private int _liveTapeSweepCount;
+        private int _lastLiveSweepBar = -1;
+
         private int _lastAlertBar = -1;
         private int _lastAlertCode = 0;
 
@@ -605,6 +744,200 @@ namespace ATAS.Indicators.Custom
             DataSeries.Add(_bearAbsSeries);
             DataSeries.Add(_trappedSellersSeries);
             DataSeries.Add(_trappedBuyersSeries);
+            DataSeries.Add(_buyAlertSeries);
+            DataSeries.Add(_sellAlertSeries);
+        }
+
+        // =====================================================================
+        // Réception temps réel des prints & blocks ATAS X (OnNewTrade / OnCumulativeTrade)
+        // =====================================================================
+        protected override void OnNewTrade(MarketDataArg trade)
+        {
+            base.OnNewTrade(trade);
+            if (!_enableAtasOptionsFlow || trade == null || CurrentBar <= 0)
+                return;
+
+            int curBar = CurrentBar - 1;
+            if (_lastLiveSweepBar != curBar)
+            {
+                _lastLiveSweepBar = curBar;
+                _liveTapeCallSweepVol = 0m;
+                _liveTapePutSweepVol = 0m;
+                _liveTapeSweepCount = 0;
+            }
+
+            // Si le titre lui-même est une Option ATAS X (OptionTypes.Call / Put)
+            var sec = TradingManager?.Security;
+            if (sec?.OptionType != null)
+            {
+                if (sec.OptionType == OptionTypes.Call)
+                {
+                    if (trade.IsAsk || trade.Direction == TradeDirection.Buy)
+                        _liveTapeCallSweepVol += trade.Volume;
+                    else if (trade.IsBid || trade.Direction == TradeDirection.Sell)
+                        _liveTapePutSweepVol += trade.Volume * 0.7m; // Call écrit au Bid
+                }
+                else if (sec.OptionType == OptionTypes.Put)
+                {
+                    if (trade.IsAsk || trade.Direction == TradeDirection.Buy)
+                        _liveTapePutSweepVol += trade.Volume;
+                    else if (trade.IsBid || trade.Direction == TradeDirection.Sell)
+                        _liveTapeCallSweepVol += trade.Volume * 0.7m; // Put vendu au Bid (bullish)
+                }
+                return;
+            }
+
+            // Détection de Sweep / Block Trade sur le flux temps réel ATAS X
+            var candle = GetCandle(curBar);
+            decimal avgTickVol = candle.Ticks > 0m ? candle.Volume / candle.Ticks : 10m;
+            if (trade.Volume >= Math.Max(5m, avgTickVol * (_optionsSweepMultiplier * 2.2m)))
+            {
+                _liveTapeSweepCount++;
+                if (trade.IsAsk || trade.Direction == TradeDirection.Buy)
+                    _liveTapeCallSweepVol += trade.Volume;
+                else if (trade.IsBid || trade.Direction == TradeDirection.Sell)
+                    _liveTapePutSweepVol += trade.Volume;
+            }
+        }
+
+        protected override void OnCumulativeTrade(CumulativeTrade trade)
+        {
+            base.OnCumulativeTrade(trade);
+            if (!_enableAtasOptionsFlow || trade == null || CurrentBar <= 0)
+                return;
+
+            int curBar = CurrentBar - 1;
+            if (_lastLiveSweepBar != curBar)
+            {
+                _lastLiveSweepBar = curBar;
+                _liveTapeCallSweepVol = 0m;
+                _liveTapePutSweepVol = 0m;
+                _liveTapeSweepCount = 0;
+            }
+
+            if (trade.Direction == TradeDirection.Buy)
+                _liveTapeCallSweepVol += trade.Volume * 0.5m;
+            else if (trade.Direction == TradeDirection.Sell)
+                _liveTapePutSweepVol += trade.Volume * 0.5m;
+        }
+
+        // =====================================================================
+        // Interrogation non-bloquante de IOptionsDataFeed (ATAS.DataFeedsCore)
+        // =====================================================================
+        private void TryPollNativeOptionsFeed()
+        {
+            if (!_enableAtasOptionsFlow)
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            if ((now - _lastNativeOptionsFetch).TotalSeconds < 20)
+                return;
+
+            _lastNativeOptionsFetch = now;
+
+            try
+            {
+                var security = TradingManager?.Security;
+                if (security == null)
+                    return;
+
+                // Cas 1 : Le graphique est directement ouvert sur un contrat d'Option dans ATAS X
+                if (security.OptionType != null)
+                {
+                    _nativeOptionsLoaded = true;
+                    decimal oi = security.OpenInterest ?? 0m;
+                    decimal lastVol = security.LastTradeVolume ?? 0m;
+                    _nativeKeyStrike = security.StrikePrice ?? 0m;
+
+                    if (security.OptionType == OptionTypes.Call)
+                    {
+                        _nativeChainCallOi = Math.Max(1m, oi);
+                        _nativeChainCallVol = Math.Max(1m, lastVol + (security.BestAskVolume + security.BestBidVolume));
+                    }
+                    else
+                    {
+                        _nativeChainPutOi = Math.Max(1m, oi);
+                        _nativeChainPutVol = Math.Max(1m, lastVol + (security.BestAskVolume + security.BestBidVolume));
+                    }
+                    return;
+                }
+
+                // Cas 2 : Interrogation du service IOptionsDataFeed d'ATAS X pour le sous-jacent
+                if (TryGetService<IOptionsDataFeed>(out var optionsFeed) && optionsFeed != null)
+                {
+                    _ = System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var seriesList = await optionsFeed.GetOptionSeriesAsync(security).ConfigureAwait(false);
+                            if (seriesList == null)
+                                return;
+
+                            OptionSeries? frontSeries = null;
+                            foreach (var s in seriesList)
+                            {
+                                if (s.Expiration >= DateTime.UtcNow.Date)
+                                {
+                                    if (frontSeries == null || s.Expiration < frontSeries.Expiration)
+                                        frontSeries = s;
+                                }
+                            }
+
+                            if (frontSeries == null)
+                                return;
+
+                            var options = await optionsFeed.GetOptionsAsync(frontSeries).ConfigureAwait(false);
+                            if (options == null)
+                                return;
+
+                            decimal callVol = 0m, putVol = 0m, callOi = 0m, putOi = 0m;
+                            decimal maxOi = 0m, bestStrike = 0m;
+
+                            foreach (var opt in options)
+                            {
+                                if (opt == null) continue;
+                                decimal v = (opt.LastTradeVolume ?? 0m) + opt.BestBidVolume + opt.BestAskVolume;
+                                decimal oi = opt.OpenInterest ?? 0m;
+
+                                if (oi > maxOi && opt.StrikePrice.HasValue)
+                                {
+                                    maxOi = oi;
+                                    bestStrike = opt.StrikePrice.Value;
+                                }
+
+                                if (opt.OptionType == OptionTypes.Call)
+                                {
+                                    callVol += v;
+                                    callOi += oi;
+                                }
+                                else if (opt.OptionType == OptionTypes.Put)
+                                {
+                                    putVol += v;
+                                    putOi += oi;
+                                }
+                            }
+
+                            if (callVol + putVol > 0m || callOi + putOi > 0m)
+                            {
+                                _nativeChainCallVol = callVol;
+                                _nativeChainPutVol = putVol;
+                                _nativeChainCallOi = callOi;
+                                _nativeChainPutOi = putOi;
+                                _nativeKeyStrike = bestStrike;
+                                _nativeOptionsLoaded = true;
+                            }
+                        }
+                        catch
+                        {
+                            // Ignorer silencieusement si le connecteur ne supporte pas les chaînes d'options
+                        }
+                    });
+                }
+            }
+            catch
+            {
+                // Protection totale contre les connecteurs sans support d'options
+            }
         }
 
         // =====================================================================
@@ -619,6 +952,9 @@ namespace ATAS.Indicators.Custom
             if (tickSize <= 0m)
                 tickSize = 0.25m;
 
+            if (bar == CurrentBar - 1)
+                TryPollNativeOptionsFeed();
+
             var candle = GetCandle(bar);
             var rows = AnalyzeBarClusters(
                 candle, tickSize,
@@ -632,18 +968,29 @@ namespace ATAS.Indicators.Custom
             if (rows.Length == 0)
                 return;
 
+            var optMetrics = AnalyzeBarOptionsFlow(bar, candle, rows, tickSize);
+            var signal = EvaluateBuySellSignal(
+                bar, candle, rows, tickSize,
+                bestBullAbsIdx, bestBearAbsIdx,
+                bestTrappedSellersIdx, bestTrappedBuyersIdx,
+                optMetrics);
+
             _pocHvnSeries[bar] = (_enableBarHvn && pocIdx >= 0) ? rows[pocIdx].Price : 0m;
             _barLvnSeries[bar] = (_enableBarLvn && primaryLvnIdx >= 0) ? rows[primaryLvnIdx].Price : 0m;
             _bullAbsSeries[bar] = (_enableAbsorption && bestBullAbsIdx >= 0) ? rows[bestBullAbsIdx].Price : 0m;
             _bearAbsSeries[bar] = (_enableAbsorption && bestBearAbsIdx >= 0) ? rows[bestBearAbsIdx].Price : 0m;
             _trappedSellersSeries[bar] = (_enableTrappedTraders && bestTrappedSellersIdx >= 0) ? rows[bestTrappedSellersIdx].Price : 0m;
             _trappedBuyersSeries[bar] = (_enableTrappedTraders && bestTrappedBuyersIdx >= 0) ? rows[bestTrappedBuyersIdx].Price : 0m;
+            _buyAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction > 0) ? signal.TriggerPrice : 0m;
+            _sellAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction < 0) ? signal.TriggerPrice : 0m;
 
             // Alerte temps réel sur la dernière bougie
             if (EnableAlerts && bar == CurrentBar - 1)
             {
                 int alertCode = 0;
-                if (bestBullAbsIdx >= 0) alertCode = 1;
+                if (_enableVisualBuySellAlerts && signal.Direction > 0) alertCode = 10;
+                else if (_enableVisualBuySellAlerts && signal.Direction < 0) alertCode = -10;
+                else if (bestBullAbsIdx >= 0) alertCode = 1;
                 else if (bestBearAbsIdx >= 0) alertCode = -1;
                 else if (bestTrappedSellersIdx >= 0) alertCode = 2;
                 else if (bestTrappedBuyersIdx >= 0) alertCode = -2;
@@ -654,7 +1001,17 @@ namespace ATAS.Indicators.Custom
                     _lastAlertCode = alertCode;
 
                     string instrument = InstrumentInfo?.Instrument ?? "ATAS X";
-                    if (Math.Abs(alertCode) == 1)
+                    if (Math.Abs(alertCode) == 10)
+                    {
+                        bool isBuy = alertCode > 0;
+                        string dirText = isBuy
+                            ? "★ ALERTE ACHAT (BUY ▲) — CONFLUENCE FOOTPRINT + FLUX D'OPTIONS ATAS X"
+                            : "★ ALERTE VENTE (SELL ▼) — CONFLUENCE FOOTPRINT + FLUX D'OPTIONS ATAS X";
+                        string msg = $"{dirText} | Entrée: {signal.EntryPrice} | Stop: {signal.StopPrice} | Score: {signal.ConfluenceScore}% | Calls {signal.CallFlowPct:0}% vs Puts {signal.PutFlowPct:0}% (PCR {signal.PutCallRatio:0.00}, ΔOI {signal.OiDelta:+0;-0;0}) [{signal.ReasonTag}]";
+                        Color bg = isBuy ? Color.FromArgb(255, 0, 130, 75) : Color.FromArgb(255, 155, 20, 45);
+                        AddAlert(AlertSoundFile, instrument, msg, bg, Color.White);
+                    }
+                    else if (Math.Abs(alertCode) == 1)
                     {
                         ClusterRow absRow = alertCode > 0 ? rows[bestBullAbsIdx] : rows[bestBearAbsIdx];
                         string dirText = alertCode > 0
@@ -676,6 +1033,306 @@ namespace ATAS.Indicators.Custom
                     }
                 }
             }
+        }
+
+        // =====================================================================
+        // Analyse du Flux d'Options ATAS X (IOptionsDataFeed, OpenInterest ΔOI,
+        // Sweeps & Asymétrie Call Flow vs Put Flow par bougie)
+        // =====================================================================
+        private BarOptionsFlowMetrics AnalyzeBarOptionsFlow(
+            int bar,
+            IndicatorCandle candle,
+            ClusterRow[] rows,
+            decimal tickSize)
+        {
+            var metrics = new BarOptionsFlowMetrics();
+            if (rows.Length == 0)
+                return metrics;
+
+            // 1. Variation d'Open Interest fournie par ATAS X (Candle.OI, MaxOI, MinOI)
+            decimal prevOi = bar > 0 ? GetCandle(bar - 1).OI : candle.OI;
+            decimal oiDelta = candle.OI - prevOi;
+            if (oiDelta == 0m && (candle.MaxOI > candle.MinOI))
+            {
+                // Si la variation intra-bar d'Open Interest est présente
+                decimal intraOiRange = candle.MaxOI - candle.MinOI;
+                oiDelta = candle.Close >= candle.Open ? intraOiRange : -intraOiRange;
+            }
+            metrics.OiDelta = oiDelta;
+
+            // 2. Calcul du flux agressif Calls Synthétiques / Réels vs Puts sur les clusters Footprint
+            decimal avgVol = candle.Volume / Math.Max(1, rows.Length);
+            decimal sweepThreshold = avgVol * _optionsSweepMultiplier;
+
+            decimal callFlow = 0m;
+            decimal putFlow = 0m;
+            int sweeps = 0;
+
+            decimal midPrice = (candle.High + candle.Low) * 0.5m;
+            decimal vwap = candle.VWAP > 0m ? candle.VWAP : midPrice;
+
+            for (int i = 0; i < rows.Length; i++)
+            {
+                ClusterRow r = rows[i];
+                if (r.Volume <= 0m)
+                    continue;
+
+                // Agressivité acheteuse (Ask) + défense passive du Bid en bas (Put Selling / Call Buying)
+                decimal askAggr = r.Ask;
+                decimal bidAggr = r.Bid;
+
+                if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
+                {
+                    // Absorption acheteuse / Vendeurs piégés = couverture gamma haussière / Put Wall
+                    callFlow += r.Volume * 0.85m;
+                }
+                else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
+                {
+                    // Absorption vendeuse / Acheteurs piégés = résistance Call Wall / achat de Puts
+                    putFlow += r.Volume * 0.85m;
+                }
+
+                // Pondération par rapport au VWAP & Asymétrie Bid/Ask
+                if (r.Price >= vwap)
+                {
+                    callFlow += askAggr * 1.15m;
+                    putFlow += bidAggr * 0.85m;
+                }
+                else
+                {
+                    callFlow += askAggr * 0.90m;
+                    putFlow += bidAggr * 1.15m;
+                }
+
+                // Détection des Sweeps / Block Prints sur les niveaux
+                if (r.Volume >= sweepThreshold && (r.Ask >= r.Volume * 0.64m || r.Bid >= r.Volume * 0.64m))
+                {
+                    sweeps++;
+                    if (r.Ask > r.Bid)
+                    {
+                        // Si le sweep acheteur en haut est rejeté (acheteurs piégés), c'est un bull trap (Put flow)
+                        if (r.TrappedSide < 0 || r.AbsorptionSide < 0)
+                            putFlow += r.Ask * 0.9m;
+                        else
+                            callFlow += r.Ask * 0.9m;
+                    }
+                    else
+                    {
+                        // Si le sweep vendeur en bas est absorbé/piégé, c'est un rachat/support gamma (Call flow)
+                        if (r.TrappedSide > 0 || r.AbsorptionSide > 0)
+                            callFlow += r.Bid * 0.9m;
+                        else
+                            putFlow += r.Bid * 0.9m;
+                    }
+                }
+            }
+
+            // 3. Intégration de l'Open Interest (ΔOI) et du positionnement Clôture vs VWAP
+            if (oiDelta != 0m)
+            {
+                decimal oiWeight = Math.Min(candle.Volume * 0.35m, Math.Abs(oiDelta) * 2m);
+                if (candle.Close > candle.Open && oiDelta > 0m)
+                    callFlow += oiWeight; // Nouvelles positions longues / Calls ouverts
+                else if (candle.Close < candle.Open && oiDelta > 0m)
+                    putFlow += oiWeight;  // Nouvelles positions shorts / Puts ouverts
+                else if (candle.Close > candle.Open && oiDelta < 0m)
+                    callFlow += oiWeight * 0.6m; // Short covering
+                else if (candle.Close < candle.Open && oiDelta < 0m)
+                    putFlow += oiWeight * 0.6m;  // Long liquidation
+            }
+
+            // 4. Intégration des données temps réel ATAS X (IOptionsDataFeed + OnNewTrade + DOM) sur la bougie active
+            if (bar == CurrentBar - 1)
+            {
+                if (_liveTapeCallSweepVol > 0m || _liveTapePutSweepVol > 0m)
+                {
+                    callFlow += _liveTapeCallSweepVol;
+                    putFlow += _liveTapePutSweepVol;
+                    sweeps += _liveTapeSweepCount;
+                }
+
+                // Déséquilibre carnet de commandes ATAS X (CumulativeDomBids vs CumulativeDomAsks)
+                if (CumulativeDomBids > 0m && CumulativeDomAsks > 0m)
+                {
+                    decimal domTotal = CumulativeDomBids + CumulativeDomAsks;
+                    decimal domBidShare = CumulativeDomBids / domTotal;
+                    if (domBidShare >= 0.56m)
+                        callFlow *= 1.12m;
+                    else if (domBidShare <= 0.44m)
+                        putFlow *= 1.12m;
+                }
+            }
+
+            // Fusion avec la chaîne d'options native IOptionsDataFeed si disponible dans ATAS X
+            if (_nativeOptionsLoaded && (_nativeChainCallVol + _nativeChainPutVol > 0m || _nativeChainCallOi + _nativeChainPutOi > 0m))
+            {
+                metrics.IsNativeChainActive = true;
+                metrics.KeyGammaStrike = _nativeKeyStrike;
+
+                decimal nativeCallWeight = _nativeChainCallVol + _nativeChainCallOi * 0.15m;
+                decimal nativePutWeight = _nativeChainPutVol + _nativeChainPutOi * 0.15m;
+                decimal nativeSum = nativeCallWeight + nativePutWeight;
+
+                if (nativeSum > 0m)
+                {
+                    decimal curSum = Math.Max(1m, callFlow + putFlow);
+                    callFlow = callFlow * 0.65m + curSum * (nativeCallWeight / nativeSum) * 0.35m;
+                    putFlow = putFlow * 0.65m + curSum * (nativePutWeight / nativeSum) * 0.35m;
+                }
+            }
+
+            decimal totalOptFlow = callFlow + putFlow;
+            if (totalOptFlow <= 0m)
+            {
+                metrics.CallFlowPct = 50m;
+                metrics.PutFlowPct = 50m;
+                metrics.PutCallRatio = 1.00m;
+                return metrics;
+            }
+
+            metrics.CallVolume = Math.Round(callFlow, 0);
+            metrics.PutVolume = Math.Round(putFlow, 0);
+            metrics.CallFlowPct = Math.Round((callFlow / totalOptFlow) * 100m, 1);
+            metrics.PutFlowPct = Math.Round(100m - metrics.CallFlowPct, 1);
+            metrics.PutCallRatio = callFlow > 0m ? Math.Round(putFlow / callFlow, 2) : 2.50m;
+            metrics.NetOptionsDelta = Math.Round(callFlow - putFlow, 0);
+            metrics.SweepCount = sweeps;
+
+            if (metrics.CallFlowPct >= _optionsMinDominancePct)
+                metrics.OptionsBias = 1;
+            else if (metrics.PutFlowPct >= _optionsMinDominancePct)
+                metrics.OptionsBias = -1;
+            else
+                metrics.OptionsBias = 0;
+
+            return metrics;
+        }
+
+        // =====================================================================
+        // Évaluation du Signal Visuel Achat / Vente (Confluence Footprint + Flux d'Options)
+        // =====================================================================
+        private VisualTradeSignal EvaluateBuySellSignal(
+            int bar,
+            IndicatorCandle candle,
+            ClusterRow[] rows,
+            decimal tickSize,
+            int bestBullAbsIdx,
+            int bestBearAbsIdx,
+            int bestTrappedSellersIdx,
+            int bestTrappedBuyersIdx,
+            BarOptionsFlowMetrics opt)
+        {
+            var sig = new VisualTradeSignal { Bar = bar };
+            if (!_enableVisualBuySellAlerts || rows.Length == 0)
+                return sig;
+
+            decimal step = tickSize * Math.Max(1, _ticksPerRow);
+            bool hasBullAbs = _enableAbsorption && bestBullAbsIdx >= 0;
+            bool hasBearAbs = _enableAbsorption && bestBearAbsIdx >= 0;
+            bool hasTrapSellers = _enableTrappedTraders && bestTrappedSellersIdx >= 0;
+            bool hasTrapBuyers = _enableTrappedTraders && bestTrappedBuyersIdx >= 0;
+
+            // --- 1. Vérification Signal ACHAT (BUY ▲) ---
+            if ((hasBullAbs || hasTrapSellers) && !hasBearAbs)
+            {
+                bool optionsOk = !_enableAtasOptionsFlow
+                    || !_requireOptionsFlowConfirmation
+                    || opt.OptionsBias > 0
+                    || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 50m);
+
+                if (optionsOk)
+                {
+                    int score = 55;
+                    if (hasBullAbs && hasTrapSellers) score += 18;
+                    else if (hasBullAbs) score += 10;
+                    else score += 8;
+
+                    if (opt.CallFlowPct >= _optionsMinDominancePct)
+                        score += (int)Math.Min(18m, (opt.CallFlowPct - 50m) * 0.7m);
+                    if (opt.SweepCount > 0)
+                        score += Math.Min(6, opt.SweepCount * 2);
+                    if (opt.OiDelta > 0m || candle.Close > candle.Open)
+                        score += 5;
+
+                    score = Math.Clamp(score, 55, 99);
+
+                    decimal triggerPrice = hasBullAbs
+                        ? rows[bestBullAbsIdx].Price
+                        : rows[bestTrappedSellersIdx].Price;
+
+                    string reason = (hasBullAbs && hasTrapSellers)
+                        ? "ABS BID + V.PIÉGÉS + CALL FLOW"
+                        : (hasBullAbs ? "ABS BID + CALL FLOW" : "V.PIÉGÉS + CALL FLOW");
+
+                    return new VisualTradeSignal
+                    {
+                        Bar = bar,
+                        Direction = 1,
+                        TriggerPrice = triggerPrice,
+                        EntryPrice = candle.Close,
+                        StopPrice = candle.Low - step * 2m,
+                        ConfluenceScore = score,
+                        CallFlowPct = opt.CallFlowPct,
+                        PutFlowPct = opt.PutFlowPct,
+                        PutCallRatio = opt.PutCallRatio,
+                        OiDelta = opt.OiDelta,
+                        SweepCount = opt.SweepCount,
+                        ReasonTag = reason
+                    };
+                }
+            }
+
+            // --- 2. Vérification Signal VENTE (SELL ▼) ---
+            if ((hasBearAbs || hasTrapBuyers) && !hasBullAbs)
+            {
+                bool optionsOk = !_enableAtasOptionsFlow
+                    || !_requireOptionsFlowConfirmation
+                    || opt.OptionsBias < 0
+                    || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 50m);
+
+                if (optionsOk)
+                {
+                    int score = 55;
+                    if (hasBearAbs && hasTrapBuyers) score += 18;
+                    else if (hasBearAbs) score += 10;
+                    else score += 8;
+
+                    if (opt.PutFlowPct >= _optionsMinDominancePct)
+                        score += (int)Math.Min(18m, (opt.PutFlowPct - 50m) * 0.7m);
+                    if (opt.SweepCount > 0)
+                        score += Math.Min(6, opt.SweepCount * 2);
+                    if (opt.OiDelta != 0m || candle.Close < candle.Open)
+                        score += 5;
+
+                    score = Math.Clamp(score, 55, 99);
+
+                    decimal triggerPrice = hasBearAbs
+                        ? rows[bestBearAbsIdx].Price
+                        : rows[bestTrappedBuyersIdx].Price;
+
+                    string reason = (hasBearAbs && hasTrapBuyers)
+                        ? "ABS ASK + A.PIÉGÉS + PUT FLOW"
+                        : (hasBearAbs ? "ABS ASK + PUT FLOW" : "A.PIÉGÉS + PUT FLOW");
+
+                    return new VisualTradeSignal
+                    {
+                        Bar = bar,
+                        Direction = -1,
+                        TriggerPrice = triggerPrice,
+                        EntryPrice = candle.Close,
+                        StopPrice = candle.High + step * 2m,
+                        ConfluenceScore = score,
+                        CallFlowPct = opt.CallFlowPct,
+                        PutFlowPct = opt.PutFlowPct,
+                        PutCallRatio = opt.PutCallRatio,
+                        OiDelta = opt.OiDelta,
+                        SweepCount = opt.SweepCount,
+                        ReasonTag = reason
+                    };
+                }
+            }
+
+            return sig;
         }
 
         // =====================================================================
@@ -928,8 +1585,6 @@ namespace ATAS.Indicators.Custom
                     decimal ask = rows[i].Ask;
 
                     // --- A. Vendeurs Piégés en bas de bougie (Trapped Sellers ▲ -> Signal Haussier) ---
-                    // Vendeurs agressifs au marché (Bid >> Ask) dans la mèche basse ou le bas du range,
-                    // mais le prix rejette vers le haut et clôture au-dessus d'eux (vendeurs en perte latente).
                     bool inLowerTrapZone = price <= trapLowerZone || price <= bodyLow;
                     bool closedAboveSellers = candle.Close >= price + minRejectDist;
                     bool inLowerWickOrBullClose = !_requireStrictWickOrOppositeClose || (price <= bodyLow || candle.Close > candle.Open);
@@ -960,8 +1615,6 @@ namespace ATAS.Indicators.Custom
                     }
 
                     // --- B. Acheteurs Piégés en haut de bougie (Trapped Buyers ▼ -> Signal Baissier) ---
-                    // Acheteurs agressifs au marché (Ask >> Bid) dans la mèche haute ou le haut du range,
-                    // mais le prix rejette vers le bas et clôture en dessous d'eux (acheteurs en perte latente).
                     bool inUpperTrapZone = price >= trapUpperZone || price >= bodyHigh;
                     bool closedBelowBuyers = candle.Close <= price - minRejectDist;
                     bool inUpperWickOrBearClose = !_requireStrictWickOrOppositeClose || (price >= bodyHigh || candle.Close < candle.Open);
@@ -1039,6 +1692,7 @@ namespace ATAS.Indicators.Custom
             // Listes des événements détectés pour projeter les rayons S/R et alimenter le HUD
             var activeAbsRays = new List<RaySignalEvent>();
             var activeTrappedRays = new List<RaySignalEvent>();
+            var visibleTradeSignals = new List<(VisualTradeSignal sig, IndicatorCandle candle, int xMid, int xRight)>();
 
             int visibleHvnCells = 0;
             int visibleLvnCells = 0;
@@ -1046,19 +1700,29 @@ namespace ATAS.Indicators.Custom
             int visibleBearAbs = 0;
             int visibleTrappedSellers = 0;
             int visibleTrappedBuyers = 0;
+            int visibleBuySignals = 0;
+            int visibleSellSignals = 0;
 
             RaySignalEvent? latestAbsorption = null;
             RaySignalEvent? latestTrapped = null;
+            VisualTradeSignal? latestTradeSignal = null;
+            BarOptionsFlowMetrics latestBarOptMetrics = default;
 
-            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN, Heavy Absorption & Trapped Traders
+            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN, Heavy Absorption, Trapped Traders & Options Flow
             for (int bar = firstBar; bar <= lastBar; bar++)
             {
                 var candle = GetCandle(bar);
                 var rows = AnalyzeBarClusters(
                     candle, tickSize,
-                    out _, out _, out _, out _, out _, out _);
+                    out _, out _,
+                    out int bestBullAbsIdx, out int bestBearAbsIdx,
+                    out int bestTrapSellersIdx, out int bestTrapBuyersIdx);
                 if (rows.Length == 0)
                     continue;
+
+                var barOpt = AnalyzeBarOptionsFlow(bar, candle, rows, tickSize);
+                if (bar == lastBar)
+                    latestBarOptMetrics = barOpt;
 
                 int xStart = ChartInfo.GetXByBar(bar, true);
                 int xEnd = ChartInfo.GetXByBar(bar + 1, true);
@@ -1142,7 +1806,6 @@ namespace ATAS.Indicators.Custom
                             var trapPen = new RenderPen(trapBorder, 2f, DashStyle.DashDot);
                             context.DrawRectangle(trapPen, cellRect);
 
-                            // Barre latérale droite distinctive pour les Traders Piégés
                             Rectangle rightAccent = new Rectangle(cellRect.Right - 4, cellRect.Top, 4, cellRect.Height);
                             context.FillRectangle(trapBorder, rightAccent);
 
@@ -1186,11 +1849,9 @@ namespace ATAS.Indicators.Custom
                         var absPen = new RenderPen(absBorder, AbsBorderThickness);
                         context.DrawRectangle(absPen, cellRect);
 
-                        // Barre latérale gauche lumineuse d'absorption
                         Rectangle accentBar = new Rectangle(cellRect.Left, cellRect.Top, Math.Max(3, AbsBorderThickness + 1), cellRect.Height);
                         context.FillRectangle(absBorder, accentBar);
 
-                        // Si le niveau est AUSSI un niveau d'acheteurs/vendeurs piégés : bordure droite bicolore
                         if (r.TrappedSide != 0)
                         {
                             Color trapCol = r.TrappedSide > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor;
@@ -1249,6 +1910,23 @@ namespace ATAS.Indicators.Custom
                     int extraOffset = (ShowBarExtremeMarker && barBestAbsSide == barBestTrapSide) ? (BarMarkerSize * 2 + 4) : 0;
                     DrawExtremeMarker(context, candle, barBestTrapSide, trapCol, xMid, rowHeight, AbsorptionMarkerType.Arrow, extraOffset);
                 }
+
+                // Évaluation du signal visuel Achat / Vente prenant en compte le Flux d'Options ATAS X
+                if (_enableVisualBuySellAlerts)
+                {
+                    var sig = EvaluateBuySellSignal(
+                        bar, candle, rows, tickSize,
+                        bestBullAbsIdx, bestBearAbsIdx,
+                        bestTrapSellersIdx, bestTrapBuyersIdx,
+                        barOpt);
+
+                    if (sig.Direction != 0)
+                    {
+                        if (sig.Direction > 0) visibleBuySignals++; else visibleSellSignals++;
+                        latestTradeSignal = sig;
+                        visibleTradeSignals.Add((sig, candle, xMid, cellX + cellW));
+                    }
+                }
             }
 
             // 3. Projection des rayons Support / Résistance des Heavy Absorptions
@@ -1263,7 +1941,23 @@ namespace ATAS.Indicators.Custom
                 RenderSignalRays(context, activeTrappedRays, lastBar, step, cellFont, TrappedRayMaxBars, true);
             }
 
-            // 5. Rendu du panneau HUD récapitulatif en temps réel
+            // 5. Rendu des Cartouches Visuels ACHAT ▲ / VENTE ▼ et Niveaux Entrée/Stop sur les bougies
+            if (_enableVisualBuySellAlerts && visibleTradeSignals.Count > 0)
+            {
+                for (int i = 0; i < visibleTradeSignals.Count; i++)
+                {
+                    var item = visibleTradeSignals[i];
+                    RenderBuySellSignalOnBar(context, item.sig, item.candle, item.xMid, item.xRight, lastBar, rowHeight, boldFont, cellFont);
+                }
+            }
+
+            // 6. Rendu de la Bannière Visuelle d'Alerte Achat/Vente en haut du graphique
+            if (_enableVisualBuySellAlerts && ShowVisualAlertBanner && latestTradeSignal.HasValue)
+            {
+                RenderVisualAlertBanner(context, chartRegion, latestTradeSignal.Value, latestBarOptMetrics);
+            }
+
+            // 7. Rendu du panneau HUD récapitulatif en temps réel
             if (ShowHudPanel)
             {
                 RenderHud(
@@ -1273,8 +1967,143 @@ namespace ATAS.Indicators.Custom
                     compositePocPrice, compositePocVol,
                     visibleBullAbs, visibleBearAbs,
                     visibleTrappedSellers, visibleTrappedBuyers,
-                    latestAbsorption, latestTrapped);
+                    visibleBuySignals, visibleSellSignals,
+                    latestAbsorption, latestTrapped,
+                    latestTradeSignal, latestBarOptMetrics);
             }
+        }
+
+        // =====================================================================
+        // Rendu du Cartouche Visuel ACHAT ▲ / VENTE ▼ et des lignes Entrée/SL
+        // =====================================================================
+        private void RenderBuySellSignalOnBar(
+            RenderContext context,
+            VisualTradeSignal sig,
+            IndicatorCandle candle,
+            int xCenter,
+            int xCellRight,
+            int lastVisibleBar,
+            int rowHeight,
+            RenderFont boldFont,
+            RenderFont smallFont)
+        {
+            bool isBuy = sig.Direction > 0;
+            Color sigColor = isBuy ? BuySignalColor : SellSignalColor;
+            Color darkBg = isBuy
+                ? Color.FromArgb(235, 6, 48, 34)
+                : Color.FromArgb(235, 58, 12, 26);
+
+            // Lignes de Prix d'Entrée (ENT) et Stop-Loss (SL) suggérés
+            if (ShowEntryAndStopLevels)
+            {
+                int endBar = Math.Min(lastVisibleBar + 1, sig.Bar + 4);
+                int x2 = Math.Max(xCellRight + 32, ChartInfo!.GetXByBar(endBar, true));
+                int yEntry = ChartInfo!.GetYByPrice(sig.EntryPrice, false);
+                int yStop = ChartInfo!.GetYByPrice(sig.StopPrice, false);
+
+                var entryPen = new RenderPen(sigColor, 2f, DashStyle.Solid);
+                var stopPen = new RenderPen(Color.FromArgb(210, 255, 165, 0), 1.5f, DashStyle.Dot);
+
+                context.DrawLine(entryPen, xCellRight + 2, yEntry, x2, yEntry);
+                context.DrawLine(stopPen, xCellRight + 2, yStop, x2, yStop);
+
+                string entTxt = $"{(isBuy ? "ACHAT" : "VENTE")} @ {sig.EntryPrice}";
+                string slTxt = $"SL @ {sig.StopPrice}";
+                context.DrawString(entTxt, smallFont, sigColor, xCellRight + 6, yEntry - 14);
+                context.DrawString(slTxt, smallFont, Color.FromArgb(255, 251, 191, 36), xCellRight + 6, yStop + 2);
+            }
+
+            if (!ShowSignalCalloutOnBar)
+                return;
+
+            int baseOffset = Math.Max(22, rowHeight + BarMarkerSize * 2 + 12);
+            int yExtreme = isBuy
+                ? ChartInfo!.GetYByPrice(candle.Low, false) + baseOffset
+                : ChartInfo!.GetYByPrice(candle.High, false) - baseOffset;
+
+            string line1 = isBuy
+                ? $"★ ACHAT ▲ [{sig.ConfluenceScore}%]"
+                : $"★ VENTE ▼ [{sig.ConfluenceScore}%]";
+            string line2 = isBuy
+                ? $"Calls {sig.CallFlowPct:0}% | PCR {sig.PutCallRatio:0.00}"
+                : $"Puts {sig.PutFlowPct:0}% | PCR {sig.PutCallRatio:0.00}";
+
+            Size sz1 = context.MeasureString(line1, boldFont);
+            Size sz2 = context.MeasureString(line2, smallFont);
+            int boxW = Math.Max(sz1.Width, sz2.Width) + 16;
+            int boxH = sz1.Height + sz2.Height + 10;
+
+            int boxX = xCenter - boxW / 2;
+            int boxY = isBuy ? yExtreme + 8 : yExtreme - boxH - 8;
+
+            // Flèche de liaison entre le prix et le cartouche
+            Point tip = isBuy
+                ? new Point(xCenter, yExtreme - 2)
+                : new Point(xCenter, yExtreme + 2);
+            Point baseLeft = new Point(xCenter - 7, isBuy ? boxY : boxY + boxH);
+            Point baseRight = new Point(xCenter + 7, isBuy ? boxY : boxY + boxH);
+            context.FillPolygon(sigColor, new[] { tip, baseLeft, baseRight });
+
+            // Halo extérieur + Cartouche ACHAT / VENTE
+            Rectangle glowRect = new Rectangle(boxX - 2, boxY - 2, boxW + 4, boxH + 4);
+            context.FillRectangle(Color.FromArgb(65, sigColor.R, sigColor.G, sigColor.B), glowRect);
+
+            Rectangle boxRect = new Rectangle(boxX, boxY, boxW, boxH);
+            context.FillRectangle(darkBg, boxRect);
+            context.DrawRectangle(new RenderPen(sigColor, 2f), boxRect);
+
+            // Bandeau supérieur coloré sur le cartouche
+            context.FillRectangle(sigColor, new Rectangle(boxX, boxY, boxW, 3));
+
+            context.DrawString(line1, boldFont, sigColor, boxX + (boxW - sz1.Width) / 2, boxY + 4);
+            context.DrawString(line2, smallFont, Color.White, boxX + (boxW - sz2.Width) / 2, boxY + 5 + sz1.Height);
+        }
+
+        // =====================================================================
+        // Bannière Visuelle d'Alerte ACHAT / VENTE en haut du graphique ATAS X
+        // =====================================================================
+        private void RenderVisualAlertBanner(
+            RenderContext context,
+            Rectangle chartRegion,
+            VisualTradeSignal sig,
+            BarOptionsFlowMetrics latestOpt)
+        {
+            bool isBuy = sig.Direction > 0;
+            Color accent = isBuy ? BuySignalColor : SellSignalColor;
+            Color bg = isBuy
+                ? Color.FromArgb(235, 6, 42, 30)
+                : Color.FromArgb(235, 52, 12, 24);
+
+            var headerFont = new RenderFont("Consolas", 11, FontStyle.Bold);
+            var subFont = new RenderFont("Consolas", 10);
+
+            string title = isBuy
+                ? $"▲ ALERTE VISUELLE ACHAT (BUY) @ {sig.EntryPrice}  |  STOP: {sig.StopPrice}  |  SCORE: {sig.ConfluenceScore}%"
+                : $"▼ ALERTE VISUELLE VENTE (SELL) @ {sig.EntryPrice}  |  STOP: {sig.StopPrice}  |  SCORE: {sig.ConfluenceScore}%";
+
+            string optSource = latestOpt.IsNativeChainActive ? "ATAS X Options Chain + Footprint" : "ATAS X Options Flow (Calls/Puts + ΔOI + Sweeps)";
+            string detail = $"Flux d'Options [{optSource}] : Calls {sig.CallFlowPct:0}% vs Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | ΔOI {sig.OiDelta:+0;-0;0} | {sig.ReasonTag}";
+
+            Size s1 = context.MeasureString(title, headerFont);
+            Size s2 = context.MeasureString(detail, subFont);
+
+            int w = Math.Max(s1.Width, s2.Width) + 28;
+            int h = s1.Height + s2.Height + 16;
+
+            int x = chartRegion.Left + Math.Max(14, (chartRegion.Width - w) / 2);
+            // Si le HUD est en haut à gauche, on évite tout chevauchement
+            if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
+                x = Math.Max(x, chartRegion.Left + 380);
+
+            int y = chartRegion.Top + 10;
+
+            Rectangle bannerRect = new Rectangle(x, y, w, h);
+            context.FillRectangle(bg, bannerRect);
+            context.DrawRectangle(new RenderPen(accent, 2f), bannerRect);
+            context.FillRectangle(accent, new Rectangle(x, y, 6, h));
+
+            context.DrawString(title, headerFont, accent, x + 14, y + 5);
+            context.DrawString(detail, subFont, Color.FromArgb(255, 226, 232, 240), x + 14, y + 8 + s1.Height);
         }
 
         // =====================================================================
@@ -1560,24 +2389,45 @@ namespace ATAS.Indicators.Custom
             int bearAbsCount,
             int trappedSellersCount,
             int trappedBuyersCount,
+            int buySignalsCount,
+            int sellSignalsCount,
             RaySignalEvent? latestAbs,
-            RaySignalEvent? latestTrapped)
+            RaySignalEvent? latestTrapped,
+            VisualTradeSignal? latestSignal,
+            BarOptionsFlowMetrics latestOpt)
         {
             var titleFont = new RenderFont("Consolas", 11, FontStyle.Bold);
             var bodyFont = new RenderFont("Consolas", 10);
 
             string sym = InstrumentInfo?.Instrument ?? "Instrument";
+            string optBiasTxt = latestOpt.OptionsBias > 0
+                ? "CALLS HAUSSIER ▲"
+                : (latestOpt.OptionsBias < 0 ? "PUTS BAISSIER ▼" : "NEUTRE");
+            Color optBiasCol = latestOpt.OptionsBias > 0
+                ? BuySignalColor
+                : (latestOpt.OptionsBias < 0 ? SellSignalColor : Color.FromArgb(255, 200, 210, 225));
+
             var lines = new List<(string text, Color color, bool bold)>
             {
-                ($"FOOTPRINT HVN/LVN • ABSORPTION • PIÉGÉS [{sym}]", Color.White, true),
+                ($"FOOTPRINT • ABS • PIÉGÉS • OPTIONS FLOW [{sym}]", Color.White, true),
                 ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}", BarHvnColor, false),
                 ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}", BarLvnColor, false),
                 ($"VPOC Composite: {(compPocPrice > 0m ? $"{compPocPrice} (Vol {compPocVol:0})" : "N/A")}", CompositeHvnColor, false),
                 ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)", Color.FromArgb(255, 220, 230, 240), false),
-                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}", Color.FromArgb(255, 16, 245, 150), false)
+                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}", Color.FromArgb(255, 16, 245, 150), false),
+                ($"Flux Options ATAS X : Calls {latestOpt.CallFlowPct:0}% / Puts {latestOpt.PutFlowPct:0}% (PCR {latestOpt.PutCallRatio:0.00}) [{optBiasTxt}]", optBiasCol, true),
+                ($"Alertes Visuelles   : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (ΔOI {latestOpt.OiDelta:+0;-0;0}, Sweeps {latestOpt.SweepCount})", Color.FromArgb(255, 125, 211, 252), false)
             };
 
-            if (latestAbs.HasValue)
+            if (latestSignal.HasValue)
+            {
+                var s = latestSignal.Value;
+                bool isBuy = s.Direction > 0;
+                string tag = isBuy ? "★ SIGNAL ACHAT ▲" : "★ SIGNAL VENTE ▼";
+                Color c = isBuy ? BuySignalColor : SellSignalColor;
+                lines.Add(($"{tag}: Entrée {s.EntryPrice} | SL {s.StopPrice} | Score {s.ConfluenceScore}% ({s.ReasonTag})", c, true));
+            }
+            else if (latestAbs.HasValue)
             {
                 var a = latestAbs.Value;
                 bool bull = a.Side > 0;
@@ -1593,10 +2443,6 @@ namespace ATAS.Indicators.Custom
                 string tag = bull ? "▲ VENDEURS PIÉGÉS" : "▼ ACHETEURS PIÉGÉS";
                 Color c = bull ? TrappedSellersBullColor : TrappedBuyersBearColor;
                 lines.Add(($"{tag}: {t.Price} | Vol {t.Volume:0} | Δ {t.Delta:+0;-0;0}", c, true));
-            }
-            else if (!latestAbs.HasValue)
-            {
-                lines.Add(("Aucun signal Absorption / Piégés sur la plage visible", Color.FromArgb(255, 150, 160, 175), false));
             }
 
             int pad = 10;
@@ -1626,8 +2472,8 @@ namespace ATAS.Indicators.Custom
             };
 
             Rectangle boxRect = new Rectangle(x, y, boxW, boxH);
-            context.FillRectangle(Color.FromArgb(215, 13, 18, 30), boxRect);
-            context.DrawRectangle(new RenderPen(Color.FromArgb(220, 56, 189, 248), 1.5f), boxRect);
+            context.FillRectangle(Color.FromArgb(220, 11, 16, 28), boxRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(225, 56, 189, 248), 1.5f), boxRect);
 
             int curY = y + pad;
             for (int i = 0; i < lines.Count; i++)
