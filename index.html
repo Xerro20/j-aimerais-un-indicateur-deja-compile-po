@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Footprint HVN / LVN & Heavy Absorption — Indicateur compilé pour ATAS X</title>
+  <title>Footprint HVN / LVN, Absorption &amp; Acheteurs/Vendeurs Piégés — Indicateur compilé ATAS X</title>
   <style>
     :root {
       --bg-main: #090d16;
@@ -17,6 +17,8 @@
       --lvn: #a855f7;
       --bull-abs: #00f0ff;
       --bear-abs: #ff2d87;
+      --trap-sell: #10f596;
+      --trap-buy: #ff5a36;
       --accent: #38bdf8;
       --success: #10b981;
     }
@@ -33,7 +35,7 @@
       padding-bottom: 60px;
     }
     .container {
-      max-width: 1240px;
+      max-width: 1260px;
       margin: 0 auto;
       padding: 0 24px;
     }
@@ -66,8 +68,13 @@
       color: #34d399;
       border-color: rgba(16, 185, 129, 0.35);
     }
+    .badge.new {
+      background: rgba(255, 90, 54, 0.16);
+      color: #ff8266;
+      border-color: rgba(255, 90, 54, 0.4);
+    }
     h1 {
-      font-size: 2.15rem;
+      font-size: 2.1rem;
       font-weight: 800;
       letter-spacing: -0.02em;
       margin-bottom: 10px;
@@ -75,8 +82,8 @@
     }
     .subtitle {
       color: var(--muted);
-      font-size: 1.05rem;
-      max-width: 840px;
+      font-size: 1.03rem;
+      max-width: 900px;
       margin-bottom: 24px;
     }
     .cta-bar {
@@ -152,7 +159,7 @@
     }
     .sim-grid {
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 335px 1fr;
       gap: 20px;
       align-items: start;
     }
@@ -168,7 +175,7 @@
       padding: 20px;
     }
     .control-group {
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     .control-group:last-child {
       margin-bottom: 0;
@@ -176,9 +183,9 @@
     .control-label {
       display: flex;
       justify-content: space-between;
-      font-size: 0.85rem;
+      font-size: 0.83rem;
       font-weight: 600;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
       color: #cbd5e1;
     }
     .control-val {
@@ -193,7 +200,7 @@
     .toggle-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 9px;
       margin-top: 12px;
       padding-top: 12px;
       border-top: 1px solid var(--border);
@@ -202,7 +209,7 @@
       display: flex;
       align-items: center;
       gap: 9px;
-      font-size: 0.86rem;
+      font-size: 0.85rem;
       cursor: pointer;
       user-select: none;
     }
@@ -214,16 +221,16 @@
     .legend-pills {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
       margin-bottom: 14px;
     }
     .pill {
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      padding: 5px 11px;
+      padding: 5px 10px;
       border-radius: 6px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 600;
       background: var(--bg-panel);
       border: 1px solid var(--border);
@@ -250,11 +257,11 @@
     /* Feature & Install Cards */
     .three-col {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
       gap: 20px;
     }
     .feature-card h3 {
-      font-size: 1.1rem;
+      font-size: 1.08rem;
       margin-bottom: 10px;
       display: flex;
       align-items: center;
@@ -263,7 +270,7 @@
     .feature-card ul {
       padding-left: 18px;
       color: var(--muted);
-      font-size: 0.92rem;
+      font-size: 0.91rem;
     }
     .feature-card li {
       margin-bottom: 7px;
@@ -303,19 +310,20 @@
     <div class="container">
       <div class="badge-row">
         <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0)</span>
-        <span class="badge">Compatible ATAS X (Windows & macOS)</span>
-        <span class="badge">0 Erreur • 0 Dépendance Externe</span>
+        <span class="badge new">+ NOUVEAU : Acheteurs &amp; Vendeurs Piégés (Trapped Traders)</span>
+        <span class="badge">Compatible ATAS X (Windows &amp; macOS)</span>
       </div>
-      <h1>Footprint HVN / LVN &amp; Heavy Absorption (ATAS X)</h1>
+      <h1>Footprint HVN / LVN, Heavy Absorption &amp; Traders Piégés (ATAS X)</h1>
       <p class="subtitle">
-        Indicateur Order Flow prêt à l'emploi pour <strong>ATAS X</strong> qui détecte et encadre automatiquement les
-        <strong>HVN</strong> (High Volume Nodes &amp; POC), les <strong>LVN</strong> (Low Volume Nodes / poches de vide) et les
-        <strong>Heavy Absorptions</strong> (Bid &amp; Ask) directement sur votre graphique Footprint.
+        Indicateur Order Flow déjà compilé pour <strong>ATAS X</strong> qui détecte et encadre automatiquement les
+        <strong>HVN</strong> (High Volume Nodes &amp; POC), les <strong>LVN</strong> (Low Volume Nodes), les
+        <strong>Heavy Absorptions</strong> (Bid &amp; Ask) ainsi que les <strong>Acheteurs Piégés ▼</strong> et
+        <strong>Vendeurs Piégés ▲</strong> directement sur votre graphique Footprint.
       </p>
 
       <div class="cta-bar">
         <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
-          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (39.5 Ko)
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll
         </a>
         <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
           📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
@@ -327,9 +335,9 @@
 
       <div class="meta-strip">
         <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll</span>
-        <span><strong>Nom dans ATAS X :</strong> Footprint HVN / LVN &amp; Heavy Absorption</span>
+        <span><strong>Nom dans ATAS X :</strong> Footprint HVN / LVN, Absorption &amp; Trapped Traders</span>
         <span><strong>Catégorie :</strong> Order Flow - Custom</span>
-        <span><strong>SHA-256 :</strong> c744068c521de62b...03adb39fa</span>
+        <span><strong>Cible :</strong> .NET 10.0 (ATAS X)</span>
       </div>
     </div>
   </header>
@@ -341,7 +349,7 @@
         <div>
           <h2 class="section-title">Aperçu Interactif du Rendu sur le Footprint ATAS X</h2>
           <p style="color: var(--muted); font-size: 0.92rem;">
-            Ajustez les seuils ci-dessous pour visualiser en temps réel comment l'indicateur filtre les HVN, LVN et Heavy Absorptions sur chaque cluster Bid × Ask.
+            Ajustez les seuils ci-dessous pour visualiser comment l'indicateur identifie les <strong>HVN</strong>, <strong>LVN</strong>, <strong>Heavy Absorptions</strong> et les <strong>Acheteurs / Vendeurs Piégés</strong> sur chaque cluster Bid × Ask.
           </p>
         </div>
       </div>
@@ -371,25 +379,33 @@
               <span>Multiplicateur Heavy Absorption</span>
               <span class="control-val" id="valAbsMult">1.6x</span>
             </div>
-            <input type="range" id="rngAbsMult" min="11" max="30" value="16" />
+            <input type="range" id="rngAbsMult" min="12" max="30" value="16" />
           </div>
 
           <div class="control-group">
             <div class="control-label">
-              <span>Dominance Min Bid/Ask (%)</span>
-              <span class="control-val" id="valAbsDom">62%</span>
+              <span>Multiplicateur Traders Piégés</span>
+              <span class="control-val" id="valTrapMult">1.15x</span>
             </div>
-            <input type="range" id="rngAbsDom" min="52" max="85" value="62" />
+            <input type="range" id="rngTrapMult" min="8" max="25" value="11" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span>Dominance Agressive Piégés (%)</span>
+              <span class="control-val" id="valTrapDom">60%</span>
+            </div>
+            <input type="range" id="rngTrapDom" min="52" max="85" value="60" />
           </div>
 
           <div class="toggle-list">
             <label class="toggle-item">
-              <input type="checkbox" id="chkBarHvn" checked />
-              <span>Afficher HVN &amp; POC Intra-Bougie</span>
+              <input type="checkbox" id="chkTrapped" checked />
+              <span style="color: #10f596; font-weight: 600;">Afficher Acheteurs &amp; Vendeurs Piégés (▲/▼)</span>
             </label>
             <label class="toggle-item">
-              <input type="checkbox" id="chkBarLvn" checked />
-              <span>Afficher LVN Intra-Bougie (Creux)</span>
+              <input type="checkbox" id="chkTrapRays" checked />
+              <span>Projeter Rayons de Liquidation (Piégés)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkAbs" checked />
@@ -398,6 +414,14 @@
             <label class="toggle-item">
               <input type="checkbox" id="chkRays" checked />
               <span>Projeter Rayons S/R d'Absorption</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBarHvn" checked />
+              <span>Afficher HVN &amp; POC Intra-Bougie</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBarLvn" checked />
+              <span>Afficher LVN Intra-Bougie (Creux)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkComp" checked />
@@ -412,59 +436,57 @@
 
         <div class="card" style="padding: 16px;">
           <div class="legend-pills">
-            <span class="pill"><span class="dot" style="background: #ff8c00;"></span> POC (Point of Control)</span>
-            <span class="pill"><span class="dot" style="background: #f59e0b;"></span> HVN (High Volume Node)</span>
-            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN (Low Volume Node)</span>
-            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bullish Heavy Absorption (Bid absorbé)</span>
-            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bearish Heavy Absorption (Ask absorbé)</span>
+            <span class="pill"><span class="dot" style="background: #ff8c00;"></span> POC / HVN</span>
+            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN (Creux)</span>
+            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bull Heavy Absorption</span>
+            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bear Heavy Absorption</span>
+            <span class="pill"><span class="dot" style="background: #10f596;"></span> Vendeurs Piégés ▲ (Signal Bullish)</span>
+            <span class="pill"><span class="dot" style="background: #ff5a36;"></span> Acheteurs Piégés ▼ (Signal Bearish)</span>
           </div>
           <div class="canvas-wrap">
-            <canvas id="fpCanvas" width="860" height="520"></canvas>
+            <canvas id="fpCanvas" width="880" height="535"></canvas>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Installation Guide -->
+    <!-- Feature & Installation Guide -->
     <section class="section">
-      <h2 class="section-title" style="margin-bottom: 16px;">Installation Rapide dans ATAS X</h2>
+      <h2 class="section-title" style="margin-bottom: 16px;">Fonctionnement &amp; Installation dans ATAS X</h2>
       <div class="three-col">
         <div class="card feature-card">
-          <h3>🪟 1. Installation sous Windows</h3>
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
-            Copiez le fichier <strong>FootprintHvnLvnAbsorption.dll</strong> téléchargé ci-dessus dans votre dossier d'indicateurs ATAS :
+          <h3>🪤 1. Acheteurs &amp; Vendeurs Piégés</h3>
+          <ul>
+            <li><strong>Vendeurs Piégés ▲ (Bullish) :</strong> Vendeurs au marché agressifs (<code>Bid &gt;&gt; Ask</code>, imbalance diagonale vendeuse) dans la mèche basse / bas du range, mais la bougie rejette et clôture au-dessus d'eux. Leurs rachats forcés (stops) propulsent le prix à la hausse.</li>
+            <li><strong>Acheteurs Piégés ▼ (Bearish) :</strong> Acheteurs au marché agressifs (<code>Ask &gt;&gt; Bid</code>, imbalance diagonale acheteuse) dans la mèche haute / sommet de bougie, suivis d'une clôture en dessous. Leurs liquidations alimentent la baisse.</li>
+            <li><strong>Confluence ABS + PIÉGÉ :</strong> Si un niveau cumule Heavy Absorption et Traders Piégés, la cellule affiche une double barre latérale bicolore et le badge <code>ABS+PIÉGÉ▲/▼</code>.</li>
+          </ul>
+        </div>
+
+        <div class="card feature-card">
+          <h3>🪟 2. Installation Windows &amp; macOS</h3>
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 6px;">
+            Copiez <strong>FootprintHvnLvnAbsorption.dll</strong> dans le dossier des indicateurs ATAS :
           </p>
           <div class="code-box">
             <span id="winPath">%USERPROFILE%\Documents\ATAS\Indicators</span>
             <button class="copy-btn" onclick="copyText('winPath', this)">Copier</button>
           </div>
-          <ul>
-            <li>Si Windows affiche un blocage de sécurité externe : clic droit sur la <code>.dll</code> → <strong>Propriétés</strong> → cochez <strong>Débloquer (Unblock)</strong>.</li>
-            <li>Dans ATAS X, ouvrez <strong>Indicators (Ctrl+I)</strong> → catégorie <strong>Order Flow - Custom</strong> → ajoutez <strong>Footprint HVN / LVN &amp; Heavy Absorption</strong>.</li>
-          </ul>
-        </div>
-
-        <div class="card feature-card">
-          <h3>🍎 2. Installation sous macOS (ATAS X)</h3>
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
-            Placez le fichier <strong>FootprintHvnLvnAbsorption.dll</strong> dans le répertoire utilisateur ATAS sur votre Mac :
-          </p>
           <div class="code-box">
             <span id="macPath">~/Documents/ATAS/Indicators/</span>
             <button class="copy-btn" onclick="copyText('macPath', this)">Copier</button>
           </div>
           <ul>
-            <li>Binaire compilé en <strong>.NET 10.0 multi-plateforme</strong> compatible nativement avec le moteur de rendu <code>OFT.Rendering</code> d'ATAS X.</li>
-            <li>Aucune dépendance tierce requise : le fichier <code>.dll</code> unique suffit.</li>
+            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint HVN / LVN, Absorption &amp; Trapped Traders</strong>.</li>
           </ul>
         </div>
 
         <div class="card feature-card">
-          <h3>🎯 3. Détails de la Détection Order Flow</h3>
+          <h3>📊 3. HVN, LVN &amp; Heavy Absorption</h3>
           <ul>
-            <li><strong>HVN Intra-Bar &amp; Composite :</strong> Identifie les pics locaux de volume (&ge; % du POC) par bougie ainsi que les bandes HVN du profil de volume glissant ou de session.</li>
-            <li><strong>LVN Intra-Bar &amp; Composite :</strong> Cible les creux de liquidité internes situés entre deux zones denses (&le; % du POC, hors dernier tick de mèche).</li>
-            <li><strong>Heavy Absorption :</strong> Détecte les volumes extrêmes (&ge; 1.6x la moyenne de la bougie) avec forte dominance Bid ou Ask (&ge; 62%), imbalance diagonale et clôture de rejet, puis projette un rayon S/R jusqu'à cassure du niveau.</li>
+            <li><strong>HVN Intra-Bar &amp; Composite :</strong> Identifie le POC et les pics locaux de volume (&ge; % du POC) ainsi que les zones HVN du profil composite.</li>
+            <li><strong>LVN Intra-Bar &amp; Composite :</strong> Cible les creux de liquidité internes situés entre deux zones denses (&le; % du POC).</li>
+            <li><strong>6 ValueDataSeries exposées :</strong> POC/HVN, LVN, Bull Absorption, Bear Absorption, Vendeurs Piégés ▲ et Acheteurs Piégés ▼ (compatibles stratégies et alertes ATAS).</li>
           </ul>
         </div>
       </div>
@@ -480,7 +502,6 @@
       setTimeout(() => (btn.textContent = old), 1500);
     }
 
-    // Realistic Footprint dataset (5 candles across 14 price ticks: 5890.00 to 5893.25)
     const prices = [
       5893.25, 5893.00, 5892.75, 5892.50, 5892.25, 5892.00, 5891.75,
       5891.50, 5891.25, 5891.00, 5890.75, 5890.50, 5890.25, 5890.00
@@ -498,18 +519,18 @@
           7:  { bid: 185, ask: 260 }, // POC
           8:  { bid: 110, ask: 125 },
           9:  { bid: 80,  ask: 90 },
-          10: { bid: 64,  ask: 45 },
-          11: { bid: 420, ask: 85 },  // Bullish Heavy Absorption at Bid!
-          12: { bid: 310, ask: 40 }   // Bullish Heavy Absorption at Bid!
+          10: { bid: 185, ask: 55 },  // Vendeurs Piégés en mèche basse !
+          11: { bid: 420, ask: 85 },  // Heavy Absorption + Vendeurs Piégés !
+          12: { bid: 240, ask: 40 }   // Vendeurs Piégés au plus bas !
         }
       },
       {
         time: "15:35",
         openIdx: 4, closeIdx: 6, highIdx: 1, lowIdx: 8,
         levels: {
-          1: { bid: 45,  ask: 390 }, // Bearish Heavy Absorption at Ask!
-          2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption at Ask!
-          3: { bid: 90,  ask: 110 },
+          1: { bid: 35,  ask: 235 }, // Acheteurs Piégés en mèche haute !
+          2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption + Acheteurs Piégés !
+          3: { bid: 50,  ask: 210 }, // Acheteurs Piégés en mèche haute !
           4: { bid: 170, ask: 195 }, // HVN
           5: { bid: 20,  ask: 15 },  // LVN pocket
           6: { bid: 210, ask: 185 },
@@ -519,9 +540,10 @@
       },
       {
         time: "15:40",
-        openIdx: 6, closeIdx: 10, highIdx: 5, lowIdx: 11,
+        openIdx: 6, closeIdx: 9, highIdx: 4, lowIdx: 11,
         levels: {
-          5:  { bid: 40,  ask: 55 },
+          4:  { bid: 30,  ask: 195 }, // Acheteurs Piégés dans la mèche supérieure !
+          5:  { bid: 45,  ask: 170 }, // Acheteurs Piégés !
           6:  { bid: 130, ask: 90 },
           7:  { bid: 280, ask: 240 }, // POC / HVN
           8:  { bid: 25,  ask: 18 },  // LVN pocket
@@ -541,22 +563,22 @@
           8:  { bid: 110, ask: 130 },
           9:  { bid: 85,  ask: 90 },
           10: { bid: 70,  ask: 60 },
-          11: { bid: 95,  ask: 50 },
-          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption at Bid!
-          13: { bid: 360, ask: 55 }   // Bullish Heavy Absorption at Bid!
+          11: { bid: 215, ask: 55 },  // Vendeurs Piégés dans la mèche basse !
+          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption + Vendeurs Piégés !
+          13: { bid: 265, ask: 45 }   // Vendeurs Piégés !
         }
       },
       {
         time: "15:50",
         openIdx: 5, closeIdx: 3, highIdx: 0, lowIdx: 7,
         levels: {
-          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption at Ask!
-          1: { bid: 85,  ask: 140 },
+          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption + Acheteurs Piégés !
+          1: { bid: 45,  ask: 215 }, // Acheteurs Piégés sous l'eau (clôture en row 3) !
           2: { bid: 120, ask: 160 },
           3: { bid: 245, ask: 290 }, // POC / HVN
           4: { bid: 190, ask: 215 }, // HVN
           5: { bid: 22,  ask: 16 },  // LVN
-          6: { bid: 160, ask: 140 },
+          6: { bid: 185, ask: 50 },  // Vendeurs Piégés en mèche basse !
           7: { bid: 50,  ask: 40 }
         }
       }
@@ -569,13 +591,17 @@
       const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
       const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
       const absMult = parseInt(document.getElementById("rngAbsMult").value, 10) / 10;
-      const absDom = parseInt(document.getElementById("rngAbsDom").value, 10);
+      const trapMult = parseInt(document.getElementById("rngTrapMult").value, 10) / 10;
+      const trapDom = parseInt(document.getElementById("rngTrapDom").value, 10);
 
       document.getElementById("valHvn").textContent = hvnPct + "%";
       document.getElementById("valLvn").textContent = lvnPct + "%";
       document.getElementById("valAbsMult").textContent = absMult.toFixed(1) + "x";
-      document.getElementById("valAbsDom").textContent = absDom + "%";
+      document.getElementById("valTrapMult").textContent = trapMult.toFixed(2) + "x";
+      document.getElementById("valTrapDom").textContent = trapDom + "%";
 
+      const showTrapped = document.getElementById("chkTrapped").checked;
+      const showTrapRays = document.getElementById("chkTrapRays").checked;
       const showBarHvn = document.getElementById("chkBarHvn").checked;
       const showBarLvn = document.getElementById("chkBarLvn").checked;
       const showAbs = document.getElementById("chkAbs").checked;
@@ -585,11 +611,10 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Background grid
-      const topPad = 42;
+      const topPad = 44;
       const rowH = 31;
       const leftPad = 18;
-      const priceAxisX = 785;
+      const priceAxisX = 805;
 
       ctx.fillStyle = "#070a12";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -628,20 +653,20 @@
           const y = topPad + r * rowH;
           if (v >= compMax * 0.65 && v >= compVols[r - 1] && v >= compVols[r + 1]) {
             compHvnCount++;
-            ctx.fillStyle = "rgba(250, 204, 21, 0.09)";
+            ctx.fillStyle = "rgba(250, 204, 21, 0.08)";
             ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
-            ctx.strokeStyle = "rgba(250, 204, 21, 0.45)";
+            ctx.strokeStyle = "rgba(250, 204, 21, 0.4)";
             ctx.beginPath();
             ctx.moveTo(leftPad, y + rowH / 2);
             ctx.lineTo(priceAxisX, y + rowH / 2);
             ctx.stroke();
           } else if (v > 0 && v <= compMax * 0.25 && v < compVols[r - 1] && v < compVols[r + 1]) {
             compLvnCount++;
-            ctx.fillStyle = "rgba(192, 132, 252, 0.08)";
+            ctx.fillStyle = "rgba(192, 132, 252, 0.07)";
             ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
             ctx.save();
             ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = "rgba(192, 132, 252, 0.5)";
+            ctx.strokeStyle = "rgba(192, 132, 252, 0.45)";
             ctx.beginPath();
             ctx.moveTo(leftPad, y + rowH / 2);
             ctx.lineTo(priceAxisX, y + rowH / 2);
@@ -655,17 +680,20 @@
       let totalLvn = 0;
       let totalBullAbs = 0;
       let totalBearAbs = 0;
+      let totalTrapSell = 0;
+      let totalTrapBuy = 0;
       let lastAbsEvent = null;
-      const rays = [];
+      let lastTrapEvent = null;
+      const absRays = [];
+      const trapRays = [];
 
-      const colStep = 148;
-      const cellW = 126;
+      const colStep = 152;
+      const cellW = 132;
 
       bars.forEach((bar, bIdx) => {
         const xLeft = leftPad + bIdx * colStep;
         const xMid = xLeft + cellW / 2;
 
-        // Compute bar stats
         const keys = Object.keys(bar.levels).map(Number).sort((a, b) => a - b);
         let pocVol = 0;
         let pocRow = -1;
@@ -685,10 +713,14 @@
         const yOpen = topPad + bar.openIdx * rowH + rowH / 2;
         const yClose = topPad + bar.closeIdx * rowH + rowH / 2;
         const isBullBar = bar.closeIdx < bar.openIdx;
+        const bodyHighIdx = Math.min(bar.openIdx, bar.closeIdx);
+        const bodyLowIdx = Math.max(bar.openIdx, bar.closeIdx);
+
         ctx.fillStyle = isBullBar ? "#10b981" : "#ef4444";
         ctx.fillRect(xLeft - 6, Math.min(yOpen, yClose) - 6, 3, Math.abs(yClose - yOpen) + 12);
 
         let barAbsSide = 0;
+        let barTrapSide = 0;
 
         keys.forEach((r, kPos) => {
           const lv = bar.levels[r];
@@ -705,7 +737,7 @@
           const isInternal = kPos > 0 && kPos < keys.length - 1;
           const isLvn = showBarLvn && isInternal && tot <= pocVol * (lvnPct / 100) && tot < prevTot && tot < nextTot;
 
-          // Heavy Absorption check
+          // Heavy Absorption check (note: row indices increase downward)
           let absSide = 0;
           let domPct = 0;
           if (showAbs && tot >= avgVol * absMult) {
@@ -713,10 +745,28 @@
             const inUpper = r <= bar.highIdx + 1;
             if (inLower && lv.bid > lv.ask) {
               domPct = Math.round((lv.bid / tot) * 100);
-              if (domPct >= absDom && bar.closeIdx <= r) absSide = 1;
+              if (domPct >= 62 && bar.closeIdx <= r) absSide = 1;
             } else if (inUpper && lv.ask > lv.bid) {
               domPct = Math.round((lv.ask / tot) * 100);
-              if (domPct >= absDom && bar.closeIdx >= r) absSide = -1;
+              if (domPct >= 62 && bar.closeIdx >= r) absSide = -1;
+            }
+          }
+
+          // Trapped Buyers / Trapped Sellers check
+          let trapSide = 0;
+          let trapPct = 0;
+          if (showTrapped && tot >= avgVol * trapMult) {
+            // Vendeurs Piégés en bas (row >= bodyLowIdx et closeIdx <= r - 1)
+            const inLowerTrap = r >= bodyLowIdx && bar.closeIdx <= r - 1;
+            // Acheteurs Piégés en haut (row <= bodyHighIdx et closeIdx >= r + 1)
+            const inUpperTrap = r <= bodyHighIdx && bar.closeIdx >= r + 1;
+
+            if (inLowerTrap && lv.bid > lv.ask) {
+              trapPct = Math.round((lv.bid / tot) * 100);
+              if (trapPct >= trapDom) trapSide = 1; // Vendeurs Piégés ▲ (Bullish)
+            } else if (inUpperTrap && lv.ask > lv.bid) {
+              trapPct = Math.round((lv.ask / tot) * 100);
+              if (trapPct >= trapDom) trapSide = -1; // Acheteurs Piégés ▼ (Bearish)
             }
           }
 
@@ -730,6 +780,12 @@
           if (absSide !== 0) {
             barAbsSide = absSide;
             if (absSide > 0) totalBullAbs++; else totalBearAbs++;
+            if (trapSide !== 0) {
+              barTrapSide = trapSide;
+              if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
+              lastTrapEvent = { price: prices[r], vol: tot, delta, side: trapSide };
+            }
+
             const col = absSide > 0 ? "#00f0ff" : "#ff2d87";
             ctx.fillStyle = absSide > 0 ? "rgba(0, 240, 255, 0.34)" : "rgba(255, 45, 135, 0.34)";
             ctx.fillRect(xLeft, yTop, cellW, h);
@@ -739,13 +795,45 @@
             ctx.fillStyle = col;
             ctx.fillRect(xLeft, yTop, 4, h);
 
+            if (trapSide !== 0) {
+              ctx.fillStyle = trapSide > 0 ? "#10f596" : "#ff5a36";
+              ctx.fillRect(xLeft + cellW - 4, yTop, 4, h);
+            }
+
             ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 10px Consolas, monospace";
-            const txt = (absSide > 0 ? "ABS▲ " : "ABS▼ ") + lv.bid + "x" + lv.ask + " " + domPct + "%";
-            ctx.fillText(txt, xLeft + 7, yTop + h / 2 + 3.5);
+            ctx.font = "bold 9.5px Consolas, monospace";
+            const prefix = trapSide !== 0
+              ? (absSide > 0 ? "ABS+PIÉGÉ▲ " : "ABS+PIÉGÉ▼ ")
+              : (absSide > 0 ? "ABS▲ " : "ABS▼ ");
+            const txt = prefix + lv.bid + "x" + lv.ask;
+            ctx.fillText(txt, xLeft + 6, yTop + h / 2 + 3.5);
 
             lastAbsEvent = { price: prices[r], vol: tot, delta, side: absSide };
-            rays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], vol: tot, side: absSide, xStart: xLeft + cellW });
+            absRays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], vol: tot, side: absSide, xStart: xLeft + cellW });
+          } else if (trapSide !== 0) {
+            barTrapSide = trapSide;
+            if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
+            const col = trapSide > 0 ? "#10f596" : "#ff5a36";
+            ctx.fillStyle = trapSide > 0 ? "rgba(16, 245, 150, 0.28)" : "rgba(255, 90, 54, 0.28)";
+            ctx.fillRect(xLeft, yTop, cellW, h);
+
+            ctx.save();
+            ctx.setLineDash([5, 2]);
+            ctx.strokeStyle = col;
+            ctx.lineWidth = 1.8;
+            ctx.strokeRect(xLeft, yTop, cellW, h);
+            ctx.restore();
+
+            ctx.fillStyle = col;
+            ctx.fillRect(xLeft + cellW - 4, yTop, 4, h);
+
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 9.5px Consolas, monospace";
+            const txt = (trapSide > 0 ? "V.PIÉGÉS▲ " : "A.PIÉGÉS▼ ") + lv.bid + "x" + lv.ask;
+            ctx.fillText(txt, xLeft + 5, yTop + h / 2 + 3.5);
+
+            lastTrapEvent = { price: prices[r], vol: tot, delta, side: trapSide };
+            trapRays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], delta, side: trapSide, xStart: xLeft + cellW });
           } else if (isHvn) {
             totalHvn++;
             const col = isPoc ? "#ff8c00" : "#f59e0b";
@@ -792,15 +880,39 @@
           const isBull = barAbsSide > 0;
           const mCol = isBull ? "#00f0ff" : "#ff2d87";
           const yExt = isBull
-            ? topPad + (bar.lowIdx + 1) * rowH + 11
-            : topPad + bar.highIdx * rowH - 11;
-          const sz = 7;
+            ? topPad + (bar.lowIdx + 1) * rowH + 10
+            : topPad + bar.highIdx * rowH - 10;
+          const sz = 6.5;
           ctx.fillStyle = mCol;
           ctx.beginPath();
-          ctx.moveTo(xMid, yExt - sz);
-          ctx.lineTo(xMid + sz, yExt);
-          ctx.lineTo(xMid, yExt + sz);
-          ctx.lineTo(xMid - sz, yExt);
+          ctx.moveTo(xMid - 8, yExt - sz);
+          ctx.lineTo(xMid - 8 + sz, yExt);
+          ctx.lineTo(xMid - 8, yExt + sz);
+          ctx.lineTo(xMid - 8 - sz, yExt);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Extreme Arrow Marker for Trapped Traders
+        if (barTrapSide !== 0) {
+          const isBull = barTrapSide > 0;
+          const tCol = isBull ? "#10f596" : "#ff5a36";
+          const yExt = isBull
+            ? topPad + (bar.lowIdx + 1) * rowH + 10
+            : topPad + bar.highIdx * rowH - 10;
+          const sz = 7;
+          const xPos = barAbsSide !== 0 ? xMid + 8 : xMid;
+          ctx.fillStyle = tCol;
+          ctx.beginPath();
+          if (isBull) {
+            ctx.moveTo(xPos, yExt - sz);
+            ctx.lineTo(xPos - sz, yExt + sz - 2);
+            ctx.lineTo(xPos + sz, yExt + sz - 2);
+          } else {
+            ctx.moveTo(xPos, yExt + sz);
+            ctx.lineTo(xPos - sz, yExt - sz + 2);
+            ctx.lineTo(xPos + sz, yExt - sz + 2);
+          }
           ctx.closePath();
           ctx.fill();
         }
@@ -808,12 +920,12 @@
         // Time footer
         ctx.fillStyle = "#94a3b8";
         ctx.font = "11px Consolas, monospace";
-        ctx.fillText(bar.time, xMid - 16, canvas.height - 12);
+        ctx.fillText(bar.time, xMid - 16, canvas.height - 10);
       });
 
       // Draw Projected Absorption S/R Rays
       if (showRays) {
-        rays.forEach(ray => {
+        absRays.forEach(ray => {
           const y = topPad + ray.rowIdx * rowH + rowH / 2;
           const col = ray.side > 0 ? "#00f0ff" : "#ff2d87";
           ctx.strokeStyle = col;
@@ -830,14 +942,36 @@
         });
       }
 
+      // Draw Projected Trapped Traders Liquidation Rays
+      if (showTrapRays) {
+        trapRays.forEach(ray => {
+          const y = topPad + ray.rowIdx * rowH + rowH / 2;
+          const col = ray.side > 0 ? "#10f596" : "#ff5a36";
+          ctx.save();
+          ctx.setLineDash([5, 4]);
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(ray.xStart, y);
+          ctx.lineTo(priceAxisX - 6, y);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.fillStyle = col;
+          ctx.font = "bold 9.5px Consolas, monospace";
+          const lbl = (ray.side > 0 ? "Vendeurs Piégés ▲ " : "Acheteurs Piégés ▼ ") + ray.price.toFixed(2);
+          ctx.fillText(lbl, priceAxisX - 165, y + 11);
+        });
+      }
+
       // Draw HUD Panel
       if (showHud) {
-        const hudW = 315;
-        const hudH = 116;
+        const hudW = 345;
+        const hudH = 148;
         const hx = priceAxisX - hudW - 10;
-        const hy = 10;
+        const hy = 8;
 
-        ctx.fillStyle = "rgba(13, 18, 30, 0.92)";
+        ctx.fillStyle = "rgba(13, 18, 30, 0.93)";
         ctx.fillRect(hx, hy, hudW, hudH);
         ctx.strokeStyle = "#38bdf8";
         ctx.lineWidth = 1.4;
@@ -845,31 +979,41 @@
 
         ctx.font = "bold 10.5px Consolas, monospace";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("FOOTPRINT HVN / LVN / ABSORPTION [ES]", hx + 10, hy + 18);
+        ctx.fillText("FOOTPRINT HVN/LVN • ABS • PIÉGÉS [ES]", hx + 10, hy + 18);
 
         ctx.font = "10px Consolas, monospace";
         ctx.fillStyle = "#f59e0b";
-        ctx.fillText(`HVN Intra-Bar: ${totalHvn}  | Zones HVN Profil: ${compHvnCount}`, hx + 10, hy + 36);
+        ctx.fillText(`HVN Intra-Bar: ${totalHvn}  | Zones HVN Profil: ${compHvnCount}`, hx + 10, hy + 35);
 
         ctx.fillStyle = "#c084fc";
-        ctx.fillText(`LVN Intra-Bar: ${totalLvn}  | Zones LVN Profil: ${compLvnCount}`, hx + 10, hy + 53);
+        ctx.fillText(`LVN Intra-Bar: ${totalLvn}  | Zones LVN Profil: ${compLvnCount}`, hx + 10, hy + 51);
 
         ctx.fillStyle = "#fde047";
-        ctx.fillText(`VPOC Composite: ${prices[compPocIdx].toFixed(2)} (Vol ${compMax})`, hx + 10, hy + 70);
+        ctx.fillText(`VPOC Composite: ${prices[compPocIdx].toFixed(2)} (Vol ${compMax})`, hx + 10, hy + 67);
 
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 87);
+        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 83);
+
+        ctx.fillStyle = "#10f596";
+        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 99);
 
         if (lastAbsEvent) {
           ctx.font = "bold 10px Consolas, monospace";
           ctx.fillStyle = lastAbsEvent.side > 0 ? "#00f0ff" : "#ff2d87";
           const tag = lastAbsEvent.side > 0 ? "▲ DERNIÈRE ABS BULL" : "▼ DERNIÈRE ABS BEAR";
-          ctx.fillText(`${tag}: ${lastAbsEvent.price.toFixed(2)} (Vol ${lastAbsEvent.vol})`, hx + 10, hy + 105);
+          ctx.fillText(`${tag}: ${lastAbsEvent.price.toFixed(2)} (Vol ${lastAbsEvent.vol})`, hx + 10, hy + 118);
+        }
+
+        if (lastTrapEvent) {
+          ctx.font = "bold 10px Consolas, monospace";
+          ctx.fillStyle = lastTrapEvent.side > 0 ? "#10f596" : "#ff5a36";
+          const tag = lastTrapEvent.side > 0 ? "▲ VENDEURS PIÉGÉS" : "▼ ACHETEURS PIÉGÉS";
+          ctx.fillText(`${tag}: ${lastTrapEvent.price.toFixed(2)} (Δ ${lastTrapEvent.delta > 0 ? "+" : ""}${lastTrapEvent.delta})`, hx + 10, hy + 135);
         }
       }
     }
 
-    ["rngHvn", "rngLvn", "rngAbsMult", "rngAbsDom", "chkBarHvn", "chkBarLvn", "chkAbs", "chkRays", "chkComp", "chkHud"]
+    ["rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngTrapDom", "chkTrapped", "chkTrapRays", "chkBarHvn", "chkBarLvn", "chkAbs", "chkRays", "chkComp", "chkHud"]
       .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
 
     analyzeAndRender();
