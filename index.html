@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Footprint HVN / LVN, Absorption &amp; Acheteurs/Vendeurs Piégés — Indicateur compilé ATAS X</title>
+  <title>Footprint HVN / LVN, Absorption, Traders Piégés &amp; Alertes Flux d'Options — ATAS X</title>
   <style>
     :root {
       --bg-main: #090d16;
@@ -19,6 +19,8 @@
       --bear-abs: #ff2d87;
       --trap-sell: #10f596;
       --trap-buy: #ff5a36;
+      --buy-sig: #00ff88;
+      --sell-sig: #ff2a55;
       --accent: #38bdf8;
       --success: #10b981;
     }
@@ -35,12 +37,12 @@
       padding-bottom: 60px;
     }
     .container {
-      max-width: 1260px;
+      max-width: 1280px;
       margin: 0 auto;
       padding: 0 24px;
     }
     header {
-      padding: 40px 0 28px;
+      padding: 36px 0 26px;
       border-bottom: 1px solid var(--border);
       background: rgba(9, 13, 22, 0.85);
       backdrop-filter: blur(8px);
@@ -69,12 +71,17 @@
       border-color: rgba(16, 185, 129, 0.35);
     }
     .badge.new {
-      background: rgba(255, 90, 54, 0.16);
-      color: #ff8266;
-      border-color: rgba(255, 90, 54, 0.4);
+      background: rgba(0, 255, 136, 0.16);
+      color: #00ff88;
+      border-color: rgba(0, 255, 136, 0.45);
+    }
+    .badge.opt {
+      background: rgba(255, 42, 85, 0.16);
+      color: #ff6b8b;
+      border-color: rgba(255, 42, 85, 0.4);
     }
     h1 {
-      font-size: 2.1rem;
+      font-size: 2.05rem;
       font-weight: 800;
       letter-spacing: -0.02em;
       margin-bottom: 10px;
@@ -82,9 +89,9 @@
     }
     .subtitle {
       color: var(--muted);
-      font-size: 1.03rem;
-      max-width: 900px;
-      margin-bottom: 24px;
+      font-size: 1.02rem;
+      max-width: 960px;
+      margin-bottom: 22px;
     }
     .cta-bar {
       display: flex;
@@ -142,7 +149,7 @@
 
     /* Simulator Section */
     .section {
-      margin-top: 34px;
+      margin-top: 32px;
     }
     .section-header {
       display: flex;
@@ -159,11 +166,11 @@
     }
     .sim-grid {
       display: grid;
-      grid-template-columns: 335px 1fr;
+      grid-template-columns: 345px 1fr;
       gap: 20px;
       align-items: start;
     }
-    @media (max-width: 980px) {
+    @media (max-width: 1020px) {
       .sim-grid {
         grid-template-columns: 1fr;
       }
@@ -175,7 +182,7 @@
       padding: 20px;
     }
     .control-group {
-      margin-bottom: 14px;
+      margin-bottom: 13px;
     }
     .control-group:last-child {
       margin-bottom: 0;
@@ -183,9 +190,9 @@
     .control-label {
       display: flex;
       justify-content: space-between;
-      font-size: 0.83rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
       color: #cbd5e1;
     }
     .control-val {
@@ -200,7 +207,7 @@
     .toggle-list {
       display: flex;
       flex-direction: column;
-      gap: 9px;
+      gap: 8px;
       margin-top: 12px;
       padding-top: 12px;
       border-top: 1px solid var(--border);
@@ -209,7 +216,7 @@
       display: flex;
       align-items: center;
       gap: 9px;
-      font-size: 0.85rem;
+      font-size: 0.84rem;
       cursor: pointer;
       user-select: none;
     }
@@ -230,7 +237,7 @@
       gap: 7px;
       padding: 5px 10px;
       border-radius: 6px;
-      font-size: 0.78rem;
+      font-size: 0.77rem;
       font-weight: 600;
       background: var(--bg-panel);
       border: 1px solid var(--border);
@@ -261,7 +268,7 @@
       gap: 20px;
     }
     .feature-card h3 {
-      font-size: 1.08rem;
+      font-size: 1.06rem;
       margin-bottom: 10px;
       display: flex;
       align-items: center;
@@ -270,7 +277,7 @@
     .feature-card ul {
       padding-left: 18px;
       color: var(--muted);
-      font-size: 0.91rem;
+      font-size: 0.9rem;
     }
     .feature-card li {
       margin-bottom: 7px;
@@ -310,20 +317,21 @@
     <div class="container">
       <div class="badge-row">
         <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0)</span>
-        <span class="badge new">+ NOUVEAU : Acheteurs &amp; Vendeurs Piégés (Trapped Traders)</span>
+        <span class="badge new">★ NOUVEAU : Alerte Visuelle ACHAT ▲ / VENTE ▼ + Flux d'Options ATAS X</span>
+        <span class="badge opt">Calls / Puts • PCR • ΔOI • Sweeps (IOptionsDataFeed)</span>
         <span class="badge">Compatible ATAS X (Windows &amp; macOS)</span>
       </div>
-      <h1>Footprint HVN / LVN, Heavy Absorption &amp; Traders Piégés (ATAS X)</h1>
+      <h1>Footprint HVN / LVN, Absorption, Piégés &amp; Alertes Flux d'Options (ATAS X)</h1>
       <p class="subtitle">
-        Indicateur Order Flow déjà compilé pour <strong>ATAS X</strong> qui détecte et encadre automatiquement les
-        <strong>HVN</strong> (High Volume Nodes &amp; POC), les <strong>LVN</strong> (Low Volume Nodes), les
-        <strong>Heavy Absorptions</strong> (Bid &amp; Ask) ainsi que les <strong>Acheteurs Piégés ▼</strong> et
-        <strong>Vendeurs Piégés ▲</strong> directement sur votre graphique Footprint.
+        Indicateur Order Flow déjà compilé pour <strong>ATAS X</strong> qui détecte les <strong>HVN / LVN</strong>,
+        les <strong>Heavy Absorptions</strong>, les <strong>Acheteurs &amp; Vendeurs Piégés</strong> et génère une
+        <strong>Alerte Visuelle ACHAT ▲ / VENTE ▼</strong> haute probabilité en intégrant le
+        <strong>Flux d'Options fourni par ATAS X</strong> (<em>IOptionsDataFeed Calls/Puts, Put/Call Ratio, ΔOI &amp; Sweeps</em>).
       </p>
 
       <div class="cta-bar">
         <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
-          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (49.5 Ko)
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (70.0 Ko)
         </a>
         <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
           📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
@@ -334,10 +342,10 @@
       </div>
 
       <div class="meta-strip">
-        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll</span>
-        <span><strong>Nom dans ATAS X :</strong> Footprint HVN / LVN, Absorption &amp; Trapped Traders</span>
+        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (71 680 octets)</span>
+        <span><strong>Nom dans ATAS X :</strong> Footprint HVN / LVN, Absorption, Trapped &amp; Options Flow Alerts</span>
         <span><strong>Catégorie :</strong> Order Flow - Custom</span>
-        <span><strong>SHA-256 :</strong> ea7f129153a126a6...107a1bd6</span>
+        <span><strong>SHA-256 :</strong> 9f22e085909ab299...19de3cec</span>
       </div>
     </div>
   </header>
@@ -347,16 +355,24 @@
     <section class="section">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Aperçu Interactif du Rendu sur le Footprint ATAS X</h2>
+          <h2 class="section-title">Aperçu Interactif : Alertes Visuelles Achat/Vente &amp; Flux d'Options ATAS X</h2>
           <p style="color: var(--muted); font-size: 0.92rem;">
-            Ajustez les seuils ci-dessous pour visualiser comment l'indicateur identifie les <strong>HVN</strong>, <strong>LVN</strong>, <strong>Heavy Absorptions</strong> et les <strong>Acheteurs / Vendeurs Piégés</strong> sur chaque cluster Bid × Ask.
+            Ajustez la dominance <strong>Flux d'Options (Calls / Puts)</strong> et les seuils Order Flow pour visualiser les cartouches <strong>★ ACHAT ▲</strong> / <strong>★ VENTE ▼</strong>, la <strong>Bannière Visuelle d'Alerte</strong> et les niveaux <strong>Entrée / Stop-Loss</strong>.
           </p>
         </div>
       </div>
 
       <div class="sim-grid">
         <div class="card">
-          <h3 style="font-size: 1rem; margin-bottom: 14px; color: #fff;">Paramètres de l'Indicateur</h3>
+          <h3 style="font-size: 1rem; margin-bottom: 13px; color: #fff;">Paramètres de l'Indicateur</h3>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span style="color: #00ff88;">Dominance Min Flux Calls/Puts (%)</span>
+              <span class="control-val" id="valOptDom">55%</span>
+            </div>
+            <input type="range" id="rngOptDom" min="50" max="80" value="55" />
+          </div>
 
           <div class="control-group">
             <div class="control-label">
@@ -390,22 +406,22 @@
             <input type="range" id="rngTrapMult" min="8" max="25" value="11" />
           </div>
 
-          <div class="control-group">
-            <div class="control-label">
-              <span>Dominance Agressive Piégés (%)</span>
-              <span class="control-val" id="valTrapDom">60%</span>
-            </div>
-            <input type="range" id="rngTrapDom" min="52" max="85" value="60" />
-          </div>
-
           <div class="toggle-list">
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBuySell" checked />
+              <span style="color: #00ff88; font-weight: 700;">★ Alertes Visuelles ACHAT ▲ / VENTE ▼ (Options Flow)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBanner" checked />
+              <span style="color: #38bdf8; font-weight: 600;">Afficher Bannière Visuelle d'Alerte en haut</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkEntrySl" checked />
+              <span>Afficher Niveaux Prix d'Entrée &amp; Stop-Loss (SL)</span>
+            </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkTrapped" checked />
               <span style="color: #10f596; font-weight: 600;">Afficher Acheteurs &amp; Vendeurs Piégés (▲/▼)</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkTrapRays" checked />
-              <span>Projeter Rayons de Liquidation (Piégés)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkAbs" checked />
@@ -413,19 +429,11 @@
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkRays" checked />
-              <span>Projeter Rayons S/R d'Absorption</span>
+              <span>Projeter Rayons S/R &amp; Liquidation</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBarHvn" checked />
-              <span>Afficher HVN &amp; POC Intra-Bougie</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkBarLvn" checked />
-              <span>Afficher LVN Intra-Bougie (Creux)</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkComp" checked />
-              <span>Afficher Zones HVN/LVN Profil Composite</span>
+              <span>Afficher HVN, POC &amp; LVN Intra-Bougie</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkHud" checked />
@@ -436,15 +444,17 @@
 
         <div class="card" style="padding: 16px;">
           <div class="legend-pills">
+            <span class="pill" style="border-color: rgba(0,255,136,0.5);"><span class="dot" style="background: #00ff88;"></span> ★ Alerte ACHAT ▲ (Call Flow + Footprint)</span>
+            <span class="pill" style="border-color: rgba(255,42,85,0.5);"><span class="dot" style="background: #ff2a55;"></span> ★ Alerte VENTE ▼ (Put Flow + Footprint)</span>
+            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bull Heavy Abs</span>
+            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bear Heavy Abs</span>
+            <span class="pill"><span class="dot" style="background: #10f596;"></span> Vendeurs Piégés ▲</span>
+            <span class="pill"><span class="dot" style="background: #ff5a36;"></span> Acheteurs Piégés ▼</span>
             <span class="pill"><span class="dot" style="background: #ff8c00;"></span> POC / HVN</span>
-            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN (Creux)</span>
-            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bull Heavy Absorption</span>
-            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bear Heavy Absorption</span>
-            <span class="pill"><span class="dot" style="background: #10f596;"></span> Vendeurs Piégés ▲ (Signal Bullish)</span>
-            <span class="pill"><span class="dot" style="background: #ff5a36;"></span> Acheteurs Piégés ▼ (Signal Bearish)</span>
+            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN</span>
           </div>
           <div class="canvas-wrap">
-            <canvas id="fpCanvas" width="880" height="535"></canvas>
+            <canvas id="fpCanvas" width="900" height="620"></canvas>
           </div>
         </div>
       </div>
@@ -452,19 +462,28 @@
 
     <!-- Feature & Installation Guide -->
     <section class="section">
-      <h2 class="section-title" style="margin-bottom: 16px;">Fonctionnement &amp; Installation dans ATAS X</h2>
+      <h2 class="section-title" style="margin-bottom: 16px;">Fonctionnement de l'Alerte Visuelle Achat/Vente &amp; du Flux d'Options ATAS X</h2>
       <div class="three-col">
         <div class="card feature-card">
-          <h3>🪤 1. Acheteurs &amp; Vendeurs Piégés</h3>
+          <h3>⚡ 1. Flux d'Options ATAS X &amp; Alerte Achat/Vente</h3>
           <ul>
-            <li><strong>Vendeurs Piégés ▲ (Bullish) :</strong> Vendeurs au marché agressifs (<code>Bid &gt;&gt; Ask</code>, imbalance diagonale vendeuse) dans la mèche basse / bas du range, mais la bougie rejette et clôture au-dessus d'eux. Leurs rachats forcés (stops) propulsent le prix à la hausse.</li>
-            <li><strong>Acheteurs Piégés ▼ (Bearish) :</strong> Acheteurs au marché agressifs (<code>Ask &gt;&gt; Bid</code>, imbalance diagonale acheteuse) dans la mèche haute / sommet de bougie, suivis d'une clôture en dessous. Leurs liquidations alimentent la baisse.</li>
-            <li><strong>Confluence ABS + PIÉGÉ :</strong> Si un niveau cumule Heavy Absorption et Traders Piégés, la cellule affiche une double barre latérale bicolore et le badge <code>ABS+PIÉGÉ▲/▼</code>.</li>
+            <li><strong>Intégration Native ATAS X :</strong> Interroge <code>IOptionsDataFeed</code> &amp; <code>Security</code> (<code>OptionTypes.Call</code> / <code>Put</code>, <code>StrikePrice</code>, <code>OpenInterest</code>), les variations d'Open Interest (<code>ΔOI = Candle.OI</code>) et les Sweeps temps réel (<code>OnNewTrade</code> / <code>OnCumulativeTrade</code>).</li>
+            <li><strong>Signal Visuel ★ ACHAT ▲ :</strong> Déclenché lorsqu'une <em>Bullish Heavy Absorption</em> et/ou des <em>Vendeurs Piégés ▲</em> sont confirmés par un <strong>Flux d'Options Calls Haussier</strong> (<code>Calls % &ge; Seuil</code>, <code>PCR &lt; 1</code>, <code>ΔOI +</code>).</li>
+            <li><strong>Signal Visuel ★ VENTE ▼ :</strong> Déclenché lorsqu'une <em>Bearish Heavy Absorption</em> et/ou des <em>Acheteurs Piégés ▼</em> sont confirmés par un <strong>Flux d'Options Puts Baissier</strong> (<code>Puts % &ge; Seuil</code>, <code>PCR &gt; 1</code>).</li>
           </ul>
         </div>
 
         <div class="card feature-card">
-          <h3>🪟 2. Installation Windows &amp; macOS</h3>
+          <h3>🪤 2. Rendu Visuel Complet sur le Graphique</h3>
+          <ul>
+            <li><strong>Cartouche sur la Bougie :</strong> Badge lumineux <code>★ ACHAT ▲ [Score %]</code> ou <code>★ VENTE ▼ [Score %]</code> avec le pourcentage de flux Calls/Puts et le Put/Call Ratio (PCR).</li>
+            <li><strong>Bannière Visuelle d'Alerte :</strong> Bandeau en haut du graphique affichant le signal actif, le prix d'entrée, le Stop-Loss, le PCR, le <code>ΔOI</code> et la raison de confluence.</li>
+            <li><strong>Lignes Entrée &amp; Stop-Loss + 8 DataSeries :</strong> Trace automatiquement le niveau d'entrée et le Stop-Loss sous/sur la mèche d'absorption, et expose <code>VisualBuyAlert</code> &amp; <code>VisualSellAlert</code> pour les stratégies ATAS.</li>
+          </ul>
+        </div>
+
+        <div class="card feature-card">
+          <h3>🪟 3. Installation Windows &amp; macOS</h3>
           <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 6px;">
             Copiez <strong>FootprintHvnLvnAbsorption.dll</strong> dans le dossier des indicateurs ATAS :
           </p>
@@ -477,16 +496,7 @@
             <button class="copy-btn" onclick="copyText('macPath', this)">Copier</button>
           </div>
           <ul>
-            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint HVN / LVN, Absorption &amp; Trapped Traders</strong>.</li>
-          </ul>
-        </div>
-
-        <div class="card feature-card">
-          <h3>📊 3. HVN, LVN &amp; Heavy Absorption</h3>
-          <ul>
-            <li><strong>HVN Intra-Bar &amp; Composite :</strong> Identifie le POC et les pics locaux de volume (&ge; % du POC) ainsi que les zones HVN du profil composite.</li>
-            <li><strong>LVN Intra-Bar &amp; Composite :</strong> Cible les creux de liquidité internes situés entre deux zones denses (&le; % du POC).</li>
-            <li><strong>6 ValueDataSeries exposées :</strong> POC/HVN, LVN, Bull Absorption, Bear Absorption, Vendeurs Piégés ▲ et Acheteurs Piégés ▼ (compatibles stratégies et alertes ATAS).</li>
+            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint HVN / LVN, Absorption, Trapped &amp; Options Flow Alerts</strong>.</li>
           </ul>
         </div>
       </div>
@@ -511,6 +521,7 @@
       {
         time: "15:30",
         openIdx: 9, closeIdx: 4, highIdx: 3, lowIdx: 12,
+        oiDelta: +310, sweeps: 3, callPct: 72, putPct: 28, pcr: 0.39,
         levels: {
           3:  { bid: 22,  ask: 48 },
           4:  { bid: 140, ask: 215 }, // HVN
@@ -519,18 +530,19 @@
           7:  { bid: 185, ask: 260 }, // POC
           8:  { bid: 110, ask: 125 },
           9:  { bid: 80,  ask: 90 },
-          10: { bid: 185, ask: 55 },  // Vendeurs Piégés en mèche basse !
-          11: { bid: 420, ask: 85 },  // Heavy Absorption + Vendeurs Piégés !
-          12: { bid: 240, ask: 40 }   // Vendeurs Piégés au plus bas !
+          10: { bid: 185, ask: 55 },  // Vendeurs Piégés
+          11: { bid: 420, ask: 85 },  // Heavy Absorption + Vendeurs Piégés
+          12: { bid: 240, ask: 40 }   // Vendeurs Piégés
         }
       },
       {
         time: "15:35",
         openIdx: 4, closeIdx: 6, highIdx: 1, lowIdx: 8,
+        oiDelta: -195, sweeps: 2, callPct: 29, putPct: 71, pcr: 2.45,
         levels: {
-          1: { bid: 35,  ask: 235 }, // Acheteurs Piégés en mèche haute !
-          2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption + Acheteurs Piégés !
-          3: { bid: 50,  ask: 210 }, // Acheteurs Piégés en mèche haute !
+          1: { bid: 35,  ask: 235 }, // Acheteurs Piégés
+          2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption + Acheteurs Piégés
+          3: { bid: 50,  ask: 210 }, // Acheteurs Piégés
           4: { bid: 170, ask: 195 }, // HVN
           5: { bid: 20,  ask: 15 },  // LVN pocket
           6: { bid: 210, ask: 185 },
@@ -541,9 +553,10 @@
       {
         time: "15:40",
         openIdx: 6, closeIdx: 9, highIdx: 4, lowIdx: 11,
+        oiDelta: -120, sweeps: 1, callPct: 38, putPct: 62, pcr: 1.63,
         levels: {
-          4:  { bid: 30,  ask: 195 }, // Acheteurs Piégés dans la mèche supérieure !
-          5:  { bid: 45,  ask: 170 }, // Acheteurs Piégés !
+          4:  { bid: 30,  ask: 195 }, // Acheteurs Piégés
+          5:  { bid: 45,  ask: 170 }, // Acheteurs Piégés
           6:  { bid: 130, ask: 90 },
           7:  { bid: 280, ask: 240 }, // POC / HVN
           8:  { bid: 25,  ask: 18 },  // LVN pocket
@@ -555,6 +568,7 @@
       {
         time: "15:45",
         openIdx: 10, closeIdx: 5, highIdx: 4, lowIdx: 13,
+        oiDelta: +480, sweeps: 4, callPct: 76, putPct: 24, pcr: 0.32,
         levels: {
           4:  { bid: 60,  ask: 95 },
           5:  { bid: 175, ask: 230 }, // HVN
@@ -563,22 +577,23 @@
           8:  { bid: 110, ask: 130 },
           9:  { bid: 85,  ask: 90 },
           10: { bid: 70,  ask: 60 },
-          11: { bid: 215, ask: 55 },  // Vendeurs Piégés dans la mèche basse !
-          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption + Vendeurs Piégés !
-          13: { bid: 265, ask: 45 }   // Vendeurs Piégés !
+          11: { bid: 215, ask: 55 },  // Vendeurs Piégés
+          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption + Vendeurs Piégés
+          13: { bid: 265, ask: 45 }   // Vendeurs Piégés
         }
       },
       {
         time: "15:50",
         openIdx: 5, closeIdx: 3, highIdx: 0, lowIdx: 7,
+        oiDelta: -260, sweeps: 3, callPct: 26, putPct: 74, pcr: 2.85,
         levels: {
-          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption + Acheteurs Piégés !
-          1: { bid: 45,  ask: 215 }, // Acheteurs Piégés sous l'eau (clôture en row 3) !
+          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption + Acheteurs Piégés
+          1: { bid: 45,  ask: 215 }, // Acheteurs Piégés
           2: { bid: 120, ask: 160 },
           3: { bid: 245, ask: 290 }, // POC / HVN
           4: { bid: 190, ask: 215 }, // HVN
           5: { bid: 22,  ask: 16 },  // LVN
-          6: { bid: 185, ask: 50 },  // Vendeurs Piégés en mèche basse !
+          6: { bid: 95,  ask: 80 },
           7: { bid: 50,  ask: 40 }
         }
       }
@@ -588,33 +603,33 @@
     const ctx = canvas.getContext("2d");
 
     function analyzeAndRender() {
+      const optDom = parseInt(document.getElementById("rngOptDom").value, 10);
       const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
       const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
       const absMult = parseInt(document.getElementById("rngAbsMult").value, 10) / 10;
       const trapMult = parseInt(document.getElementById("rngTrapMult").value, 10) / 10;
-      const trapDom = parseInt(document.getElementById("rngTrapDom").value, 10);
 
+      document.getElementById("valOptDom").textContent = optDom + "%";
       document.getElementById("valHvn").textContent = hvnPct + "%";
       document.getElementById("valLvn").textContent = lvnPct + "%";
       document.getElementById("valAbsMult").textContent = absMult.toFixed(1) + "x";
       document.getElementById("valTrapMult").textContent = trapMult.toFixed(2) + "x";
-      document.getElementById("valTrapDom").textContent = trapDom + "%";
 
+      const showBuySell = document.getElementById("chkBuySell").checked;
+      const showBanner = document.getElementById("chkBanner").checked;
+      const showEntrySl = document.getElementById("chkEntrySl").checked;
       const showTrapped = document.getElementById("chkTrapped").checked;
-      const showTrapRays = document.getElementById("chkTrapRays").checked;
       const showBarHvn = document.getElementById("chkBarHvn").checked;
-      const showBarLvn = document.getElementById("chkBarLvn").checked;
       const showAbs = document.getElementById("chkAbs").checked;
       const showRays = document.getElementById("chkRays").checked;
-      const showComp = document.getElementById("chkComp").checked;
       const showHud = document.getElementById("chkHud").checked;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const topPad = 44;
-      const rowH = 31;
+      const topPad = 92;
+      const rowH = 30;
       const leftPad = 18;
-      const priceAxisX = 805;
+      const priceAxisX = 820;
 
       ctx.fillStyle = "#070a12";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -644,51 +659,22 @@
       const compMax = Math.max(...compVols);
       const compPocIdx = compVols.indexOf(compMax);
 
-      let compHvnCount = 0;
-      let compLvnCount = 0;
-
-      if (showComp) {
-        for (let r = 1; r < prices.length - 1; r++) {
-          const v = compVols[r];
-          const y = topPad + r * rowH;
-          if (v >= compMax * 0.65 && v >= compVols[r - 1] && v >= compVols[r + 1]) {
-            compHvnCount++;
-            ctx.fillStyle = "rgba(250, 204, 21, 0.08)";
-            ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
-            ctx.strokeStyle = "rgba(250, 204, 21, 0.4)";
-            ctx.beginPath();
-            ctx.moveTo(leftPad, y + rowH / 2);
-            ctx.lineTo(priceAxisX, y + rowH / 2);
-            ctx.stroke();
-          } else if (v > 0 && v <= compMax * 0.25 && v < compVols[r - 1] && v < compVols[r + 1]) {
-            compLvnCount++;
-            ctx.fillStyle = "rgba(192, 132, 252, 0.07)";
-            ctx.fillRect(leftPad, y, priceAxisX - leftPad, rowH);
-            ctx.save();
-            ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = "rgba(192, 132, 252, 0.45)";
-            ctx.beginPath();
-            ctx.moveTo(leftPad, y + rowH / 2);
-            ctx.lineTo(priceAxisX, y + rowH / 2);
-            ctx.stroke();
-            ctx.restore();
-          }
-        }
-      }
-
       let totalHvn = 0;
       let totalLvn = 0;
       let totalBullAbs = 0;
       let totalBearAbs = 0;
       let totalTrapSell = 0;
       let totalTrapBuy = 0;
-      let lastAbsEvent = null;
-      let lastTrapEvent = null;
+      let totalBuySignals = 0;
+      let totalSellSignals = 0;
+      let lastTradeSignal = null;
+
       const absRays = [];
       const trapRays = [];
+      const tradeSignalsToDraw = [];
 
-      const colStep = 152;
-      const cellW = 132;
+      const colStep = 156;
+      const cellW = 134;
 
       bars.forEach((bar, bIdx) => {
         const xLeft = leftPad + bIdx * colStep;
@@ -735,42 +721,24 @@
 
           const isHvn = showBarHvn && tot >= pocVol * (hvnPct / 100) && (tot >= prevTot && tot >= nextTot);
           const isInternal = kPos > 0 && kPos < keys.length - 1;
-          const isLvn = showBarLvn && isInternal && tot <= pocVol * (lvnPct / 100) && tot < prevTot && tot < nextTot;
+          const isLvn = showBarHvn && isInternal && tot <= pocVol * (lvnPct / 100) && tot < prevTot && tot < nextTot;
 
-          // Heavy Absorption check (note: row indices increase downward)
           let absSide = 0;
-          let domPct = 0;
           if (showAbs && tot >= avgVol * absMult) {
             const inLower = r >= bar.lowIdx - 1;
             const inUpper = r <= bar.highIdx + 1;
-            if (inLower && lv.bid > lv.ask) {
-              domPct = Math.round((lv.bid / tot) * 100);
-              if (domPct >= 62 && bar.closeIdx <= r) absSide = 1;
-            } else if (inUpper && lv.ask > lv.bid) {
-              domPct = Math.round((lv.ask / tot) * 100);
-              if (domPct >= 62 && bar.closeIdx >= r) absSide = -1;
-            }
+            if (inLower && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 62 && bar.closeIdx <= r) absSide = 1;
+            else if (inUpper && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 62 && bar.closeIdx >= r) absSide = -1;
           }
 
-          // Trapped Buyers / Trapped Sellers check
           let trapSide = 0;
-          let trapPct = 0;
           if (showTrapped && tot >= avgVol * trapMult) {
-            // Vendeurs Piégés en bas (row >= bodyLowIdx et closeIdx <= r - 1)
             const inLowerTrap = r >= bodyLowIdx && bar.closeIdx <= r - 1;
-            // Acheteurs Piégés en haut (row <= bodyHighIdx et closeIdx >= r + 1)
             const inUpperTrap = r <= bodyHighIdx && bar.closeIdx >= r + 1;
-
-            if (inLowerTrap && lv.bid > lv.ask) {
-              trapPct = Math.round((lv.bid / tot) * 100);
-              if (trapPct >= trapDom) trapSide = 1; // Vendeurs Piégés ▲ (Bullish)
-            } else if (inUpperTrap && lv.ask > lv.bid) {
-              trapPct = Math.round((lv.ask / tot) * 100);
-              if (trapPct >= trapDom) trapSide = -1; // Acheteurs Piégés ▼ (Bearish)
-            }
+            if (inLowerTrap && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 60) trapSide = 1;
+            else if (inUpperTrap && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 60) trapSide = -1;
           }
 
-          // Base cell
           ctx.fillStyle = "rgba(22, 31, 51, 0.82)";
           ctx.fillRect(xLeft, yTop, cellW, h);
           ctx.strokeStyle = "rgba(51, 65, 85, 0.6)";
@@ -783,7 +751,6 @@
             if (trapSide !== 0) {
               barTrapSide = trapSide;
               if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
-              lastTrapEvent = { price: prices[r], vol: tot, delta, side: trapSide };
             }
 
             const col = absSide > 0 ? "#00f0ff" : "#ff2d87";
@@ -805,11 +772,9 @@
             const prefix = trapSide !== 0
               ? (absSide > 0 ? "ABS+PIÉGÉ▲ " : "ABS+PIÉGÉ▼ ")
               : (absSide > 0 ? "ABS▲ " : "ABS▼ ");
-            const txt = prefix + lv.bid + "x" + lv.ask;
-            ctx.fillText(txt, xLeft + 6, yTop + h / 2 + 3.5);
+            ctx.fillText(prefix + lv.bid + "x" + lv.ask, xLeft + 6, yTop + h / 2 + 3.5);
 
-            lastAbsEvent = { price: prices[r], vol: tot, delta, side: absSide };
-            absRays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], vol: tot, side: absSide, xStart: xLeft + cellW });
+            absRays.push({ rowIdx: r, price: prices[r], side: absSide, xStart: xLeft + cellW });
           } else if (trapSide !== 0) {
             barTrapSide = trapSide;
             if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
@@ -829,11 +794,9 @@
 
             ctx.fillStyle = "#ffffff";
             ctx.font = "bold 9.5px Consolas, monospace";
-            const txt = (trapSide > 0 ? "V.PIÉGÉS▲ " : "A.PIÉGÉS▼ ") + lv.bid + "x" + lv.ask;
-            ctx.fillText(txt, xLeft + 5, yTop + h / 2 + 3.5);
+            ctx.fillText((trapSide > 0 ? "V.PIÉGÉS▲ " : "A.PIÉGÉS▼ ") + lv.bid + "x" + lv.ask, xLeft + 5, yTop + h / 2 + 3.5);
 
-            lastTrapEvent = { price: prices[r], vol: tot, delta, side: trapSide };
-            trapRays.push({ barIdx: bIdx, rowIdx: r, price: prices[r], delta, side: trapSide, xStart: xLeft + cellW });
+            trapRays.push({ rowIdx: r, price: prices[r], side: trapSide, xStart: xLeft + cellW });
           } else if (isHvn) {
             totalHvn++;
             const col = isPoc ? "#ff8c00" : "#f59e0b";
@@ -875,145 +838,256 @@
           }
         });
 
-        // Extreme Diamond Marker for Heavy Absorption
-        if (barAbsSide !== 0) {
-          const isBull = barAbsSide > 0;
-          const mCol = isBull ? "#00f0ff" : "#ff2d87";
-          const yExt = isBull
-            ? topPad + (bar.lowIdx + 1) * rowH + 10
-            : topPad + bar.highIdx * rowH - 10;
-          const sz = 6.5;
-          ctx.fillStyle = mCol;
-          ctx.beginPath();
-          ctx.moveTo(xMid - 8, yExt - sz);
-          ctx.lineTo(xMid - 8 + sz, yExt);
-          ctx.lineTo(xMid - 8, yExt + sz);
-          ctx.lineTo(xMid - 8 - sz, yExt);
-          ctx.closePath();
-          ctx.fill();
-        }
+        // Evaluate Visual Buy / Sell Signal taking into account ATAS X Options Flow
+        if (showBuySell) {
+          const hasBull = barAbsSide > 0 || barTrapSide > 0;
+          const hasBear = barAbsSide < 0 || barTrapSide < 0;
 
-        // Extreme Arrow Marker for Trapped Traders
-        if (barTrapSide !== 0) {
-          const isBull = barTrapSide > 0;
-          const tCol = isBull ? "#10f596" : "#ff5a36";
-          const yExt = isBull
-            ? topPad + (bar.lowIdx + 1) * rowH + 10
-            : topPad + bar.highIdx * rowH - 10;
-          const sz = 7;
-          const xPos = barAbsSide !== 0 ? xMid + 8 : xMid;
-          ctx.fillStyle = tCol;
-          ctx.beginPath();
-          if (isBull) {
-            ctx.moveTo(xPos, yExt - sz);
-            ctx.lineTo(xPos - sz, yExt + sz - 2);
-            ctx.lineTo(xPos + sz, yExt + sz - 2);
-          } else {
-            ctx.moveTo(xPos, yExt + sz);
-            ctx.lineTo(xPos - sz, yExt - sz + 2);
-            ctx.lineTo(xPos + sz, yExt - sz + 2);
+          if (hasBull && !hasBear && bar.callPct >= optDom) {
+            totalBuySignals++;
+            const score = Math.min(98, 68 + Math.round((bar.callPct - 50) * 0.8) + (barAbsSide > 0 && barTrapSide > 0 ? 8 : 0));
+            const sig = {
+              barIdx: bIdx,
+              dir: 1,
+              xMid,
+              xRight: xLeft + cellW,
+              entryIdx: bar.closeIdx,
+              stopIdx: Math.min(prices.length - 1, bar.lowIdx + 1),
+              entryPrice: prices[bar.closeIdx],
+              stopPrice: (prices[bar.lowIdx] - 0.50),
+              lowIdx: bar.lowIdx,
+              highIdx: bar.highIdx,
+              score,
+              callPct: bar.callPct,
+              putPct: bar.putPct,
+              pcr: bar.pcr,
+              oiDelta: bar.oiDelta,
+              sweeps: bar.sweeps,
+              reason: barAbsSide > 0 && barTrapSide > 0 ? "ABS BID + V.PIÉGÉS + CALL FLOW" : "V.PIÉGÉS + CALL FLOW"
+            };
+            lastTradeSignal = sig;
+            tradeSignalsToDraw.push(sig);
+          } else if (hasBear && !hasBull && bar.putPct >= optDom) {
+            totalSellSignals++;
+            const score = Math.min(98, 68 + Math.round((bar.putPct - 50) * 0.8) + (barAbsSide < 0 && barTrapSide < 0 ? 8 : 0));
+            const sig = {
+              barIdx: bIdx,
+              dir: -1,
+              xMid,
+              xRight: xLeft + cellW,
+              entryIdx: bar.closeIdx,
+              stopIdx: Math.max(0, bar.highIdx - 1),
+              entryPrice: prices[bar.closeIdx],
+              stopPrice: (prices[bar.highIdx] + 0.50),
+              lowIdx: bar.lowIdx,
+              highIdx: bar.highIdx,
+              score,
+              callPct: bar.callPct,
+              putPct: bar.putPct,
+              pcr: bar.pcr,
+              oiDelta: bar.oiDelta,
+              sweeps: bar.sweeps,
+              reason: barAbsSide < 0 && barTrapSide < 0 ? "ABS ASK + A.PIÉGÉS + PUT FLOW" : "A.PIÉGÉS + PUT FLOW"
+            };
+            lastTradeSignal = sig;
+            tradeSignalsToDraw.push(sig);
           }
-          ctx.closePath();
-          ctx.fill();
         }
 
-        // Time footer
+        // Time + Options Flow mini footer per bar
         ctx.fillStyle = "#94a3b8";
         ctx.font = "11px Consolas, monospace";
-        ctx.fillText(bar.time, xMid - 16, canvas.height - 10);
+        ctx.fillText(bar.time, xMid - 16, canvas.height - 24);
+
+        const isCallDom = bar.callPct >= 50;
+        ctx.fillStyle = isCallDom ? "#00ff88" : "#ff6b8b";
+        ctx.font = "bold 9.5px Consolas, monospace";
+        const optTxt = isCallDom
+          ? `Calls ${bar.callPct}% (PCR ${bar.pcr})`
+          : `Puts ${bar.putPct}% (PCR ${bar.pcr})`;
+        ctx.fillText(optTxt, xLeft + 6, canvas.height - 9);
       });
 
-      // Draw Projected Absorption S/R Rays
+      // Draw Projected S/R & Trapped Rays
       if (showRays) {
         absRays.forEach(ray => {
           const y = topPad + ray.rowIdx * rowH + rowH / 2;
           const col = ray.side > 0 ? "#00f0ff" : "#ff2d87";
           ctx.strokeStyle = col;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 1.8;
           ctx.beginPath();
           ctx.moveTo(ray.xStart, y);
           ctx.lineTo(priceAxisX - 6, y);
           ctx.stroke();
-
-          ctx.fillStyle = col;
-          ctx.font = "bold 9.5px Consolas, monospace";
-          const lbl = (ray.side > 0 ? "Bull ABS Support " : "Bear ABS Resist ") + ray.price.toFixed(2);
-          ctx.fillText(lbl, priceAxisX - 155, y - 4);
         });
-      }
 
-      // Draw Projected Trapped Traders Liquidation Rays
-      if (showTrapRays) {
         trapRays.forEach(ray => {
           const y = topPad + ray.rowIdx * rowH + rowH / 2;
           const col = ray.side > 0 ? "#10f596" : "#ff5a36";
           ctx.save();
           ctx.setLineDash([5, 4]);
           ctx.strokeStyle = col;
-          ctx.lineWidth = 1.6;
+          ctx.lineWidth = 1.4;
           ctx.beginPath();
           ctx.moveTo(ray.xStart, y);
           ctx.lineTo(priceAxisX - 6, y);
           ctx.stroke();
           ctx.restore();
-
-          ctx.fillStyle = col;
-          ctx.font = "bold 9.5px Consolas, monospace";
-          const lbl = (ray.side > 0 ? "Vendeurs Piégés ▲ " : "Acheteurs Piégés ▼ ") + ray.price.toFixed(2);
-          ctx.fillText(lbl, priceAxisX - 165, y + 11);
         });
+      }
+
+      // Draw Visual Buy / Sell Callouts & Entry/Stop levels
+      tradeSignalsToDraw.forEach(sig => {
+        const isBuy = sig.dir > 0;
+        const col = isBuy ? "#00ff88" : "#ff2a55";
+        const bg = isBuy ? "rgba(6, 48, 34, 0.94)" : "rgba(58, 12, 26, 0.94)";
+
+        if (showEntrySl) {
+          const yEnt = topPad + sig.entryIdx * rowH + rowH / 2;
+          const ySl = isBuy
+            ? topPad + (sig.lowIdx + 1) * rowH + 6
+            : topPad + sig.highIdx * rowH - 6;
+          const x2 = Math.min(priceAxisX - 8, sig.xRight + 55);
+
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(sig.xRight + 2, yEnt);
+          ctx.lineTo(x2, yEnt);
+          ctx.stroke();
+
+          ctx.save();
+          ctx.setLineDash([3, 3]);
+          ctx.strokeStyle = "#fbbf24";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(sig.xRight + 2, ySl);
+          ctx.lineTo(x2, ySl);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        const boxW = 136;
+        const boxH = 34;
+        const boxX = sig.xMid - boxW / 2;
+        const yAnchor = isBuy
+          ? topPad + (sig.lowIdx + 1) * rowH + 8
+          : topPad + sig.highIdx * rowH - 8;
+        const boxY = isBuy ? yAnchor + 7 : yAnchor - boxH - 7;
+
+        // Pointer triangle
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(sig.xMid, yAnchor);
+        ctx.lineTo(sig.xMid - 6, isBuy ? boxY : boxY + boxH);
+        ctx.lineTo(sig.xMid + 6, isBuy ? boxY : boxY + boxH);
+        ctx.closePath();
+        ctx.fill();
+
+        // Callout box
+        ctx.fillStyle = bg;
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(boxX, boxY, boxW, boxH);
+        ctx.fillStyle = col;
+        ctx.fillRect(boxX, boxY, boxW, 3);
+
+        ctx.font = "bold 10px Consolas, monospace";
+        ctx.fillStyle = col;
+        const l1 = isBuy ? `★ ACHAT ▲ [${sig.score}%]` : `★ VENTE ▼ [${sig.score}%]`;
+        ctx.fillText(l1, boxX + 9, boxY + 14);
+
+        ctx.font = "9.5px Consolas, monospace";
+        ctx.fillStyle = "#ffffff";
+        const l2 = isBuy
+          ? `Calls ${sig.callPct}% | PCR ${sig.pcr}`
+          : `Puts ${sig.putPct}% | PCR ${sig.pcr}`;
+        ctx.fillText(l2, boxX + 7, boxY + 28);
+      });
+
+      // Top Visual Alert Banner
+      if (showBuySell && showBanner && lastTradeSignal) {
+        const isBuy = lastTradeSignal.dir > 0;
+        const col = isBuy ? "#00ff88" : "#ff2a55";
+        const bg = isBuy ? "rgba(6, 42, 30, 0.95)" : "rgba(52, 12, 24, 0.95)";
+        const bx = 18;
+        const by = 8;
+        const bw = 468;
+        const bh = 44;
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = col;
+        ctx.fillRect(bx, by, 5, bh);
+
+        ctx.font = "bold 10.5px Consolas, monospace";
+        ctx.fillStyle = col;
+        const title = isBuy
+          ? `▲ ALERTE VISUELLE ACHAT @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`
+          : `▼ ALERTE VISUELLE VENTE @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`;
+        ctx.fillText(title, bx + 12, by + 17);
+
+        ctx.font = "9.5px Consolas, monospace";
+        ctx.fillStyle = "#e2e8f0";
+        const sub = `Flux Options ATAS X: Calls ${lastTradeSignal.callPct}% / Puts ${lastTradeSignal.putPct}% (PCR ${lastTradeSignal.pcr}) | ΔOI ${lastTradeSignal.oiDelta > 0 ? "+" : ""}${lastTradeSignal.oiDelta}`;
+        ctx.fillText(sub, bx + 12, by + 34);
       }
 
       // Draw HUD Panel
       if (showHud) {
-        const hudW = 345;
+        const hudW = 320;
         const hudH = 148;
-        const hx = priceAxisX - hudW - 10;
+        const hx = priceAxisX - hudW - 8;
         const hy = 8;
 
-        ctx.fillStyle = "rgba(13, 18, 30, 0.93)";
+        ctx.fillStyle = "rgba(11, 16, 28, 0.94)";
         ctx.fillRect(hx, hy, hudW, hudH);
         ctx.strokeStyle = "#38bdf8";
         ctx.lineWidth = 1.4;
         ctx.strokeRect(hx, hy, hudW, hudH);
 
-        ctx.font = "bold 10.5px Consolas, monospace";
+        ctx.font = "bold 10px Consolas, monospace";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("FOOTPRINT HVN/LVN • ABS • PIÉGÉS [ES]", hx + 10, hy + 18);
+        ctx.fillText("FOOTPRINT • ABS • PIÉGÉS • OPTIONS [ES]", hx + 10, hy + 17);
 
-        ctx.font = "10px Consolas, monospace";
+        ctx.font = "9.5px Consolas, monospace";
         ctx.fillStyle = "#f59e0b";
-        ctx.fillText(`HVN Intra-Bar: ${totalHvn}  | Zones HVN Profil: ${compHvnCount}`, hx + 10, hy + 35);
-
-        ctx.fillStyle = "#c084fc";
-        ctx.fillText(`LVN Intra-Bar: ${totalLvn}  | Zones LVN Profil: ${compLvnCount}`, hx + 10, hy + 51);
-
-        ctx.fillStyle = "#fde047";
-        ctx.fillText(`VPOC Composite: ${prices[compPocIdx].toFixed(2)} (Vol ${compMax})`, hx + 10, hy + 67);
+        ctx.fillText(`HVN: ${totalHvn} | LVN: ${totalLvn} | VPOC: ${prices[compPocIdx].toFixed(2)}`, hx + 10, hy + 34);
 
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 83);
+        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 50);
 
         ctx.fillStyle = "#10f596";
-        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 99);
+        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 66);
 
-        if (lastAbsEvent) {
-          ctx.font = "bold 10px Consolas, monospace";
-          ctx.fillStyle = lastAbsEvent.side > 0 ? "#00f0ff" : "#ff2d87";
-          const tag = lastAbsEvent.side > 0 ? "▲ DERNIÈRE ABS BULL" : "▼ DERNIÈRE ABS BEAR";
-          ctx.fillText(`${tag}: ${lastAbsEvent.price.toFixed(2)} (Vol ${lastAbsEvent.vol})`, hx + 10, hy + 118);
-        }
+        const lastBar = bars[bars.length - 1];
+        ctx.font = "bold 9.5px Consolas, monospace";
+        ctx.fillStyle = lastBar.callPct >= 50 ? "#00ff88" : "#ff6b8b";
+        ctx.fillText(`Flux Options ATAS X: Calls ${lastBar.callPct}% / Puts ${lastBar.putPct}% (PCR ${lastBar.pcr})`, hx + 10, hy + 84);
 
-        if (lastTrapEvent) {
-          ctx.font = "bold 10px Consolas, monospace";
-          ctx.fillStyle = lastTrapEvent.side > 0 ? "#10f596" : "#ff5a36";
-          const tag = lastTrapEvent.side > 0 ? "▲ VENDEURS PIÉGÉS" : "▼ ACHETEURS PIÉGÉS";
-          ctx.fillText(`${tag}: ${lastTrapEvent.price.toFixed(2)} (Δ ${lastTrapEvent.delta > 0 ? "+" : ""}${lastTrapEvent.delta})`, hx + 10, hy + 135);
+        ctx.fillStyle = "#7dd3fc";
+        ctx.fillText(`Alertes Visuelles : ACHAT ▲ ${totalBuySignals} | VENTE ▼ ${totalSellSignals}`, hx + 10, hy + 101);
+
+        if (lastTradeSignal) {
+          const isB = lastTradeSignal.dir > 0;
+          ctx.fillStyle = isB ? "#00ff88" : "#ff2a55";
+          ctx.fillText(
+            `${isB ? "★ SIGNAL ACHAT ▲" : "★ SIGNAL VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
+            hx + 10,
+            hy + 120
+          );
+          ctx.font = "9px Consolas, monospace";
+          ctx.fillStyle = "#cbd5e1";
+          ctx.fillText(`Confluence: ${lastTradeSignal.reason}`, hx + 10, hy + 136);
         }
       }
     }
 
-    ["rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngTrapDom", "chkTrapped", "chkTrapRays", "chkBarHvn", "chkBarLvn", "chkAbs", "chkRays", "chkComp", "chkHud"]
+    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud"]
       .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
 
     analyzeAndRender();
