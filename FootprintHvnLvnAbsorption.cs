@@ -1,5 +1,5 @@
 // =============================================================================
-//  Footprint HVN / LVN & Heavy Absorption — Indicateur Order Flow pour ATAS X
+//  Footprint HVN / LVN, Heavy Absorption & Trapped Traders — ATAS X (.NET 10)
 //  Cible : .NET 10.0 (ATAS X Windows & macOS)
 //
 //  Fonctionnalités principales :
@@ -20,9 +20,19 @@
 //         mèches ou mur intra-bar) et Rejet du prix (clôture opposée).
 //       - Surbrillance néon directe sur la cellule Footprint absorbée, badge
 //         "ABS ▲ / ▼" avec volume & delta, marqueur sur l'extrême de la bougie
-//         (Flèche, Point, Losange, Crochet) et rayon S/R projeté jusqu'à
-//         mitigation (test du niveau) ou sur N bougies.
-//    4. Panneau HUD temps réel + Séries de données ATAS + Alertes sonores.
+//         et rayon S/R projeté jusqu'à mitigation.
+//    4. Acheteurs & Vendeurs Piégés (Trapped Buyers & Trapped Sellers) :
+//       - Acheteurs Piégés (Trapped Buyers ▼ - Baissier) : Agressivité acheteuse
+//         forte (Ask >> Bid, imbalance diagonale acheteuse, delta positif) dans
+//         la mèche haute / extrême supérieur, suivie d'un rejet baissier (la
+//         bougie clôture nettement sous le cluster d'acheteurs piégés).
+//       - Vendeurs Piégés (Trapped Sellers ▲ - Haussier) : Agressivité vendeuse
+//         forte (Bid >> Ask, imbalance diagonale vendeuse, delta négatif) dans
+//         la mèche basse / extrême inférieur, suivie d'un rejet haussier (la
+//         bougie clôture nettement au-dessus du cluster de vendeurs piégés).
+//       - Encadrement visuel dédié, badge "PIÉGÉ ▲ / ▼" (ou "TRAP+ABS" en cas de
+//         confluence), rayon de zone de liquidation et alertes sonores ATAS X.
+//    5. Panneau HUD temps réel + Séries de données ATAS + Alertes sonores.
 // =============================================================================
 
 using System;
@@ -39,21 +49,23 @@ using OFT.Rendering.Tools;
 
 namespace ATAS.Indicators.Custom
 {
-    [DisplayName("Footprint HVN / LVN & Heavy Absorption")]
+    [DisplayName("Footprint HVN / LVN, Absorption & Trapped Traders")]
     [Category("Order Flow - Custom")]
-    [Description("Détecte et affiche les HVN (High Volume Nodes), LVN (Low Volume Nodes) et les Heavy Absorptions directement sur le Footprint ATAS X.")]
+    [Description("Détecte et affiche les HVN, LVN, Heavy Absorptions ainsi que les Acheteurs et Vendeurs Piégés (Trapped Buyers / Sellers) directement sur le Footprint ATAS X.")]
     public class FootprintHvnLvnAbsorption : Indicator
     {
         // =====================================================================
         // Groupes de paramètres dans l'interface ATAS X
         // =====================================================================
-        private const string GrpGeneral    = "1. Général & Footprint";
-        private const string GrpBarHvn     = "2. HVN sur Footprint (Intra-Bougie)";
-        private const string GrpBarLvn     = "3. LVN sur Footprint (Intra-Bougie)";
-        private const string GrpProfile    = "4. HVN / LVN Profil Composite (Multi-Bougies)";
-        private const string GrpAbsorption = "5. Heavy Absorption (Détection)";
-        private const string GrpAbsVisual  = "6. Heavy Absorption (Visuel & Rayons)";
-        private const string GrpHudAlerts  = "7. Panneau HUD & Alertes";
+        private const string GrpGeneral       = "1. Général & Footprint";
+        private const string GrpBarHvn        = "2. HVN sur Footprint (Intra-Bougie)";
+        private const string GrpBarLvn        = "3. LVN sur Footprint (Intra-Bougie)";
+        private const string GrpProfile       = "4. HVN / LVN Profil Composite (Multi-Bougies)";
+        private const string GrpAbsorption    = "5. Heavy Absorption (Détection)";
+        private const string GrpAbsVisual     = "6. Heavy Absorption (Visuel & Rayons)";
+        private const string GrpTrappedDetect = "7. Acheteurs & Vendeurs Piégés (Détection)";
+        private const string GrpTrappedVisual = "8. Acheteurs & Vendeurs Piégés (Visuel & Rayons)";
+        private const string GrpHudAlerts     = "9. Panneau HUD & Alertes";
 
         // =====================================================================
         // Énumérations
@@ -97,7 +109,7 @@ namespace ATAS.Indicators.Custom
             Description = "Activez si votre graphique est en chandeliers classiques et que vous souhaitez afficher les volumes Bid x Ask dans les cellules.")]
         public bool RenderBuiltInBidAskText { get; set; } = false;
 
-        [Display(Name = "Afficher étiquettes sur cellules (HVN/LVN/ABS)", GroupName = GrpGeneral, Order = 30)]
+        [Display(Name = "Afficher étiquettes sur cellules (HVN/LVN/ABS/TRAP)", GroupName = GrpGeneral, Order = 30)]
         public bool ShowCellBadges { get; set; } = true;
 
         [Display(Name = "Taille de police (px)", GroupName = GrpGeneral, Order = 40)]
@@ -368,7 +380,112 @@ namespace ATAS.Indicators.Custom
         public bool StopRayWhenMitigated { get; set; } = true;
 
         // =====================================================================
-        // 7. PANNEAU HUD & ALERTES
+        // 7. ACHETEURS & VENDEURS PIÉGÉS (DÉTECTION)
+        // =====================================================================
+        private bool _enableTrappedTraders = true;
+        [Display(Name = "Activer Acheteurs & Vendeurs Piégés", GroupName = GrpTrappedDetect, Order = 10,
+            Description = "Détecte les acheteurs agressifs piégés en haut de bougie (signal baissier) et les vendeurs agressifs piégés en bas de bougie (signal haussier).")]
+        public bool EnableTrappedTraders
+        {
+            get => _enableTrappedTraders;
+            set { _enableTrappedTraders = value; RecalculateValues(); }
+        }
+
+        private int _trappedMinVolume = 0;
+        [Display(Name = "Volume Minimum du Niveau Piégé", GroupName = GrpTrappedDetect, Order = 20,
+            Description = "Volume minimum (Bid+Ask) sur le niveau pour valider un cluster d'acheteurs ou vendeurs piégés (0 = utilise le multiplicateur relatif).")]
+        [Range(0, 1000000)]
+        public int TrappedMinVolume
+        {
+            get => _trappedMinVolume;
+            set { _trappedMinVolume = value; RecalculateValues(); }
+        }
+
+        private decimal _trappedVolumeMultiplier = 1.15m;
+        [Display(Name = "Multiplicateur de Volume Min vs Moyenne Bougie", GroupName = GrpTrappedDetect, Order = 30,
+            Description = "Le volume du niveau piégé doit être au moins X fois supérieur au volume moyen par niveau de la bougie (ex: 1.15x).")]
+        [Range(0.5, 10.0)]
+        public decimal TrappedVolumeMultiplier
+        {
+            get => _trappedVolumeMultiplier;
+            set { _trappedVolumeMultiplier = value; RecalculateValues(); }
+        }
+
+        private int _trappedMinDominantPct = 60;
+        [Display(Name = "Dominance Agressive Min Bid ou Ask (%)", GroupName = GrpTrappedDetect, Order = 40,
+            Description = "Pourcentage minimum d'acheteurs agressifs (Ask%) en haut ou de vendeurs agressifs (Bid%) en bas pour qualifier le piège.")]
+        [Range(50, 99)]
+        public int TrappedMinDominantPct
+        {
+            get => _trappedMinDominantPct;
+            set { _trappedMinDominantPct = value; RecalculateValues(); }
+        }
+
+        private decimal _trappedImbalanceRatio = 2.0m;
+        [Display(Name = "Ratio d'Imbalance Diagonale Min (Piégés)", GroupName = GrpTrappedDetect, Order = 50,
+            Description = "Imbalance diagonale Ask[i]/Bid[i-1] pour acheteurs piégés ou Bid[i]/Ask[i+1] pour vendeurs piégés (1.0 = désactivé).")]
+        [Range(1.0, 20.0)]
+        public decimal TrappedImbalanceRatio
+        {
+            get => _trappedImbalanceRatio;
+            set { _trappedImbalanceRatio = value; RecalculateValues(); }
+        }
+
+        private int _trappedWickZonePct = 40;
+        [Display(Name = "Zone de Piégeage Extrême (% du Range)", GroupName = GrpTrappedDetect, Order = 60,
+            Description = "Le cluster piégé doit se situer dans la mèche ou dans les X% supérieurs (acheteurs piégés) / inférieurs (vendeurs piégés) de la bougie.")]
+        [Range(10, 100)]
+        public int TrappedWickZonePct
+        {
+            get => _trappedWickZonePct;
+            set { _trappedWickZonePct = value; RecalculateValues(); }
+        }
+
+        private bool _requireStrictWickOrOppositeClose = true;
+        [Display(Name = "Exiger niveau dans la mèche (hors corps) ou clôture opposée", GroupName = GrpTrappedDetect, Order = 70,
+            Description = "Garantit que les acheteurs piégés sont au-dessus de la clôture (en perte latente immédiate) et les vendeurs piégés en dessous de la clôture.")]
+        public bool RequireStrictWickOrOppositeClose
+        {
+            get => _requireStrictWickOrOppositeClose;
+            set { _requireStrictWickOrOppositeClose = value; RecalculateValues(); }
+        }
+
+        private int _trappedMinRejectionLevels = 1;
+        [Display(Name = "Recul Minimum de Clôture (en niveaux)", GroupName = GrpTrappedDetect, Order = 80,
+            Description = "Nombre minimum de niveaux d'écart entre le cluster piégé et la clôture de la bougie confirmant que ces traders sont sous l'eau.")]
+        [Range(1, 20)]
+        public int TrappedMinRejectionLevels
+        {
+            get => _trappedMinRejectionLevels;
+            set { _trappedMinRejectionLevels = value; RecalculateValues(); }
+        }
+
+        // =====================================================================
+        // 8. ACHETEURS & VENDEURS PIÉGÉS (VISUEL & RAYONS)
+        // =====================================================================
+        [Display(Name = "Couleur Vendeurs Piégés (Signal Bullish ▲)", GroupName = GrpTrappedVisual, Order = 10)]
+        public Color TrappedSellersBullColor { get; set; } = Color.FromArgb(255, 16, 245, 150); // Vert Émeraude Néon
+
+        [Display(Name = "Couleur Acheteurs Piégés (Signal Bearish ▼)", GroupName = GrpTrappedVisual, Order = 20)]
+        public Color TrappedBuyersBearColor { get; set; } = Color.FromArgb(255, 255, 90, 54); // Rouge / Orange Corail Vif
+
+        [Display(Name = "Opacité surbrillance Traders Piégés (0-255)", GroupName = GrpTrappedVisual, Order = 30)]
+        [Range(30, 255)]
+        public int TrappedHighlightAlpha { get; set; } = 120;
+
+        [Display(Name = "Afficher marqueur bougie Traders Piégés", GroupName = GrpTrappedVisual, Order = 40)]
+        public bool ShowTrappedBarMarker { get; set; } = true;
+
+        [Display(Name = "Projeter Rayon de Liquidation (Trapped Zone)", GroupName = GrpTrappedVisual, Order = 50,
+            Description = "Projette une ligne pointillée depuis le prix des acheteurs/vendeurs piégés (zone de stop-loss / rachat forcé).")]
+        public bool ProjectTrappedRays { get; set; } = true;
+
+        [Display(Name = "Longueur max du rayon Traders Piégés (bougies)", GroupName = GrpTrappedVisual, Order = 60)]
+        [Range(2, 150)]
+        public int TrappedRayMaxBars { get; set; } = 20;
+
+        // =====================================================================
+        // 9. PANNEAU HUD & ALERTES
         // =====================================================================
         [Display(Name = "Afficher le tableau de bord HUD", GroupName = GrpHudAlerts, Order = 10)]
         public bool ShowHudPanel { get; set; } = true;
@@ -384,7 +501,7 @@ namespace ATAS.Indicators.Custom
         [Range(5, 400)]
         public int HudOffsetY { get; set; } = 36;
 
-        [Display(Name = "Activer les alertes sonores ATAS (Heavy Absorption)", GroupName = GrpHudAlerts, Order = 50)]
+        [Display(Name = "Activer les alertes sonores (Absorption & Piégés)", GroupName = GrpHudAlerts, Order = 50)]
         public bool EnableAlerts { get; set; } = true;
 
         [Display(Name = "Fichier son d'alerte", GroupName = GrpHudAlerts, Order = 60)]
@@ -425,6 +542,22 @@ namespace ATAS.Indicators.Custom
             ShowZeroValue = false
         };
 
+        private readonly ValueDataSeries _trappedSellersSeries = new ValueDataSeries("TrappedSellersBull", "Vendeurs Piégés (Bullish ▲)")
+        {
+            VisualType = VisualMode.UpArrow,
+            Color = Color.FromArgb(255, 16, 245, 150),
+            Width = 3,
+            ShowZeroValue = false
+        };
+
+        private readonly ValueDataSeries _trappedBuyersSeries = new ValueDataSeries("TrappedBuyersBear", "Acheteurs Piégés (Bearish ▼)")
+        {
+            VisualType = VisualMode.DownArrow,
+            Color = Color.FromArgb(255, 255, 90, 54),
+            Width = 3,
+            ShowZeroValue = false
+        };
+
         // =====================================================================
         // Structures internes d'analyse par niveau de prix
         // =====================================================================
@@ -439,20 +572,23 @@ namespace ATAS.Indicators.Custom
             public bool IsHvn;
             public bool IsLvn;
             public int AbsorptionSide; // +1 = Bullish (Bid absorbé en bas), -1 = Bearish (Ask absorbé en haut), 0 = Aucun
+            public int TrappedSide;    // +1 = Vendeurs Piégés en bas (Signal Bullish ▲), -1 = Acheteurs Piégés en haut (Signal Bearish ▼), 0 = Aucun
             public decimal DominantPct;
+            public decimal TrappedDominantPct;
         }
 
-        private struct AbsorptionRayEvent
+        private struct RaySignalEvent
         {
             public int Bar;
             public decimal Price;
             public decimal Volume;
             public decimal Delta;
-            public int Side; // +1 Bullish, -1 Bearish
+            public int Side;       // +1 Bullish, -1 Bearish
+            public bool IsTrapped; // false = Heavy Absorption, true = Trapped Traders
         }
 
         private int _lastAlertBar = -1;
-        private int _lastAlertSide = 0;
+        private int _lastAlertCode = 0;
 
         // =====================================================================
         // Constructeur
@@ -467,6 +603,8 @@ namespace ATAS.Indicators.Custom
             DataSeries.Add(_barLvnSeries);
             DataSeries.Add(_bullAbsSeries);
             DataSeries.Add(_bearAbsSeries);
+            DataSeries.Add(_trappedSellersSeries);
+            DataSeries.Add(_trappedBuyersSeries);
         }
 
         // =====================================================================
@@ -482,52 +620,67 @@ namespace ATAS.Indicators.Custom
                 tickSize = 0.25m;
 
             var candle = GetCandle(bar);
-            var rows = AnalyzeBarClusters(candle, tickSize, out int pocIdx, out int primaryLvnIdx, out int bestBullAbsIdx, out int bestBearAbsIdx);
+            var rows = AnalyzeBarClusters(
+                candle, tickSize,
+                out int pocIdx,
+                out int primaryLvnIdx,
+                out int bestBullAbsIdx,
+                out int bestBearAbsIdx,
+                out int bestTrappedSellersIdx,
+                out int bestTrappedBuyersIdx);
 
             if (rows.Length == 0)
                 return;
 
-            if (_enableBarHvn && pocIdx >= 0)
-                _pocHvnSeries[bar] = rows[pocIdx].Price;
-            else
-                _pocHvnSeries[bar] = 0m;
-
-            if (_enableBarLvn && primaryLvnIdx >= 0)
-                _barLvnSeries[bar] = rows[primaryLvnIdx].Price;
-            else
-                _barLvnSeries[bar] = 0m;
-
-            if (_enableAbsorption && bestBullAbsIdx >= 0)
-                _bullAbsSeries[bar] = rows[bestBullAbsIdx].Price;
-            else
-                _bullAbsSeries[bar] = 0m;
-
-            if (_enableAbsorption && bestBearAbsIdx >= 0)
-                _bearAbsSeries[bar] = rows[bestBearAbsIdx].Price;
-            else
-                _bearAbsSeries[bar] = 0m;
+            _pocHvnSeries[bar] = (_enableBarHvn && pocIdx >= 0) ? rows[pocIdx].Price : 0m;
+            _barLvnSeries[bar] = (_enableBarLvn && primaryLvnIdx >= 0) ? rows[primaryLvnIdx].Price : 0m;
+            _bullAbsSeries[bar] = (_enableAbsorption && bestBullAbsIdx >= 0) ? rows[bestBullAbsIdx].Price : 0m;
+            _bearAbsSeries[bar] = (_enableAbsorption && bestBearAbsIdx >= 0) ? rows[bestBearAbsIdx].Price : 0m;
+            _trappedSellersSeries[bar] = (_enableTrappedTraders && bestTrappedSellersIdx >= 0) ? rows[bestTrappedSellersIdx].Price : 0m;
+            _trappedBuyersSeries[bar] = (_enableTrappedTraders && bestTrappedBuyersIdx >= 0) ? rows[bestTrappedBuyersIdx].Price : 0m;
 
             // Alerte temps réel sur la dernière bougie
             if (EnableAlerts && bar == CurrentBar - 1)
             {
-                int side = bestBullAbsIdx >= 0 ? 1 : (bestBearAbsIdx >= 0 ? -1 : 0);
-                if (side != 0 && (_lastAlertBar != bar || _lastAlertSide != side))
+                int alertCode = 0;
+                if (bestBullAbsIdx >= 0) alertCode = 1;
+                else if (bestBearAbsIdx >= 0) alertCode = -1;
+                else if (bestTrappedSellersIdx >= 0) alertCode = 2;
+                else if (bestTrappedBuyersIdx >= 0) alertCode = -2;
+
+                if (alertCode != 0 && (_lastAlertBar != bar || _lastAlertCode != alertCode))
                 {
                     _lastAlertBar = bar;
-                    _lastAlertSide = side;
+                    _lastAlertCode = alertCode;
 
-                    ClusterRow absRow = side > 0 ? rows[bestBullAbsIdx] : rows[bestBearAbsIdx];
-                    string dirText = side > 0 ? "BULLISH HEAVY ABSORPTION (Bid Absorbé)" : "BEARISH HEAVY ABSORPTION (Ask Absorbé)";
                     string instrument = InstrumentInfo?.Instrument ?? "ATAS X";
-                    string msg = $"{dirText} @ {absRow.Price} | Vol: {absRow.Volume:0} (Bid {absRow.Bid:0} x Ask {absRow.Ask:0}, Δ {absRow.Delta:+0;-0;0})";
-                    Color bg = side > 0 ? Color.FromArgb(255, 0, 95, 115) : Color.FromArgb(255, 120, 20, 65);
-                    AddAlert(AlertSoundFile, instrument, msg, bg, Color.White);
+                    if (Math.Abs(alertCode) == 1)
+                    {
+                        ClusterRow absRow = alertCode > 0 ? rows[bestBullAbsIdx] : rows[bestBearAbsIdx];
+                        string dirText = alertCode > 0
+                            ? "BULLISH HEAVY ABSORPTION (Bid Absorbé)"
+                            : "BEARISH HEAVY ABSORPTION (Ask Absorbé)";
+                        string msg = $"{dirText} @ {absRow.Price} | Vol: {absRow.Volume:0} (Bid {absRow.Bid:0} x Ask {absRow.Ask:0}, Δ {absRow.Delta:+0;-0;0})";
+                        Color bg = alertCode > 0 ? Color.FromArgb(255, 0, 95, 115) : Color.FromArgb(255, 120, 20, 65);
+                        AddAlert(AlertSoundFile, instrument, msg, bg, Color.White);
+                    }
+                    else
+                    {
+                        ClusterRow trapRow = alertCode > 0 ? rows[bestTrappedSellersIdx] : rows[bestTrappedBuyersIdx];
+                        string dirText = alertCode > 0
+                            ? "VENDEURS PIÉGÉS ▲ (Trapped Sellers - Signal Haussier)"
+                            : "ACHETEURS PIÉGÉS ▼ (Trapped Buyers - Signal Baissier)";
+                        string msg = $"{dirText} @ {trapRow.Price} | Vol: {trapRow.Volume:0} (Bid {trapRow.Bid:0} x Ask {trapRow.Ask:0}, Δ {trapRow.Delta:+0;-0;0})";
+                        Color bg = alertCode > 0 ? Color.FromArgb(255, 10, 110, 75) : Color.FromArgb(255, 135, 40, 20);
+                        AddAlert(AlertSoundFile, instrument, msg, bg, Color.White);
+                    }
                 }
             }
         }
 
         // =====================================================================
-        // Analyse complète des niveaux Footprint d'une bougie (HVN, LVN, Absorption)
+        // Analyse complète des niveaux Footprint d'une bougie :
+        // HVN, LVN, Heavy Absorption & Acheteurs/Vendeurs Piégés
         // =====================================================================
         private ClusterRow[] AnalyzeBarClusters(
             IndicatorCandle candle,
@@ -535,12 +688,16 @@ namespace ATAS.Indicators.Custom
             out int pocIndex,
             out int primaryLvnIndex,
             out int bestBullAbsIndex,
-            out int bestBearAbsIndex)
+            out int bestBearAbsIndex,
+            out int bestTrappedSellersIndex,
+            out int bestTrappedBuyersIndex)
         {
             pocIndex = -1;
             primaryLvnIndex = -1;
             bestBullAbsIndex = -1;
             bestBearAbsIndex = -1;
+            bestTrappedSellersIndex = -1;
+            bestTrappedBuyersIndex = -1;
 
             int ticksPerLevel = Math.Max(1, _ticksPerRow);
             decimal step = tickSize * ticksPerLevel;
@@ -647,7 +804,6 @@ namespace ATAS.Indicators.Custom
                     decimal prevV = i > 0 ? rows[i - 1].Volume : decimal.MaxValue;
                     decimal nextV = i < count - 1 ? rows[i + 1].Volume : decimal.MaxValue;
 
-                    // Creux local de volume entre deux voisins plus fournis
                     if (v <= prevV && v <= nextV && (v < prevV || v < nextV))
                     {
                         rows[i].IsLvn = true;
@@ -660,10 +816,11 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
+            decimal barRange = candle.High - candle.Low;
+
             // 3. Détection Heavy Absorption sur le Footprint
             if (_enableAbsorption)
             {
-                decimal barRange = candle.High - candle.Low;
                 decimal lowerZoneLimit = candle.Low + barRange * (_absZonePct / 100m);
                 decimal upperZoneLimit = candle.High - barRange * (_absZonePct / 100m);
                 decimal minVolRequired = Math.Max(_absMinVolume, avgLevelVol * _absVolumeMultiplier);
@@ -747,6 +904,94 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
+            // 4. Détection des Acheteurs Piégés (Trapped Buyers ▼) & Vendeurs Piégés (Trapped Sellers ▲)
+            if (_enableTrappedTraders && count >= 2)
+            {
+                decimal trapLowerZone = candle.Low + barRange * (_trappedWickZonePct / 100m);
+                decimal trapUpperZone = candle.High - barRange * (_trappedWickZonePct / 100m);
+                decimal trapMinVol = Math.Max(_trappedMinVolume, avgLevelVol * _trappedVolumeMultiplier);
+                decimal bodyHigh = Math.Max(candle.Open, candle.Close);
+                decimal bodyLow = Math.Min(candle.Open, candle.Close);
+                decimal minRejectDist = Math.Max(1, _trappedMinRejectionLevels) * step;
+
+                decimal bestTrapSellersDelta = 0m;
+                decimal bestTrapBuyersDelta = 0m;
+
+                for (int i = 0; i < count; i++)
+                {
+                    decimal vol = rows[i].Volume;
+                    if (vol <= 0m || vol < trapMinVol)
+                        continue;
+
+                    decimal price = rows[i].Price;
+                    decimal bid = rows[i].Bid;
+                    decimal ask = rows[i].Ask;
+
+                    // --- A. Vendeurs Piégés en bas de bougie (Trapped Sellers ▲ -> Signal Haussier) ---
+                    // Vendeurs agressifs au marché (Bid >> Ask) dans la mèche basse ou le bas du range,
+                    // mais le prix rejette vers le haut et clôture au-dessus d'eux (vendeurs en perte latente).
+                    bool inLowerTrapZone = price <= trapLowerZone || price <= bodyLow;
+                    bool closedAboveSellers = candle.Close >= price + minRejectDist;
+                    bool inLowerWickOrBullClose = !_requireStrictWickOrOppositeClose || (price <= bodyLow || candle.Close > candle.Open);
+
+                    if (inLowerTrapZone && closedAboveSellers && inLowerWickOrBullClose && bid > ask)
+                    {
+                        decimal bidPct = (bid / vol) * 100m;
+                        bool passesDom = bidPct >= _trappedMinDominantPct;
+                        bool passesDiag = true;
+
+                        if (_trappedImbalanceRatio > 1.0m && i + 1 < count && rows[i + 1].Ask > 0m)
+                        {
+                            passesDiag = (bid / rows[i + 1].Ask) >= _trappedImbalanceRatio;
+                        }
+
+                        if (passesDom && passesDiag)
+                        {
+                            rows[i].TrappedSide = 1;
+                            rows[i].TrappedDominantPct = bidPct;
+                            decimal sellDeltaAbs = bid - ask;
+                            if (sellDeltaAbs > bestTrapSellersDelta)
+                            {
+                                bestTrapSellersDelta = sellDeltaAbs;
+                                bestTrappedSellersIndex = i;
+                            }
+                            continue;
+                        }
+                    }
+
+                    // --- B. Acheteurs Piégés en haut de bougie (Trapped Buyers ▼ -> Signal Baissier) ---
+                    // Acheteurs agressifs au marché (Ask >> Bid) dans la mèche haute ou le haut du range,
+                    // mais le prix rejette vers le bas et clôture en dessous d'eux (acheteurs en perte latente).
+                    bool inUpperTrapZone = price >= trapUpperZone || price >= bodyHigh;
+                    bool closedBelowBuyers = candle.Close <= price - minRejectDist;
+                    bool inUpperWickOrBearClose = !_requireStrictWickOrOppositeClose || (price >= bodyHigh || candle.Close < candle.Open);
+
+                    if (inUpperTrapZone && closedBelowBuyers && inUpperWickOrBearClose && ask > bid)
+                    {
+                        decimal askPct = (ask / vol) * 100m;
+                        bool passesDom = askPct >= _trappedMinDominantPct;
+                        bool passesDiag = true;
+
+                        if (_trappedImbalanceRatio > 1.0m && i - 1 >= 0 && rows[i - 1].Bid > 0m)
+                        {
+                            passesDiag = (ask / rows[i - 1].Bid) >= _trappedImbalanceRatio;
+                        }
+
+                        if (passesDom && passesDiag)
+                        {
+                            rows[i].TrappedSide = -1;
+                            rows[i].TrappedDominantPct = askPct;
+                            decimal buyDeltaAbs = ask - bid;
+                            if (buyDeltaAbs > bestTrapBuyersDelta)
+                            {
+                                bestTrapBuyersDelta = buyDeltaAbs;
+                                bestTrappedBuyersIndex = i;
+                            }
+                        }
+                    }
+                }
+            }
+
             return rows;
         }
 
@@ -791,19 +1036,27 @@ namespace ATAS.Indicators.Custom
                     out compositeHvnCount, out compositeLvnCount, out compositePocPrice, out compositePocVol);
             }
 
-            // Liste des absorptions détectées pour projeter les rayons S/R et alimenter le HUD
-            var activeRays = new List<AbsorptionRayEvent>();
+            // Listes des événements détectés pour projeter les rayons S/R et alimenter le HUD
+            var activeAbsRays = new List<RaySignalEvent>();
+            var activeTrappedRays = new List<RaySignalEvent>();
+
             int visibleHvnCells = 0;
             int visibleLvnCells = 0;
             int visibleBullAbs = 0;
             int visibleBearAbs = 0;
-            AbsorptionRayEvent? latestAbsorption = null;
+            int visibleTrappedSellers = 0;
+            int visibleTrappedBuyers = 0;
 
-            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN & Heavy Absorption
+            RaySignalEvent? latestAbsorption = null;
+            RaySignalEvent? latestTrapped = null;
+
+            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN, Heavy Absorption & Trapped Traders
             for (int bar = firstBar; bar <= lastBar; bar++)
             {
                 var candle = GetCandle(bar);
-                var rows = AnalyzeBarClusters(candle, tickSize, out int pocIdx, out int lvnIdx, out int bullAbsIdx, out int bearAbsIdx);
+                var rows = AnalyzeBarClusters(
+                    candle, tickSize,
+                    out _, out _, out _, out _, out _, out _);
                 if (rows.Length == 0)
                     continue;
 
@@ -817,7 +1070,8 @@ namespace ATAS.Indicators.Custom
                 int cellW = CustomCellWidthPx > 0 ? CustomCellWidthPx : Math.Max(8, barSpan - 4);
                 int cellX = xMid - cellW / 2;
 
-                int barBestSide = 0;
+                int barBestAbsSide = 0;
+                int barBestTrapSide = 0;
 
                 for (int i = 0; i < rows.Length; i++)
                 {
@@ -829,8 +1083,10 @@ namespace ATAS.Indicators.Custom
                     int yTop = yCenter - rowHeight / 2;
                     Rectangle cellRect = new Rectangle(cellX, yTop, cellW, rowHeight);
 
+                    bool hasSpecialOrderFlow = r.AbsorptionSide != 0 || r.TrappedSide != 0;
+
                     // --- A. Rendu LVN Intra-Bougie ---
-                    if (r.IsLvn && r.AbsorptionSide == 0)
+                    if (r.IsLvn && !hasSpecialOrderFlow)
                     {
                         visibleLvnCells++;
                         Color fill = Color.FromArgb(BarLvnFillAlpha, BarLvnColor.R, BarLvnColor.G, BarLvnColor.B);
@@ -849,7 +1105,7 @@ namespace ATAS.Indicators.Custom
                     }
 
                     // --- B. Rendu HVN & POC Intra-Bougie ---
-                    if (r.IsHvn && r.AbsorptionSide == 0)
+                    if (r.IsHvn && !hasSpecialOrderFlow)
                     {
                         visibleHvnCells++;
                         Color baseColor = r.IsPoc ? BarPocColor : BarHvnColor;
@@ -869,12 +1125,58 @@ namespace ATAS.Indicators.Custom
                         }
                     }
 
-                    // --- C. Rendu HEAVY ABSORPTION sur le Footprint ---
+                    // --- C. Rendu ACHETEURS & VENDEURS PIÉGÉS (Trapped Buyers / Sellers) ---
+                    if (r.TrappedSide != 0)
+                    {
+                        bool isTrappedSellersBull = r.TrappedSide > 0;
+                        if (isTrappedSellersBull) visibleTrappedSellers++; else visibleTrappedBuyers++;
+                        barBestTrapSide = r.TrappedSide;
+
+                        Color trapBase = isTrappedSellersBull ? TrappedSellersBullColor : TrappedBuyersBearColor;
+                        Color trapFill = Color.FromArgb(TrappedHighlightAlpha, trapBase.R, trapBase.G, trapBase.B);
+                        Color trapBorder = Color.FromArgb(255, trapBase.R, trapBase.G, trapBase.B);
+
+                        if (r.AbsorptionSide == 0)
+                        {
+                            context.FillRectangle(trapFill, cellRect);
+                            var trapPen = new RenderPen(trapBorder, 2f, DashStyle.DashDot);
+                            context.DrawRectangle(trapPen, cellRect);
+
+                            // Barre latérale droite distinctive pour les Traders Piégés
+                            Rectangle rightAccent = new Rectangle(cellRect.Right - 4, cellRect.Top, 4, cellRect.Height);
+                            context.FillRectangle(trapBorder, rightAccent);
+
+                            if (ShowCellBadges && rowHeight >= CellFontSize - 1)
+                            {
+                                string badge = isTrappedSellersBull
+                                    ? $"V.PIÉGÉS▲ {r.Bid:0}x{r.Ask:0} ({r.TrappedDominantPct:0}%)"
+                                    : $"A.PIÉGÉS▼ {r.Bid:0}x{r.Ask:0} ({r.TrappedDominantPct:0}%)";
+                                Size bSz = context.MeasureString(badge, boldFont);
+                                int bx = cellW >= bSz.Width + 8 ? cellRect.Left + 5 : cellRect.Right + 4;
+                                int by = yCenter - bSz.Height / 2;
+                                context.DrawString(badge, boldFont, Color.White, bx, by);
+                            }
+                        }
+
+                        var trapEv = new RaySignalEvent
+                        {
+                            Bar = bar,
+                            Price = r.Price,
+                            Volume = r.Volume,
+                            Delta = r.Delta,
+                            Side = r.TrappedSide,
+                            IsTrapped = true
+                        };
+                        activeTrappedRays.Add(trapEv);
+                        latestTrapped = trapEv;
+                    }
+
+                    // --- D. Rendu HEAVY ABSORPTION (et Confluence ABS + PIÉGÉ) sur le Footprint ---
                     if (r.AbsorptionSide != 0)
                     {
                         bool isBull = r.AbsorptionSide > 0;
                         if (isBull) visibleBullAbs++; else visibleBearAbs++;
-                        barBestSide = r.AbsorptionSide;
+                        barBestAbsSide = r.AbsorptionSide;
 
                         Color absBase = isBull ? BullishAbsorptionColor : BearishAbsorptionColor;
                         Color absFill = Color.FromArgb(AbsHighlightAlpha, absBase.R, absBase.G, absBase.B);
@@ -884,35 +1186,45 @@ namespace ATAS.Indicators.Custom
                         var absPen = new RenderPen(absBorder, AbsBorderThickness);
                         context.DrawRectangle(absPen, cellRect);
 
-                        // Barre latérale lumineuse d'intensité
+                        // Barre latérale gauche lumineuse d'absorption
                         Rectangle accentBar = new Rectangle(cellRect.Left, cellRect.Top, Math.Max(3, AbsBorderThickness + 1), cellRect.Height);
                         context.FillRectangle(absBorder, accentBar);
 
+                        // Si le niveau est AUSSI un niveau d'acheteurs/vendeurs piégés : bordure droite bicolore
+                        if (r.TrappedSide != 0)
+                        {
+                            Color trapCol = r.TrappedSide > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor;
+                            Rectangle rightTrapBar = new Rectangle(cellRect.Right - 4, cellRect.Top, 4, cellRect.Height);
+                            context.FillRectangle(trapCol, rightTrapBar);
+                        }
+
                         if (ShowCellBadges && rowHeight >= CellFontSize - 1)
                         {
-                            string badge = isBull
-                                ? $"ABS▲ {r.Bid:0}x{r.Ask:0} ({r.DominantPct:0}%)"
-                                : $"ABS▼ {r.Bid:0}x{r.Ask:0} ({r.DominantPct:0}%)";
+                            string prefix = r.TrappedSide != 0
+                                ? (isBull ? "ABS+PIÉGÉ▲" : "ABS+PIÉGÉ▼")
+                                : (isBull ? "ABS▲" : "ABS▼");
+                            string badge = $"{prefix} {r.Bid:0}x{r.Ask:0} ({r.DominantPct:0}%)";
                             Size bSz = context.MeasureString(badge, boldFont);
                             int bx = cellW >= bSz.Width + 8 ? cellRect.Left + 5 : cellRect.Right + 4;
                             int by = yCenter - bSz.Height / 2;
                             context.DrawString(badge, boldFont, Color.White, bx, by);
                         }
 
-                        var ev = new AbsorptionRayEvent
+                        var ev = new RaySignalEvent
                         {
                             Bar = bar,
                             Price = r.Price,
                             Volume = r.Volume,
                             Delta = r.Delta,
-                            Side = r.AbsorptionSide
+                            Side = r.AbsorptionSide,
+                            IsTrapped = false
                         };
-                        activeRays.Add(ev);
+                        activeAbsRays.Add(ev);
                         latestAbsorption = ev;
                     }
 
-                    // --- D. Texte Bid x Ask intégré optionnel (si mode chandelier) ---
-                    if (RenderBuiltInBidAskText && r.AbsorptionSide == 0 && rowHeight >= CellFontSize && cellW >= 48)
+                    // --- E. Texte Bid x Ask intégré optionnel (si mode chandelier) ---
+                    if (RenderBuiltInBidAskText && !hasSpecialOrderFlow && rowHeight >= CellFontSize && cellW >= 48)
                     {
                         string baText = $"{r.Bid:0} x {r.Ask:0}";
                         Size sz = context.MeasureString(baText, cellFont);
@@ -924,20 +1236,34 @@ namespace ATAS.Indicators.Custom
                 }
 
                 // Marqueur d'absorption au sommet ou au creux de la bougie
-                if (ShowBarExtremeMarker && barBestSide != 0)
+                if (ShowBarExtremeMarker && barBestAbsSide != 0)
                 {
-                    Color markerCol = barBestSide > 0 ? BullishAbsorptionColor : BearishAbsorptionColor;
-                    DrawExtremeMarker(context, candle, barBestSide, markerCol, xMid, rowHeight);
+                    Color markerCol = barBestAbsSide > 0 ? BullishAbsorptionColor : BearishAbsorptionColor;
+                    DrawExtremeMarker(context, candle, barBestAbsSide, markerCol, xMid, rowHeight, BarMarkerStyle, 0);
+                }
+
+                // Marqueur des Acheteurs / Vendeurs Piégés au sommet ou au creux de la bougie
+                if (ShowTrappedBarMarker && barBestTrapSide != 0)
+                {
+                    Color trapCol = barBestTrapSide > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor;
+                    int extraOffset = (ShowBarExtremeMarker && barBestAbsSide == barBestTrapSide) ? (BarMarkerSize * 2 + 4) : 0;
+                    DrawExtremeMarker(context, candle, barBestTrapSide, trapCol, xMid, rowHeight, AbsorptionMarkerType.Arrow, extraOffset);
                 }
             }
 
             // 3. Projection des rayons Support / Résistance des Heavy Absorptions
-            if (ProjectAbsorptionRays && activeRays.Count > 0)
+            if (ProjectAbsorptionRays && activeAbsRays.Count > 0)
             {
-                RenderAbsorptionRays(context, activeRays, lastBar, step, cellFont);
+                RenderSignalRays(context, activeAbsRays, lastBar, step, cellFont, AbsorptionRayMaxBars, false);
             }
 
-            // 4. Rendu du panneau HUD récapitulatif en temps réel
+            // 4. Projection des rayons de liquidation des Acheteurs / Vendeurs Piégés
+            if (ProjectTrappedRays && activeTrappedRays.Count > 0)
+            {
+                RenderSignalRays(context, activeTrappedRays, lastBar, step, cellFont, TrappedRayMaxBars, true);
+            }
+
+            // 5. Rendu du panneau HUD récapitulatif en temps réel
             if (ShowHudPanel)
             {
                 RenderHud(
@@ -946,7 +1272,8 @@ namespace ATAS.Indicators.Custom
                     compositeHvnCount, compositeLvnCount,
                     compositePocPrice, compositePocVol,
                     visibleBullAbs, visibleBearAbs,
-                    latestAbsorption);
+                    visibleTrappedSellers, visibleTrappedBuyers,
+                    latestAbsorption, latestTrapped);
             }
         }
 
@@ -1096,26 +1423,27 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Rayons Support/Résistance issus des Heavy Absorptions
+        // Rayons Support/Résistance issus des Heavy Absorptions & Traders Piégés
         // =====================================================================
-        private void RenderAbsorptionRays(
+        private void RenderSignalRays(
             RenderContext context,
-            List<AbsorptionRayEvent> events,
+            List<RaySignalEvent> events,
             int lastVisibleBar,
             decimal step,
-            RenderFont font)
+            RenderFont font,
+            int maxBars,
+            bool isTrappedRay)
         {
             for (int i = 0; i < events.Count; i++)
             {
-                AbsorptionRayEvent ev = events[i];
-                int endBar = Math.Min(CurrentBar - 1, ev.Bar + AbsorptionRayMaxBars);
+                RaySignalEvent ev = events[i];
+                int endBar = Math.Min(CurrentBar - 1, ev.Bar + maxBars);
 
                 if (StopRayWhenMitigated)
                 {
                     for (int b = ev.Bar + 1; b <= endBar; b++)
                     {
                         var c = GetCandle(b);
-                        // Si une bougie suivante clôture franchement au-delà du niveau absorbé, le niveau est cassé/mitigé
                         if (ev.Side > 0 && c.Close < ev.Price - step * 0.5m)
                         {
                             endBar = b;
@@ -1138,19 +1466,27 @@ namespace ATAS.Indicators.Custom
                     continue;
 
                 int y = ChartInfo!.GetYByPrice(ev.Price, false);
-                Color baseCol = ev.Side > 0 ? BullishAbsorptionColor : BearishAbsorptionColor;
-                Color rayCol = Color.FromArgb(200, baseCol.R, baseCol.G, baseCol.B);
+                Color baseCol = isTrappedRay
+                    ? (ev.Side > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor)
+                    : (ev.Side > 0 ? BullishAbsorptionColor : BearishAbsorptionColor);
+                Color rayCol = Color.FromArgb(isTrappedRay ? 185 : 205, baseCol.R, baseCol.G, baseCol.B);
 
-                var pen = new RenderPen(rayCol, 2f, DashStyle.Solid);
+                var pen = new RenderPen(rayCol, isTrappedRay ? 1.6f : 2f, isTrappedRay ? DashStyle.Dash : DashStyle.Solid);
                 context.DrawLine(pen, x1, y, x2, y);
 
-                string rayLabel = ev.Side > 0
-                    ? $"Bull ABS Support @ {ev.Price} (Vol {ev.Volume:0})"
-                    : $"Bear ABS Resist @ {ev.Price} (Vol {ev.Volume:0})";
+                string rayLabel = isTrappedRay
+                    ? (ev.Side > 0
+                        ? $"Vendeurs Piégés ▲ @ {ev.Price} (Δ {ev.Delta:+0;-0;0})"
+                        : $"Acheteurs Piégés ▼ @ {ev.Price} (Δ {ev.Delta:+0;-0;0})")
+                    : (ev.Side > 0
+                        ? $"Bull ABS Support @ {ev.Price} (Vol {ev.Volume:0})"
+                        : $"Bear ABS Resist @ {ev.Price} (Vol {ev.Volume:0})");
+
                 Size sz = context.MeasureString(rayLabel, font);
                 if (x2 - x1 >= sz.Width + 10)
                 {
-                    context.DrawString(rayLabel, font, baseCol, x2 - sz.Width - 4, y - sz.Height - 2);
+                    int labelY = isTrappedRay ? (y + 2) : (y - sz.Height - 2);
+                    context.DrawString(rayLabel, font, baseCol, x2 - sz.Width - 4, labelY);
                 }
             }
         }
@@ -1164,15 +1500,17 @@ namespace ATAS.Indicators.Custom
             int side,
             Color color,
             int xCenter,
-            int rowHeight)
+            int rowHeight,
+            AbsorptionMarkerType style,
+            int extraOffsetPx)
         {
             int size = BarMarkerSize;
-            int gap = Math.Max(6, rowHeight / 2 + 4);
+            int gap = Math.Max(6, rowHeight / 2 + 4) + extraOffsetPx;
             int y = side > 0
                 ? ChartInfo!.GetYByPrice(candle.Low, false) + gap + size
                 : ChartInfo!.GetYByPrice(candle.High, false) - gap - size;
 
-            switch (BarMarkerStyle)
+            switch (style)
             {
                 case AbsorptionMarkerType.Dot:
                     context.FillEllipse(color, new Rectangle(xCenter - size, y - size, size * 2, size * 2));
@@ -1220,7 +1558,10 @@ namespace ATAS.Indicators.Custom
             decimal compPocVol,
             int bullAbsCount,
             int bearAbsCount,
-            AbsorptionRayEvent? latestAbs)
+            int trappedSellersCount,
+            int trappedBuyersCount,
+            RaySignalEvent? latestAbs,
+            RaySignalEvent? latestTrapped)
         {
             var titleFont = new RenderFont("Consolas", 11, FontStyle.Bold);
             var bodyFont = new RenderFont("Consolas", 10);
@@ -1228,11 +1569,12 @@ namespace ATAS.Indicators.Custom
             string sym = InstrumentInfo?.Instrument ?? "Instrument";
             var lines = new List<(string text, Color color, bool bold)>
             {
-                ($"FOOTPRINT HVN / LVN / ABSORPTION [{sym}]", Color.White, true),
+                ($"FOOTPRINT HVN/LVN • ABSORPTION • PIÉGÉS [{sym}]", Color.White, true),
                 ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}", BarHvnColor, false),
                 ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}", BarLvnColor, false),
                 ($"VPOC Composite: {(compPocPrice > 0m ? $"{compPocPrice} (Vol {compPocVol:0})" : "N/A")}", CompositeHvnColor, false),
-                ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)", Color.FromArgb(255, 220, 230, 240), false)
+                ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)", Color.FromArgb(255, 220, 230, 240), false),
+                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}", Color.FromArgb(255, 16, 245, 150), false)
             };
 
             if (latestAbs.HasValue)
@@ -1243,9 +1585,18 @@ namespace ATAS.Indicators.Custom
                 Color c = bull ? BullishAbsorptionColor : BearishAbsorptionColor;
                 lines.Add(($"{tag}: {a.Price} | Vol {a.Volume:0} | Δ {a.Delta:+0;-0;0}", c, true));
             }
-            else
+
+            if (latestTrapped.HasValue)
             {
-                lines.Add(("Aucune Heavy Absorption sur la plage visible", Color.FromArgb(255, 150, 160, 175), false));
+                var t = latestTrapped.Value;
+                bool bull = t.Side > 0;
+                string tag = bull ? "▲ VENDEURS PIÉGÉS" : "▼ ACHETEURS PIÉGÉS";
+                Color c = bull ? TrappedSellersBullColor : TrappedBuyersBearColor;
+                lines.Add(($"{tag}: {t.Price} | Vol {t.Volume:0} | Δ {t.Delta:+0;-0;0}", c, true));
+            }
+            else if (!latestAbs.HasValue)
+            {
+                lines.Add(("Aucun signal Absorption / Piégés sur la plage visible", Color.FromArgb(255, 150, 160, 175), false));
             }
 
             int pad = 10;
