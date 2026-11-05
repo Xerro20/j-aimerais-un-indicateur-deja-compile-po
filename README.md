@@ -1,9 +1,10 @@
-# Footprint HVN / LVN & Heavy Absorption — Indicateur pour ATAS X (.NET 10)
+# Footprint HVN / LVN, Heavy Absorption & Acheteurs/Vendeurs Piégés — Indicateur pour ATAS X (.NET 10)
 
 Indicateur Order Flow **déjà compilé** (`FootprintHvnLvnAbsorption.dll`) pour **ATAS X** (Windows & macOS, `.NET 10.0`) permettant d'identifier et de visualiser directement sur le **Footprint** :
 1. **HVN (*High Volume Nodes*) & POC** — Nœuds de fort volume intra-bougie et zones HVN du profil de volume composite (session ou glissant).
 2. **LVN (*Low Volume Nodes*)** — Creux de liquidité / *single prints* intra-bougie et vallées LVN du profil composite.
 3. **Heavy Absorption (*Absorption Massive Bid / Ask*)** — Détection multi-critères des absorptions passives sur les extrêmes de bougie ou murs intra-bar, avec surbrillance néon du cluster, étiquette `ABS ▲ / ▼`, marqueur de bougie et rayon Support/Résistance projeté jusqu'à mitigation.
+4. **Acheteurs & Vendeurs Piégés (*Trapped Buyers & Trapped Sellers*)** — Détection des ordres agressifs au marché piégés en perte latente dans les mèches de rejet (`V.PIÉGÉS ▲` en bas = signal haussier, `A.PIÉGÉS ▼` en haut = signal baissier, ou `ABS+PIÉGÉ ▲/▼` en cas de confluence avec une Heavy Absorption), avec rayon de zone de liquidation et alertes sonores.
 
 ---
 
@@ -16,11 +17,11 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 
 | Propriété | Valeur |
 | :--- | :--- |
-| **Nom dans ATAS X** | `Footprint HVN / LVN & Heavy Absorption` |
+| **Nom dans ATAS X** | `Footprint HVN / LVN, Absorption & Trapped Traders` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `40 448 octets` (~39,5 Ko) |
-| **SHA-256** | `c744068c521de62b4ab6433b0944139a5e0f4f1d4feb5eb527f87c003adb39fa` |
+| **Taille du binaire** | `50 688 octets` (~49,5 Ko) |
+| **SHA-256** | `ea7f129153a126a65b1914b7f25fe7ab468186804e537e5ee652b421107a1bd6` |
 
 ---
 
@@ -34,14 +35,14 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
    %USERPROFILE%\Documents\ATAS\Indicators
    ```
    *(Exemple : `C:\Users\VotreNom\Documents\ATAS\Indicators\`)*
-4. Sur votre graphique Footprint dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I** ou icône Indicateurs), cherchez **`Footprint HVN / LVN & Heavy Absorption`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
+4. Sur votre graphique Footprint dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I** ou icône Indicateurs), cherchez **`Footprint HVN / LVN, Absorption & Trapped Traders`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
 
 ### Sur macOS (ATAS X)
 1. Copiez `FootprintHvnLvnAbsorption.dll` dans :
    ```bash
    ~/Documents/ATAS/Indicators/
    ```
-2. Ajoutez **`Footprint HVN / LVN & Heavy Absorption`** depuis la fenêtre des indicateurs d'ATAS X.
+2. Ajoutez **`Footprint HVN / LVN, Absorption & Trapped Traders`** depuis la fenêtre des indicateurs d'ATAS X.
 
 ---
 
@@ -61,7 +62,7 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
   - Détecte les poches de faible liquidité (*creux locaux de volume*) situées **entre** des clusters plus volumineux à l'intérieur de la bougie (`Volume <= 25 % du POC`), en excluant par défaut le dernier tick aux extrémités High/Low (`Ignorer N niveaux aux extrêmes = 1`).
   - Encadre la cellule Footprint en pointillés **Violet / Pourpre** avec le badge `LVN`.
 - **Profil Composite Multi-Bougies** :
-  - Projette des lignes/zones en pointillés (`LVN Pocket`) sur les vallées de faible volume du profil composite où le prix a tendance à traverser rapidement ou à rejeter vivement.
+  - Projette des lignes/zones en pointillés (`LVN Pocket`) sur les vallées de faible volume du profil composite.
 
 ### 3. Heavy Absorption (*Absorption Massive Bid / Ask*)
 Un cluster du Footprint est qualifié de **Heavy Absorption** lorsqu'il franchit simultanément les filtres suivants :
@@ -69,20 +70,14 @@ Un cluster du Footprint est qualifié de **Heavy Absorption** lorsqu'il franchit
 2. **Asymétrie Agressive (Dominance & Imbalance)** :
    - **Bullish Heavy Absorption (au Bid)** : Les vendeurs agressifs frappent massivement le Bid (`Bid / Total >= 62 %` + ratio d'imbalance diagonale `Bid[i] / Ask[i+1] >= 1.8x`), mais les acheteurs limites passifs absorbent tout le flux.
    - **Bearish Heavy Absorption (à l'Ask)** : Les acheteurs agressifs achètent massivement l'Ask (`Ask / Total >= 62 %` + ratio d'imbalance diagonale `Ask[i] / Bid[i-1] >= 1.8x`), mais les vendeurs limites passifs bloquent la hausse.
-3. **Localisation & Rejet du Prix (*Trapped Traders*)** :
+3. **Localisation & Rejet du Prix** :
    - Situé dans la zone d'extrême basse/haute de la bougie (`35 %` du range ou `3 niveaux` de l'extrême, ou mur massif intra-bar) avec clôture de rejet du côté opposé.
-4. **Affichage sur le Footprint** :
-   - Cellule illuminée en **Cyan Néon** (Bullish Absorption) ou **Magenta Néon** (Bearish Absorption) avec barre latérale d'intensité et badge `ABS▲ Bid x Ask (%)` / `ABS▼ Bid x Ask (%)`.
-   - Marqueur au-dessus/sous la bougie (**Losange**, **Flèche**, **Point** ou **Crochet `[ ]`**).
-   - **Rayon S/R d'Absorption** projeté vers la droite et arrêté automatiquement dès qu'une bougie ultérieure casse le niveau en clôture (`Arrêter le rayon dès que le niveau est cassé = true`).
 
----
-
-## 🛠️ Recompiler depuis le code source (Optionnel)
-
-Les bibliothèques de référence d'ATAS X (`.NET 10.0`) sont incluses dans le dossier [`libs/`](./libs/). Pour recompiler le projet vous-même avec le SDK .NET 10 :
-
-```bash
-dotnet build -c Release
-```
-Le fichier `FootprintHvnLvnAbsorption.dll` est généré dans `bin/Release/net10.0/FootprintHvnLvnAbsorption.dll`.
+### 4. Acheteurs & Vendeurs Piégés (*Trapped Buyers & Trapped Sellers*)
+- **Vendeurs Piégés ▲ (`Trapped Sellers` — Signal Haussier / Bullish)** :
+  - Des vendeurs agressifs au marché frappent le Bid (`Bid / Total >= 60 %` et imbalance diagonale `Bid[i] / Ask[i+1] >= 2.0x`, volume $\ge 1.15\times$ la moyenne de la bougie) dans la mèche inférieure ou le bas du range, mais le prix rejette vers le haut et la bougie clôture au-dessus d'eux (`Close >= Niveau + Recul Min`). Ces vendeurs se retrouvent immédiatement en perte latente ; le déclenchement de leurs stops alimente le rebond haussier.
+- **Acheteurs Piégés ▼ (`Trapped Buyers` — Signal Baissier / Bearish)** :
+  - Des acheteurs agressifs au marché paient l'Ask (`Ask / Total >= 60 %` et imbalance diagonale `Ask[i] / Bid[i-1] >= 2.0x`, volume $\ge 1.15\times$ la moyenne) dans la mèche supérieure ou le haut du range, mais la bougie rejette et clôture en dessous d'eux (`Close <= Niveau - Recul Min`). Leurs liquidations alimentent le retournement baissier.
+- **Affichage & Confluence** :
+  - Encadrement dédié en **Vert Émeraude Néon** (`V.PIÉGÉS▲`) ou **Rouge/Orange Corail** (`A.PIÉGÉS▼`), flèche sur l'extrême de la bougie et **Rayon de Liquidation en pointillés** projeté jusqu'à cassure du niveau.
+  - Lorsqu'un niveau combine simultanément **Heavy Absorption** et **Traders Piégés**, la cellule affiche une double barre latérale bicolore et le badge **`ABS+PIÉGÉ▲`** / **`ABS+PIÉGÉ▼`**.
