@@ -1666,6 +1666,43 @@ namespace ATAS.Indicators.Custom
             rows[pocIndex].IsPoc = true;
             decimal avgLevelVol = activeLevels > 0 ? totalBarVol / activeLevels : maxVol;
 
+            // Calcul statistique Quant : Écart-Type (σ) et Z-Score de Volume & Delta par niveau
+            double sumSqVol = 0.0;
+            double sumDelta = 0.0;
+            double sumSqDelta = 0.0;
+            double meanVolD = (double)avgLevelVol;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (rows[i].Volume <= 0m)
+                    continue;
+                double dv = (double)rows[i].Volume - meanVolD;
+                sumSqVol += dv * dv;
+                sumDelta += (double)rows[i].Delta;
+            }
+
+            double meanDeltaD = activeLevels > 0 ? sumDelta / activeLevels : 0.0;
+            for (int i = 0; i < count; i++)
+            {
+                if (rows[i].Volume <= 0m)
+                    continue;
+                double dd = (double)rows[i].Delta - meanDeltaD;
+                sumSqDelta += dd * dd;
+            }
+
+            decimal stdVol = activeLevels > 1 ? (decimal)Math.Sqrt(sumSqVol / activeLevels) : 1m;
+            decimal stdDelta = activeLevels > 1 ? (decimal)Math.Sqrt(sumSqDelta / activeLevels) : 1m;
+            if (stdVol <= 0m) stdVol = 1m;
+            if (stdDelta <= 0m) stdDelta = 1m;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (rows[i].Volume <= 0m)
+                    continue;
+                rows[i].VolumeZScore = Math.Round((rows[i].Volume - avgLevelVol) / stdVol, 2);
+                rows[i].DeltaZScore = Math.Round((Math.Abs(rows[i].Delta) - (decimal)Math.Abs(meanDeltaD)) / stdDelta, 2);
+            }
+
             // 1. Détection HVN Intra-Bougie
             if (_enableBarHvn)
             {
