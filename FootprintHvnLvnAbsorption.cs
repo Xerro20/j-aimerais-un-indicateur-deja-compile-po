@@ -594,6 +594,163 @@ namespace ATAS.Indicators.Custom
         public string AlertSoundFile { get; set; } = "alert1.wav";
 
         // =====================================================================
+        // 11. MODÈLE QUANT SENIOR (Z-SCORE, ATR, CVD & VWAP REGIME)
+        // =====================================================================
+        private bool _enableQuantFilter = true;
+        [Display(Name = "Activer le Raffinement Quant Senior (Z-Score + CVD + ATR)", GroupName = GrpQuantEngine, Order = 10,
+            Description = "Affine les signaux avec un modèle statistique institutionnel : Z-Score de volume/delta sur les clusters, divergence CVD, régime VWAP ± σ et volatilité ATR(14).")]
+        public bool EnableQuantFilter
+        {
+            get => _enableQuantFilter;
+            set { _enableQuantFilter = value; RecalculateValues(); }
+        }
+
+        private decimal _quantMinClusterZScore = 1.15m;
+        [Display(Name = "Z-Score Minimum du Cluster (σ Volume/Delta)", GroupName = GrpQuantEngine, Order = 20,
+            Description = "Nombre d'écarts-types (σ) minimum au-dessus de la moyenne de la bougie pour valider statistiquement le cluster d'absorption/piégeage.")]
+        [Range(0.0, 5.0)]
+        public decimal QuantMinClusterZScore
+        {
+            get => _quantMinClusterZScore;
+            set { _quantMinClusterZScore = value; RecalculateValues(); }
+        }
+
+        private int _quantMinConfluenceScore = 66;
+        [Display(Name = "Score Quant Composite Minimum (0-100%)", GroupName = GrpQuantEngine, Order = 30,
+            Description = "Seuil de probabilité multi-facteurs (Order Flow 35% + Options/GEX 30% + Z-Score/CVD 20% + Structure VWAP/VPOC 15%) requis pour valider un signal.")]
+        [Range(50, 95)]
+        public int QuantMinConfluenceScore
+        {
+            get => _quantMinConfluenceScore;
+            set { _quantMinConfluenceScore = value; RecalculateValues(); }
+        }
+
+        private int _quantAtrPeriod = 14;
+        [Display(Name = "Période ATR (Volatilité Dynamique SL/TP)", GroupName = GrpQuantEngine, Order = 40)]
+        [Range(5, 100)]
+        public int QuantAtrPeriod
+        {
+            get => _quantAtrPeriod;
+            set { _quantAtrPeriod = value; RecalculateValues(); }
+        }
+
+        private decimal _quantAtrStopMultiplier = 0.85m;
+        [Display(Name = "Multiplicateur ATR pour Stop-Loss (SL)", GroupName = GrpQuantEngine, Order = 50,
+            Description = "Calcule le Stop-Loss structurel sous/sur le niveau d'absorption ajusté par X * ATR(14).")]
+        [Range(0.2, 5.0)]
+        public decimal QuantAtrStopMultiplier
+        {
+            get => _quantAtrStopMultiplier;
+            set { _quantAtrStopMultiplier = value; RecalculateValues(); }
+        }
+
+        private decimal _quantTp1RiskReward = 1.6m;
+        [Display(Name = "Ratio Risk/Reward TP1 (Sortie Partielle + Breakeven)", GroupName = GrpQuantEngine, Order = 60)]
+        [Range(0.5, 10.0)]
+        public decimal QuantTp1RiskReward
+        {
+            get => _quantTp1RiskReward;
+            set { _quantTp1RiskReward = value; RecalculateValues(); }
+        }
+
+        private decimal _quantTp2RiskReward = 3.0m;
+        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final Quant)", GroupName = GrpQuantEngine, Order = 70)]
+        [Range(1.0, 15.0)]
+        public decimal QuantTp2RiskReward
+        {
+            get => _quantTp2RiskReward;
+            set { _quantTp2RiskReward = value; RecalculateValues(); }
+        }
+
+        // =====================================================================
+        // 12. BOT DE TRADING QUANT & RISK GUARD (MAX DRAWDOWN & MAX PNL)
+        // =====================================================================
+        private bool _enableTradingBot = true;
+        [Display(Name = "Activer le Bot de Trading Quant", GroupName = GrpQuantBot, Order = 10,
+            Description = "Active le moteur d'exécution automatique et le simulateur temps réel basé sur les signaux Quant Order Flow + Flux d'Options.")]
+        public bool EnableTradingBot
+        {
+            get => _enableTradingBot;
+            set { _enableTradingBot = value; RecalculateValues(); }
+        }
+
+        private BotExecutionMode _botMode = BotExecutionMode.BacktestAndPaperOnly;
+        [Display(Name = "Mode d'Exécution du Bot", GroupName = GrpQuantBot, Order = 20,
+            Description = "BacktestAndPaperOnly = simulation/backtest graphique sans envoi d'ordres réels ; LiveAutoTradingManager = envoie aussi les ordres via ATAS TradingManager sur la bougie active.")]
+        public BotExecutionMode BotMode
+        {
+            get => _botMode;
+            set { _botMode = value; RecalculateValues(); }
+        }
+
+        private int _botTradeQuantity = 2;
+        [Display(Name = "Taille de Position (Contrats / Lots)", GroupName = GrpQuantBot, Order = 30)]
+        [Range(1, 1000)]
+        public int BotTradeQuantity
+        {
+            get => _botTradeQuantity;
+            set { _botTradeQuantity = Math.Max(1, value); RecalculateValues(); }
+        }
+
+        private decimal _botMaxDrawdownUsd = 1500m;
+        [Display(Name = "Drawdown Max Autorisé ($ — Coupe-Circuit Kill-Switch)", GroupName = GrpQuantBot, Order = 40,
+            Description = "Si le Drawdown depuis le pic d'équité (High-Water Mark) atteint ce montant en $, le Bot liquide la position et se verrouille immédiatement (STOP DD MAX).")]
+        [Range(50, 1000000)]
+        public decimal BotMaxDrawdownUsd
+        {
+            get => _botMaxDrawdownUsd;
+            set { _botMaxDrawdownUsd = Math.Max(10m, value); RecalculateValues(); }
+        }
+
+        private decimal _botMaxProfitTargetUsd = 3000m;
+        [Display(Name = "PnL Max / Objectif de Gain Max ($ — Lock Profit)", GroupName = GrpQuantBot, Order = 50,
+            Description = "Dès que le PnL cumulé atteint cet objectif en $, le Bot sécurise les gains, clôture la position et se met en veille (OBJECTIF PNL MAX ATTEINT).")]
+        [Range(50, 1000000)]
+        public decimal BotMaxProfitTargetUsd
+        {
+            get => _botMaxProfitTargetUsd;
+            set { _botMaxProfitTargetUsd = Math.Max(10m, value); RecalculateValues(); }
+        }
+
+        private bool _botAutoBreakevenOnTp1 = true;
+        [Display(Name = "Déplacer Stop à Breakeven + Sortie 50% sur TP1", GroupName = GrpQuantBot, Order = 60)]
+        public bool BotAutoBreakevenOnTp1
+        {
+            get => _botAutoBreakevenOnTp1;
+            set { _botAutoBreakevenOnTp1 = value; RecalculateValues(); }
+        }
+
+        private bool _botResetLimitsEachSession = true;
+        [Display(Name = "Réinitialiser PnL & Drawdown Max à chaque nouvelle session", GroupName = GrpQuantBot, Order = 70)]
+        public bool BotResetLimitsEachSession
+        {
+            get => _botResetLimitsEachSession;
+            set { _botResetLimitsEachSession = value; RecalculateValues(); }
+        }
+
+        private decimal _botPointValueUsd = 50m;
+        [Display(Name = "Valeur d'un Point en $ (Fallback si non fourni par le flux)", GroupName = GrpQuantBot, Order = 80,
+            Description = "Ex: ES = 50$/pt (12.50$/tick), NQ = 20$/pt (5$/tick), MNQ = 2$/pt. Utilisé si Security.TickCost n'est pas renseigné par le connecteur.")]
+        [Range(0.1, 100000)]
+        public decimal BotPointValueUsd
+        {
+            get => _botPointValueUsd;
+            set { _botPointValueUsd = Math.Max(0.1m, value); RecalculateValues(); }
+        }
+
+        private decimal _botCommissionPerSideUsd = 2.10m;
+        [Display(Name = "Commission + Slippage estimé par contrat ($/ordre)", GroupName = GrpQuantBot, Order = 90)]
+        [Range(0.0, 100.0)]
+        public decimal BotCommissionPerSideUsd
+        {
+            get => _botCommissionPerSideUsd;
+            set { _botCommissionPerSideUsd = Math.Max(0m, value); RecalculateValues(); }
+        }
+
+        [Display(Name = "Afficher Panneau Quant Bot & jauges Max DD / Max PnL", GroupName = GrpQuantBot, Order = 100)]
+        public bool ShowBotExecutionOnChart { get; set; } = true;
+
+        // =====================================================================
         // Séries de données ATAS (compatibles Market Replay / Stratégies / Alertes)
         // =====================================================================
         private readonly ValueDataSeries _pocHvnSeries = new ValueDataSeries("PocHvnPrice", "Bar POC / Primary HVN")
@@ -660,8 +817,24 @@ namespace ATAS.Indicators.Custom
             ShowZeroValue = false
         };
 
+        private readonly ValueDataSeries _botCumPnlSeries = new ValueDataSeries("QuantBotCumulativePnL", "Quant Bot — PnL Cumulé ($)")
+        {
+            VisualType = VisualMode.Hide,
+            Color = Color.FromArgb(255, 56, 189, 248),
+            Width = 2,
+            ShowZeroValue = false
+        };
+
+        private readonly ValueDataSeries _botDrawdownSeries = new ValueDataSeries("QuantBotDrawdown", "Quant Bot — Drawdown Courant ($)")
+        {
+            VisualType = VisualMode.Hide,
+            Color = Color.FromArgb(255, 244, 63, 94),
+            Width = 2,
+            ShowZeroValue = false
+        };
+
         // =====================================================================
-        // Structures internes d'analyse par niveau de prix & Flux d'Options ATAS X
+        // Structures internes d'analyse par niveau de prix, Quant & Bot de Trading
         // =====================================================================
         private struct ClusterRow
         {
@@ -670,6 +843,8 @@ namespace ATAS.Indicators.Custom
             public decimal Ask;
             public decimal Volume;
             public decimal Delta;
+            public decimal VolumeZScore;
+            public decimal DeltaZScore;
             public bool IsPoc;
             public bool IsHvn;
             public bool IsLvn;
@@ -702,6 +877,11 @@ namespace ATAS.Indicators.Custom
             public int OptionsBias; // +1 = Flux Calls Haussier, -1 = Flux Puts Baissier, 0 = Neutre
             public bool IsNativeChainActive;
             public decimal KeyGammaStrike;
+            public decimal AtrPoints;
+            public decimal MaxVolumeZScore;
+            public decimal MaxDeltaZScore;
+            public bool HasCvdAbsorptionDivergence;
+            public decimal VwapZScore;
         }
 
         private struct VisualTradeSignal
@@ -711,6 +891,11 @@ namespace ATAS.Indicators.Custom
             public decimal TriggerPrice;
             public decimal EntryPrice;
             public decimal StopPrice;
+            public decimal Tp1Price;
+            public decimal Tp2Price;
+            public decimal RiskRewardRatio;
+            public decimal ClusterZScore;
+            public decimal AtrValue;
             public int ConfluenceScore; // 0..100%
             public decimal CallFlowPct;
             public decimal PutFlowPct;
@@ -718,6 +903,51 @@ namespace ATAS.Indicators.Custom
             public decimal OiDelta;
             public int SweepCount;
             public string ReasonTag;
+        }
+
+        private struct BotTradeExecutionRecord
+        {
+            public int EntryBar;
+            public int ExitBar;
+            public int Direction; // +1 Long, -1 Short
+            public decimal EntryPrice;
+            public decimal StopPrice;
+            public decimal Tp1Price;
+            public decimal Tp2Price;
+            public decimal ExitPrice;
+            public decimal RealizedPnlUsd;
+            public string ExitReason; // "TP2", "TP1+BE", "SL", "REV", "MAX_DD", "MAX_PNL", "OPEN"
+            public bool Tp1Reached;
+        }
+
+        private struct BotPerformanceState
+        {
+            public bool IsHaltedByMaxDrawdown;
+            public bool IsHaltedByMaxProfit;
+            public string StatusLabel;
+            public int ActiveDirection; // +1 Long, -1 Short, 0 Flat
+            public int ActiveContracts;
+            public int ActiveEntryBar;
+            public decimal ActiveEntryPrice;
+            public decimal ActiveStopPrice;
+            public decimal ActiveTp1Price;
+            public decimal ActiveTp2Price;
+            public bool ActiveTp1Hit;
+            public decimal RealizedPnlUsd;
+            public decimal UnrealizedPnlUsd;
+            public decimal TotalPnlUsd;
+            public decimal PeakPnlUsd;
+            public decimal CurrentDrawdownUsd;
+            public decimal MaxObservedDrawdownUsd;
+            public int TotalTrades;
+            public int WinningTrades;
+            public int LosingTrades;
+            public decimal GrossProfitUsd;
+            public decimal GrossLossUsd;
+            public decimal WinRatePct;
+            public decimal ProfitFactor;
+            public decimal ExpectancyUsd;
+            public decimal SharpeRatio;
         }
 
         // Cache temps réel du Flux d'Options ATAS X (IOptionsDataFeed & Tape Sweeps)
@@ -736,6 +966,9 @@ namespace ATAS.Indicators.Custom
 
         private int _lastAlertBar = -1;
         private int _lastAlertCode = 0;
+        private int _lastLiveBotOrderBar = -1;
+        private int _lastLiveBotOrderDir = 0;
+        private bool _liveKillSwitchExecuted;
 
         // =====================================================================
         // Constructeur
@@ -754,6 +987,8 @@ namespace ATAS.Indicators.Custom
             DataSeries.Add(_trappedBuyersSeries);
             DataSeries.Add(_buyAlertSeries);
             DataSeries.Add(_sellAlertSeries);
+            DataSeries.Add(_botCumPnlSeries);
+            DataSeries.Add(_botDrawdownSeries);
         }
 
         // =====================================================================
