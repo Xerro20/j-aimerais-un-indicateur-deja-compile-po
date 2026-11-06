@@ -1024,15 +1024,71 @@ namespace ATAS.Indicators.Custom
         private int _lastLiveBotOrderDir = 0;
         private bool _liveKillSwitchExecuted;
 
-        // Zones cliquables & états de survol du Bouton d'Activation du Bot sur la Charte
+        // Zones cliquables & états de survol du Bouton d'Activation et de l'Encadrement Horaire sur la Charte
         private Rectangle _chartBotToggleBtnRect = Rectangle.Empty;
         private Rectangle _chartBotModeBtnRect = Rectangle.Empty;
         private Rectangle _chartBotResetBtnRect = Rectangle.Empty;
         private Rectangle _hudBotToggleBtnRect = Rectangle.Empty;
+
+        private Rectangle _chartSchedToggleRect = Rectangle.Empty;
+        private Rectangle _chartStartMinusRect = Rectangle.Empty;
+        private Rectangle _chartStartValRect = Rectangle.Empty;
+        private Rectangle _chartStartPlusRect = Rectangle.Empty;
+        private Rectangle _chartEndMinusRect = Rectangle.Empty;
+        private Rectangle _chartEndValRect = Rectangle.Empty;
+        private Rectangle _chartEndPlusRect = Rectangle.Empty;
+
         private bool _hoverBotToggleBtn;
         private bool _hoverBotModeBtn;
         private bool _hoverBotResetBtn;
+        private bool _hoverSchedToggleBtn;
+        private bool _hoverStartMinus;
+        private bool _hoverStartPlus;
+        private bool _hoverEndMinus;
+        private bool _hoverEndPlus;
         private int _manualResetBarIndex = -1;
+
+        private static string FormatMinutesOfDay(int totalMinutes)
+        {
+            int m = ((totalMinutes % 1440) + 1440) % 1440;
+            return $"{m / 60:00}:{m % 60:00}";
+        }
+
+        private static bool TryParseTimeOfDayMinutes(string text, out int totalMinutes)
+        {
+            totalMinutes = 0;
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            string[] parts = text.Trim().Split(':');
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0], out int h) &&
+                int.TryParse(parts[1], out int m) &&
+                h >= 0 && h <= 23 && m >= 0 && m <= 59)
+            {
+                totalMinutes = h * 60 + m;
+                return true;
+            }
+            return false;
+        }
+
+        private static int ShiftScheduleMinutes(int currentMinutes, int deltaMinutes)
+        {
+            return (((currentMinutes + deltaMinutes) % 1440) + 1440) % 1440;
+        }
+
+        private bool IsBarWithinBotSchedule(DateTime barTime)
+        {
+            if (!_enableBotSchedule)
+                return true;
+
+            int cur = barTime.Hour * 60 + barTime.Minute;
+            if (_botStartMinutesOfDay <= _botEndMinutesOfDay)
+                return cur >= _botStartMinutesOfDay && cur <= _botEndMinutesOfDay;
+
+            // Plage chevauchant minuit (ex: 22:00 -> 06:00)
+            return cur >= _botStartMinutesOfDay || cur <= _botEndMinutesOfDay;
+        }
 
         // =====================================================================
         // Constructeur
@@ -1056,7 +1112,7 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Gestion des clics souris directement sur la Charte ATAS X (Bouton Bot ON/OFF)
+        // Gestion des clics souris directement sur la Charte ATAS X (Bouton Bot ON/OFF & Encadrement Horaire)
         // =====================================================================
         public override bool ProcessMouseClick(RenderControlMouseEventArgs e)
         {
@@ -1092,6 +1148,62 @@ namespace ATAS.Indicators.Custom
                     RedrawChart();
                     return true;
                 }
+
+                if (ShowChartBotToggleButton && _chartSchedToggleRect.Contains(pt))
+                {
+                    _enableBotSchedule = !_enableBotSchedule;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartStartMinusRect.Contains(pt))
+                {
+                    _botStartMinutesOfDay = ShiftScheduleMinutes(_botStartMinutesOfDay, -15);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartStartPlusRect.Contains(pt))
+                {
+                    _botStartMinutesOfDay = ShiftScheduleMinutes(_botStartMinutesOfDay, +15);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartStartValRect.Contains(pt))
+                {
+                    _botStartMinutesOfDay = ShiftScheduleMinutes(_botStartMinutesOfDay, +60);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartEndMinusRect.Contains(pt))
+                {
+                    _botEndMinutesOfDay = ShiftScheduleMinutes(_botEndMinutesOfDay, -15);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartEndPlusRect.Contains(pt))
+                {
+                    _botEndMinutesOfDay = ShiftScheduleMinutes(_botEndMinutesOfDay, +15);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartEndValRect.Contains(pt))
+                {
+                    _botEndMinutesOfDay = ShiftScheduleMinutes(_botEndMinutesOfDay, +60);
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
             }
 
             return base.ProcessMouseClick(e);
@@ -1104,12 +1216,24 @@ namespace ATAS.Indicators.Custom
                            (ShowHudPanel && _hudBotToggleBtnRect.Contains(pt));
             bool hMode = ShowChartBotToggleButton && _chartBotModeBtnRect.Contains(pt);
             bool hReset = ShowChartBotToggleButton && _chartBotResetBtnRect.Contains(pt);
+            bool hSched = ShowChartBotToggleButton && _chartSchedToggleRect.Contains(pt);
+            bool hSMin = ShowChartBotToggleButton && _chartStartMinusRect.Contains(pt);
+            bool hSPls = ShowChartBotToggleButton && _chartStartPlusRect.Contains(pt);
+            bool hEMin = ShowChartBotToggleButton && _chartEndMinusRect.Contains(pt);
+            bool hEPls = ShowChartBotToggleButton && _chartEndPlusRect.Contains(pt);
 
-            if (hToggle != _hoverBotToggleBtn || hMode != _hoverBotModeBtn || hReset != _hoverBotResetBtn)
+            if (hToggle != _hoverBotToggleBtn || hMode != _hoverBotModeBtn || hReset != _hoverBotResetBtn ||
+                hSched != _hoverSchedToggleBtn || hSMin != _hoverStartMinus || hSPls != _hoverStartPlus ||
+                hEMin != _hoverEndMinus || hEPls != _hoverEndPlus)
             {
                 _hoverBotToggleBtn = hToggle;
                 _hoverBotModeBtn = hMode;
                 _hoverBotResetBtn = hReset;
+                _hoverSchedToggleBtn = hSched;
+                _hoverStartMinus = hSMin;
+                _hoverStartPlus = hSPls;
+                _hoverEndMinus = hEMin;
+                _hoverEndPlus = hEPls;
                 RedrawChart();
             }
 
