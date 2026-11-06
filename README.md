@@ -1,11 +1,17 @@
-# Footprint HVN / LVN, Heavy Absorption, Traders Piégés & Alertes Flux d'Options — Indicateur pour ATAS X (.NET 10)
+# Footprint Quant Order Flow, Flux d'Options & Bot de Trading Automatique (Max Drawdown / Max PnL) — ATAS X (.NET 10)
 
-Indicateur Order Flow **déjà compilé** (`FootprintHvnLvnAbsorption.dll`) pour **ATAS X** (Windows & macOS, `.NET 10.0`) permettant d'identifier et de visualiser directement sur le **Footprint** :
+Indicateur & Bot Quant Senior Order Flow **déjà compilé** (`FootprintHvnLvnAbsorption.dll`) pour **ATAS X** (Windows & macOS, `.NET 10.0`) permettant d'identifier, de filtrer statistiquement et de trader automatiquement sur le **Footprint** :
 1. **HVN (*High Volume Nodes*) & POC** — Nœuds de fort volume intra-bougie et zones HVN du profil de volume composite (session ou glissant).
 2. **LVN (*Low Volume Nodes*)** — Creux de liquidité / *single prints* intra-bougie et vallées LVN du profil composite.
-3. **Heavy Absorption (*Absorption Massive Bid / Ask*)** — Détection multi-critères des absorptions passives sur les extrêmes de bougie ou murs intra-bar, avec surbrillance néon du cluster, étiquette `ABS ▲ / ▼`, marqueur de bougie et rayon Support/Résistance projeté jusqu'à mitigation.
-4. **Acheteurs & Vendeurs Piégés (*Trapped Buyers & Trapped Sellers*)** — Détection des ordres agressifs au marché piégés en perte latente dans les mèches de rejet (`V.PIÉGÉS ▲` en bas = signal haussier, `A.PIÉGÉS ▼` en haut = signal baissier, ou `ABS+PIÉGÉ ▲/▼` en cas de confluence), avec rayon de zone de liquidation.
-5. **Alerte Visuelle ACHAT ▲ / VENTE ▼ prenant en compte le Flux d'Options ATAS X** — Intègre le flux d'options fourni par ATAS X (`IOptionsDataFeed`, `Security.OptionType` Call/Put, `StrikePrice`, variations d'`OpenInterest` $\Delta\text{OI}$, `OnNewTrade` / `OnCumulativeTrade` Sweeps & Block Trades) pour déclencher une **Alerte Visuelle Achat / Vente** sur la bougie (`★ ACHAT ▲` / `★ VENTE ▼`), une **Bannière Visuelle d'Alerte** en haut du graphique et les niveaux d'**Entrée / Stop-Loss**.
+3. **Heavy Absorption (*Absorption Massive Bid / Ask*)** — Détection multi-critères des absorptions passives sur les extrêmes de bougie ou murs intra-bar, avec surbrillance néon du cluster, étiquette `ABS ▲ / ▼` et rayon Support/Résistance projeté jusqu'à mitigation.
+4. **Acheteurs & Vendeurs Piégés (*Trapped Buyers & Trapped Sellers*)** — Détection des ordres agressifs au marché piégés en perte latente dans les mèches de rejet (`V.PIÉGÉS ▲` en bas = signal haussier, `A.PIÉGÉS ▼` en haut = signal baissier, ou `ABS+PIÉGÉ ▲/▼` en cas de confluence).
+5. **Flux d'Options ATAS X (`IOptionsDataFeed`, Calls/Puts, PCR, $\Delta\text{OI}$ & Sweeps)** — Intègre le flux d'options fourni par ATAS X (`OptionTypes.Call` / `OptionTypes.Put`, `StrikePrice`, `OpenInterest` $\Delta\text{OI}$, `OnNewTrade` / `OnCumulativeTrade`) pour confirmer les signaux Achat / Vente.
+6. **Raffinement Quant Senior (`Groupe 11` : Z-Score $\sigma$, ATR(14), Divergence CVD & Régime VWAP)** — Normalisation statistique des clusters par Z-Score de volume et de delta ($Z \ge 1.15\sigma$), calcul de volatilité dynamique ATR(14) pour le Stop-Loss et les objectifs `TP1` (`1.6R`) / `TP2` (`3.0R`), et score de confluence multi-facteurs (`0 - 99%`).
+7. **Bot de Trading Quant Intégré & Coupe-Circuit `Max Drawdown` / `Max PnL` (`Groupe 12`)** :
+   - **Exécution & Simulation Temps Réel** : Ouvre/inverse les positions sur les signaux Quant validés, gère la sortie partielle 50 % + passage automatique à **Breakeven** sur `TP1`, et la clôture finale sur `TP2` ou `SL`.
+   - **Risk Guard — Drawdown Max (`BotMaxDrawdownUsd`)** : Suit le *High-Water Mark* (pic d'équité) en temps réel. Si le drawdown courant atteint la limite fixée en `$`, le Bot liquide immédiatement la position et coupe toute nouvelle prise de position (`COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT`).
+   - **Profit Lock — PnL Max (`BotMaxProfitTargetUsd`)** : Dès que le PnL cumulé atteint l'objectif de gain maximum en `$`, le Bot sécurise les gains et verrouille la session (`OBJECTIF PNL MAX VERROUILLÉ`).
+   - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne par défaut en mode sécurisé `BacktestAndPaperOnly` sur le graphique ou en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`).
 
 ---
 
@@ -18,11 +24,11 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 
 | Propriété | Valeur |
 | :--- | :--- |
-| **Nom dans ATAS X** | `Footprint HVN / LVN, Absorption, Trapped & Options Flow Alerts` |
+| **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `71 680 octets` (70,0 Ko) |
-| **SHA-256** | `9f22e085909ab299ff1ec32c19106f1d8a2adbef751260368ce02d4a19de3cec` |
+| **Taille du binaire** | `92 672 octets` (90,5 Ko) |
+| **SHA-256** | `cb21da9f2d05d4a53c8c881cec8885571747e7d93ac8ebbef48991d1a47264a7` |
 
 ---
 
@@ -35,38 +41,11 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
    ```text
    %USERPROFILE%\Documents\ATAS\Indicators
    ```
-   *(Exemple : `C:\Users\VotreNom\Documents\ATAS\Indicators\`)*
-4. Sur votre graphique Footprint dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I** ou icône Indicateurs), cherchez **`Footprint HVN / LVN, Absorption, Trapped & Options Flow Alerts`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
+4. Sur votre graphique Footprint dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I**), cherchez **`Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
 
 ### Sur macOS (ATAS X)
 1. Copiez `FootprintHvnLvnAbsorption.dll` dans :
    ```bash
    ~/Documents/ATAS/Indicators/
    ```
-2. Ajoutez **`Footprint HVN / LVN, Absorption, Trapped & Options Flow Alerts`** depuis la fenêtre des indicateurs d'ATAS X.
-
----
-
-## ⚡ Alerte Visuelle Achat / Vente & Flux d'Options ATAS X (`Groupe 9`)
-
-L'indicateur exploite toutes les sources de flux d'options et de dérivés exposées par l'API **ATAS X (`ATAS.DataFeedsCore` & `ATAS.Indicators`)** :
-1. **Flux Natif `IOptionsDataFeed` & `Security` (`OptionTypes.Call` / `OptionTypes.Put`)** :
-   - Interroge automatiquement le service `IOptionsDataFeed` d'ATAS X (`GetOptionSeriesAsync` / `GetOptionsAsync`) ainsi que les propriétés `OptionType`, `StrikePrice` et `OpenInterest` du contrat actif pour mesurer le volume et l'Open Interest sur les **Calls** vs **Puts** et identifier le strike Gamma majeur.
-2. **Flux Temps Réel `OpenInterest` ($\Delta\text{OI}$), `OnNewTrade` & `OnCumulativeTrade` (Sweeps / Block Prints)** :
-   - Mesure la variation d'Open Interest ($\Delta\text{OI} = \text{OI}_{bar} - \text{OI}_{bar-1}$ et amplitude intra-bar `MaxOI - MinOI`), les **Sweeps** agressifs au marché (`OnNewTrade` / `OnCumulativeTrade`), le positionnement par rapport au `VWAP` de la bougie et l'asymétrie du carnet (`MarketDepthInfo.CumulativeDomBids` vs `CumulativeDomAsks`).
-   - Calcule pour chaque bougie :
-     - **Calls Flow %** vs **Puts Flow %**
-     - **Put/Call Ratio (PCR)**
-     - **Score de Confluence (`0 - 100 %`)**
-3. **Conditions de déclenchement de l'Alerte Visuelle** :
-   - **★ ALERTE VISUELLE ACHAT (`BUY ▲`)** :
-     - Détection d'une **Heavy Absorption Bullish (au Bid)** et/ou de **Vendeurs Piégés ▲** dans la mèche inférieure,
-     - **ET** confirmation par le **Flux d'Options ATAS X** (`Calls Flow % >= Dominance Min`, `PCR < 1.0`, $\Delta\text{OI}$ ou Sweep Call haussier).
-   - **★ ALERTE VISUELLE VENTE (`SELL ▼`)** :
-     - Détection d'une **Heavy Absorption Bearish (à l'Ask)** et/ou d'**Acheteurs Piégés ▼** dans la mèche supérieure,
-     - **ET** confirmation par le **Flux d'Options ATAS X** (`Puts Flow % >= Dominance Min`, `PCR > 1.0`, $\Delta\text{OI}$ ou Sweep Put baissier).
-4. **Triple Affichage Visuel + Alertes Sonores** :
-   - **Cartouche sur la bougie** : Encadré néon `★ ACHAT ▲ [Score%]` ou `★ VENTE ▼ [Score%]` avec le ratio Calls/Puts et le PCR.
-   - **Bannière Visuelle d'Alerte** en haut du graphique : Affiche le signal actif, le prix d'entrée suggéré, le Stop-Loss, le PCR et le $\Delta\text{OI}$.
-   - **Lignes Prix d'Entrée (`ACHAT/VENTE @ ...`) & Stop-Loss (`SL @ ...`)** tracées directement à droite de la bougie de signal.
-   - **Séries ATAS X** : `VisualBuyAlert` et `VisualSellAlert` disponibles pour les stratégies et alertes conditionnelles ATAS X.
+2. Ajoutez **`Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)`** depuis la fenêtre des indicateurs d'ATAS X.
