@@ -44,6 +44,7 @@
 // =============================================================================
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -1003,6 +1004,12 @@ namespace ATAS.Indicators.Custom
             public bool IsHaltedByMaxDrawdown;
             public bool IsHaltedByMaxProfit;
             public string StatusLabel;
+            public bool IsSyncedWithActiveAccount;
+            public string ActiveAccountName;
+            public string ActiveAccountCurrency;
+            public decimal ActiveAccountBalance;
+            public decimal ActiveAccountCommissionUsd;
+            public decimal SimulatedTotalPnlUsd;
             public int ActiveDirection; // +1 Long, -1 Short, 0 Flat
             public int ActiveContracts;
             public int ActiveEntryBar;
@@ -1048,7 +1055,13 @@ namespace ATAS.Indicators.Custom
         private int _lastLiveBotOrderDir = 0;
         private bool _liveKillSwitchExecuted;
 
-        // Zones cliquables & états de survol du Bouton d'Activation et de l'Encadrement Horaire sur la Charte
+        // État temps réel de synchronisation avec le Compte Actif ATAS X (Portfolio / Position / MyTrades)
+        private ITradingManager? _subscribedTradingManager;
+        private string _lastSyncedAccountId = string.Empty;
+        private decimal _liveAccountPeakPnlUsd = decimal.MinValue;
+        private decimal _liveAccountMaxDrawdownUsd;
+
+        // Zones cliquables & états de survol du Bouton d'Activation, de l'Encadrement Horaire et de l'Encadrement Compte Actif
         private Rectangle _chartBotToggleBtnRect = Rectangle.Empty;
         private Rectangle _chartBotModeBtnRect = Rectangle.Empty;
         private Rectangle _chartBotResetBtnRect = Rectangle.Empty;
@@ -1062,6 +1075,9 @@ namespace ATAS.Indicators.Custom
         private Rectangle _chartEndValRect = Rectangle.Empty;
         private Rectangle _chartEndPlusRect = Rectangle.Empty;
 
+        private Rectangle _chartAcctSyncToggleRect = Rectangle.Empty;
+        private Rectangle _chartAcctScopeToggleRect = Rectangle.Empty;
+
         private bool _hoverBotToggleBtn;
         private bool _hoverBotModeBtn;
         private bool _hoverBotResetBtn;
@@ -1070,6 +1086,8 @@ namespace ATAS.Indicators.Custom
         private bool _hoverStartPlus;
         private bool _hoverEndMinus;
         private bool _hoverEndPlus;
+        private bool _hoverAcctSyncBtn;
+        private bool _hoverAcctScopeBtn;
         private int _manualResetBarIndex = -1;
 
         private static string FormatMinutesOfDay(int totalMinutes)
