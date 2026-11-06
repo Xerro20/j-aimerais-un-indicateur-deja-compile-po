@@ -58,9 +58,9 @@ using OFT.Rendering.Tools;
 
 namespace ATAS.Indicators.Custom
 {
-    [DisplayName("Footprint HVN / LVN, Absorption, Trapped & Options Flow Alerts")]
+    [DisplayName("Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)")]
     [Category("Order Flow - Custom")]
-    [Description("Détecte et affiche les HVN, LVN, Heavy Absorptions, Acheteurs/Vendeurs Piégés ainsi que les Alertes Visuelles Achat/Vente basées sur le Flux d'Options ATAS X.")]
+    [Description("Indicateur & Bot Quant Senior Order Flow pour ATAS X (.NET 10) : HVN/LVN, Heavy Absorption, Traders Piégés, Flux d'Options ATAS X, Modèle Quant Z-Score/ATR/CVD et Bot de Trading Automatique avec Max Drawdown & Max PnL.")]
     public class FootprintHvnLvnAbsorption : Indicator
     {
         // =====================================================================
@@ -76,6 +76,14 @@ namespace ATAS.Indicators.Custom
         private const string GrpTrappedVisual = "8. Acheteurs & Vendeurs Piégés (Visuel & Rayons)";
         private const string GrpOptionsAlerts = "9. Alerte Visuelle Achat/Vente & Flux d'Options ATAS X";
         private const string GrpHudAlerts     = "10. Panneau HUD & Alertes Sonores";
+        private const string GrpQuantEngine   = "11. Modèle Quant Senior (Z-Score, ATR, CVD & VWAP)";
+        private const string GrpQuantBot      = "12. Bot de Trading Quant & Risk Guard (Max DD / Max PnL)";
+
+        public enum BotExecutionMode
+        {
+            BacktestAndPaperOnly,
+            LiveAutoTradingManager
+        }
 
         // =====================================================================
         // Énumérations
