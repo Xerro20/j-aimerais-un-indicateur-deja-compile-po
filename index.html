@@ -484,8 +484,8 @@
   <header>
     <div class="container">
       <div class="badge-row">
-        <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0 — 94.5 Ko)</span>
-        <span class="badge new">★ BOUTON BOT ON/OFF DIRECTEMENT SUR LA CHARTE + Modèle Quant Senior</span>
+        <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0 — 100.5 Ko)</span>
+        <span class="badge new">★ BOUTON BOT ON/OFF + ENCADREMENT HORAIRE (DÉBUT / FIN) SUR LA CHARTE</span>
         <span class="badge opt">Risk Guard : Drawdown Max ($) &amp; PnL Max ($) + Flux d'Options ATAS X</span>
         <span class="badge">Compatible ATAS X (Windows &amp; macOS)</span>
       </div>
@@ -494,12 +494,12 @@
         Suite Quantitative Senior déjà compilée pour <strong>ATAS X</strong> : détection <strong>HVN / LVN</strong>,
         <strong>Heavy Absorption</strong>, <strong>Acheteurs &amp; Vendeurs Piégés</strong>, confirmation par le
         <strong>Flux d'Options ATAS X</strong>, filtrage statistique <strong>Z-Score (σ) / ATR(14)</strong> et
-        <strong>Bot de Trading Automatique intégré</strong> avec <strong>Bouton d'Activation ON/OFF directement sur la charte</strong> + coupe-circuits <strong>Drawdown Max ($)</strong> et <strong>PnL Max ($)</strong>.
+        <strong>Bot de Trading Automatique intégré</strong> avec <strong>Bouton ON/OFF</strong> et <strong>Encadrement Horaire (Heure de Démarrage &amp; Heure de Fin) directement sur la charte</strong>.
       </p>
 
       <div class="cta-bar">
         <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
-          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (94.5 Ko)
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (100.5 Ko)
         </a>
         <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
           📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
@@ -510,10 +510,10 @@
       </div>
 
       <div class="meta-strip">
-        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (96 768 octets)</span>
+        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (102 912 octets)</span>
         <span><strong>Nom dans ATAS X :</strong> Footprint Quant OrderFlow, Options Flow &amp; Auto-Bot (Max DD / Max PnL)</span>
         <span><strong>Catégorie :</strong> Order Flow - Custom</span>
-        <span><strong>SHA-256 :</strong> baad65111a7d1b1a...d14a46f7</span>
+        <span><strong>SHA-256 :</strong> 9ef76db03833c992...6b1bdef1</span>
       </div>
     </div>
   </header>
@@ -655,11 +655,30 @@
                   ⟲ RESET DD/PnL
                 </button>
               </div>
+              <div class="chart-schedule-frame" id="boxChartSchedule">
+                <button type="button" id="btnSchedToggle" class="sched-toggle-btn" onclick="toggleScheduleFromChart()">
+                  🕒 HORAIRES : ON
+                </button>
+                <div class="sched-field-group">
+                  <span class="sched-field-label">DÉBUT</span>
+                  <button type="button" class="sched-step-btn" onclick="stepChartTime('start', -5)">-</button>
+                  <input type="time" id="inpBotStart" class="sched-time-input" value="15:30" step="300" onchange="analyzeAndRender()" />
+                  <button type="button" class="sched-step-btn" onclick="stepChartTime('start', 5)">+</button>
+                </div>
+                <span style="color: #64748b; font-weight: 700;">→</span>
+                <div class="sched-field-group">
+                  <span class="sched-field-label">FIN</span>
+                  <button type="button" class="sched-step-btn" onclick="stepChartTime('end', -5)">-</button>
+                  <input type="time" id="inpBotEnd" class="sched-time-input end-time" value="15:50" step="300" onchange="analyzeAndRender()" />
+                  <button type="button" class="sched-step-btn" onclick="stepChartTime('end', 5)">+</button>
+                </div>
+                <span id="lblSchedBadge" style="color: #00ff88; font-weight: 700; font-size: 0.75rem;">● PLAGE ACTIVE</span>
+              </div>
               <div class="chart-bot-telemetry" id="lblChartBotTelemetry">
-                <span>Cliquez sur le bouton ou directement sur la charte ATAS X pour activer/désactiver le Bot</span>
+                <span>Cliquez sur le bouton ou l'encadrement horaire directement sur la charte</span>
               </div>
             </div>
-            <canvas id="fpCanvas" width="900" height="635" style="cursor: pointer;"></canvas>
+            <canvas id="fpCanvas" width="900" height="665" style="cursor: pointer;"></canvas>
           </div>
         </div>
       </div>
@@ -808,10 +827,56 @@
     const ctx = canvas.getContext("2d");
 
     let chartBotLiveMode = false;
-    let canvasBotToggleRect = { x: 18, y: 8, w: 192, h: 26 };
-    let canvasBotModeRect = { x: 216, y: 8, w: 118, h: 26 };
-    let canvasBotResetRect = { x: 340, y: 8, w: 66, h: 26 };
+    let chartScheduleEnabled = true;
+
+    let canvasBotToggleRect = { x: 18, y: 8, w: 192, h: 25 };
+    let canvasBotModeRect = { x: 216, y: 8, w: 118, h: 25 };
+    let canvasBotResetRect = { x: 340, y: 8, w: 66, h: 25 };
     let canvasHudBotBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+
+    // Hit-test rectangles for the On-Chart Schedule Frame (Encadrement Horaire)
+    let canvasSchedToggleRect = { x: 23, y: 40, w: 94, h: 20 };
+    let canvasStartMinusRect = { x: 162, y: 40, w: 19, h: 20 };
+    let canvasStartValRect = { x: 184, y: 40, w: 46, h: 20 };
+    let canvasStartPlusRect = { x: 233, y: 40, w: 19, h: 20 };
+    let canvasEndMinusRect = { x: 290, y: 40, w: 19, h: 20 };
+    let canvasEndValRect = { x: 312, y: 40, w: 46, h: 20 };
+    let canvasEndPlusRect = { x: 361, y: 40, w: 19, h: 20 };
+
+    function parseTimeStrToMinutes(str) {
+      if (!str || !str.includes(":")) return 0;
+      const parts = str.split(":");
+      return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    }
+
+    function formatMinutesToTimeStr(mins) {
+      const m = ((mins % 1440) + 1440) % 1440;
+      const hh = String(Math.floor(m / 60)).padStart(2, "0");
+      const mm = String(m % 60).padStart(2, "0");
+      return `${hh}:${mm}`;
+    }
+
+    function isBarInSchedule(barTimeStr, startStr, endStr) {
+      if (!chartScheduleEnabled) return true;
+      const bMin = parseTimeStrToMinutes(barTimeStr);
+      const sMin = parseTimeStrToMinutes(startStr);
+      const eMin = parseTimeStrToMinutes(endStr);
+      if (sMin <= eMin) return bMin >= sMin && bMin <= eMin;
+      return bMin >= sMin || bMin <= eMin;
+    }
+
+    function toggleScheduleFromChart() {
+      chartScheduleEnabled = !chartScheduleEnabled;
+      analyzeAndRender();
+    }
+
+    function stepChartTime(which, deltaMin) {
+      const el = document.getElementById(which === "start" ? "inpBotStart" : "inpBotEnd");
+      if (!el) return;
+      const nextMins = parseTimeStrToMinutes(el.value) + deltaMin;
+      el.value = formatMinutesToTimeStr(nextMins);
+      analyzeAndRender();
+    }
 
     function toggleBotFromChart() {
       const chk = document.getElementById("chkBot");
@@ -827,6 +892,9 @@
     function resetBotFromChart() {
       document.getElementById("rngMaxDd").value = 1500;
       document.getElementById("rngMaxPnl").value = 2500;
+      document.getElementById("inpBotStart").value = "15:30";
+      document.getElementById("inpBotEnd").value = "15:50";
+      chartScheduleEnabled = true;
       document.getElementById("chkBot").checked = true;
       analyzeAndRender();
     }
@@ -858,9 +926,12 @@
       const showRays = document.getElementById("chkRays").checked;
       const showHud = document.getElementById("chkHud").checked;
 
+      const startStr = (document.getElementById("inpBotStart") || {}).value || "15:30";
+      const endStr = (document.getElementById("inpBotEnd") || {}).value || "15:50";
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const topPad = 104;
+      const topPad = 128;
       const rowH = 30;
       const leftPad = 18;
       const priceAxisX = 820;
@@ -1072,6 +1143,13 @@
           }
         });
 
+        // Check if current bar falls inside the Bot Schedule Window
+        const barInSched = isBarInSchedule(bar.time, startStr, endStr);
+        if (chartScheduleEnabled && !barInSched) {
+          ctx.fillStyle = "rgba(15, 23, 42, 0.42)";
+          ctx.fillRect(xLeft, topPad, cellW, prices.length * rowH);
+        }
+
         // Evaluate Visual Buy / Sell Signal taking into account ATAS X Options Flow
         if (showBuySell) {
           const hasBull = barAbsSide > 0 || barTrapSide > 0;
@@ -1082,6 +1160,8 @@
             const score = Math.min(98, 68 + Math.round((bar.callPct - 50) * 0.8) + (barAbsSide > 0 && barTrapSide > 0 ? 8 : 0));
             const sig = {
               barIdx: bIdx,
+              barTime: bar.time,
+              inSchedule: barInSched,
               dir: 1,
               xMid,
               xRight: xLeft + cellW,
@@ -1106,6 +1186,8 @@
             const score = Math.min(98, 68 + Math.round((bar.putPct - 50) * 0.8) + (barAbsSide < 0 && barTrapSide < 0 ? 8 : 0));
             const sig = {
               barIdx: bIdx,
+              barTime: bar.time,
+              inSchedule: barInSched,
               dir: -1,
               xMid,
               xRight: xLeft + cellW,
@@ -1129,9 +1211,13 @@
         }
 
         // Time + Options Flow mini footer per bar
-        ctx.fillStyle = "#94a3b8";
+        ctx.fillStyle = (!chartScheduleEnabled || barInSched) ? "#94a3b8" : "#f59e0b";
         ctx.font = "11px Consolas, monospace";
-        ctx.fillText(bar.time, xMid - 16, canvas.height - 24);
+        ctx.fillText(
+          (!chartScheduleEnabled || barInSched) ? bar.time : `${bar.time} (HORS H.)`,
+          (!chartScheduleEnabled || barInSched) ? xMid - 16 : xLeft + 18,
+          canvas.height - 24
+        );
 
         const isCallDom = bar.callPct >= 50;
         ctx.fillStyle = isCallDom ? "#00ff88" : "#ff6b8b";
@@ -1240,19 +1326,29 @@
         ctx.fillText(l2, boxX + 7, boxY + 28);
       });
 
-      // Simulate Quant Bot Trades & Risk Guard (Max DD / Max PnL)
+      // Simulate Quant Bot Trades & Risk Guard (Max DD / Max PnL) + Schedule Filter
       let botPnl = 0;
       let botPeak = 0;
       let botMaxDdObs = 0;
       let botStatus = "ARMÉ — ACTIF";
       let botHaltedDd = false;
       let botHaltedPnl = false;
+      let executedBotTrades = 0;
+      let skippedOutSched = 0;
 
-      if (showBot && tradeSignalsToDraw.length > 0) {
-        for (let i = 0; i < tradeSignalsToDraw.length; i++) {
+      const eligibleBotSignals = tradeSignalsToDraw.filter(s => {
+        if (!s.inSchedule) {
+          skippedOutSched++;
+          return false;
+        }
+        return true;
+      });
+
+      if (showBot && eligibleBotSignals.length > 0) {
+        for (let i = 0; i < eligibleBotSignals.length; i++) {
           if (botHaltedDd || botHaltedPnl) break;
-          const s = tradeSignalsToDraw[i];
-          const nextSig = i + 1 < tradeSignalsToDraw.length ? tradeSignalsToDraw[i + 1] : null;
+          const s = eligibleBotSignals[i];
+          const nextSig = i + 1 < eligibleBotSignals.length ? eligibleBotSignals[i + 1] : null;
           const exitPrice = nextSig ? nextSig.entryPrice : (s.dir > 0 ? s.entryPrice + 1.25 : s.entryPrice - 1.25);
           const exitIdx = nextSig ? nextSig.entryIdx : Math.max(0, Math.min(prices.length - 1, s.entryIdx - s.dir * 3));
           const x2 = nextSig ? nextSig.xMid : Math.min(priceAxisX - 24, s.xRight + 32);
@@ -1265,6 +1361,7 @@
             botHaltedPnl = true;
           }
           botPnl += tradeUsd;
+          executedBotTrades++;
           if (botPnl > botPeak) botPeak = botPnl;
           const curDd = Math.max(0, botPeak - botPnl);
           if (curDd > botMaxDdObs) botMaxDdObs = curDd;
@@ -1298,16 +1395,21 @@
 
         if (botHaltedDd) botStatus = `COUPE-CIRCUIT : DD MAX (-${maxDdLimit}$)`;
         else if (botHaltedPnl) botStatus = `OBJECTIF PNL MAX VERROUILLÉ (+${maxPnlLimit}$)`;
-        else botStatus = `ACTIF (${tradeSignalsToDraw.length} trades exécutés)`;
+        else botStatus = `ACTIF (${executedBotTrades} trade${executedBotTrades > 1 ? "s" : ""} dans ${startStr}→${endStr})`;
+      } else if (showBot && eligibleBotSignals.length === 0) {
+        botStatus = `PAUSE HORS PLAGE (${startStr} → ${endStr})`;
       } else if (!showBot) {
         botStatus = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
       }
 
-      // Sync HTML On-Chart Toolbar Buttons
+      // Sync HTML On-Chart Toolbar Buttons & Schedule Box
       const btnToggle = document.getElementById("btnChartBotToggle");
       const lblToggle = document.getElementById("lblChartBotToggle");
       const btnMode = document.getElementById("btnChartBotMode");
       const lblTelemetry = document.getElementById("lblChartBotTelemetry");
+      const boxSched = document.getElementById("boxChartSchedule");
+      const btnSched = document.getElementById("btnSchedToggle");
+      const lblSchedBadge = document.getElementById("lblSchedBadge");
 
       if (btnToggle && lblToggle) {
         if (showBot) {
@@ -1327,6 +1429,21 @@
         } else {
           btnMode.classList.remove("live");
           btnMode.textContent = "⚡ MODE : SIM / PAPER";
+        }
+      }
+      if (boxSched && btnSched && lblSchedBadge) {
+        if (chartScheduleEnabled) {
+          boxSched.classList.remove("disabled");
+          btnSched.classList.remove("off");
+          btnSched.textContent = "🕒 HORAIRES : ON";
+          lblSchedBadge.textContent = skippedOutSched > 0
+            ? `ACTIF (${skippedOutSched} HORS PLAGE)`
+            : "PLAGE ACTIVE";
+        } else {
+          boxSched.classList.add("disabled");
+          btnSched.classList.add("off");
+          btnSched.textContent = "🕒 HORAIRES : OFF (24/24)";
+          lblSchedBadge.textContent = "24H / 24";
         }
       }
       if (lblTelemetry) {
@@ -1381,15 +1498,109 @@
       ctx.fillStyle = "#e2e8f0";
       ctx.fillText("⟲ RESET", canvasBotResetRect.x + 9, canvasBotResetRect.y + 16);
 
-      // Top Visual Alert Banner (placed right below the On-Chart Bot Button Bar)
+      // 2. Draw Framed On-Chart Schedule Box (Encadrement Heure de Démarrage / Heure de Fin) directly on Canvas
+      const schedFrameX = 18;
+      const schedFrameY = 38;
+      const schedFrameW = 468;
+      const schedFrameH = 26;
+
+      ctx.fillStyle = "rgba(10, 16, 29, 0.95)";
+      ctx.fillRect(schedFrameX, schedFrameY, schedFrameW, schedFrameH);
+      ctx.strokeStyle = chartScheduleEnabled ? "#38bdf8" : "#64748b";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(schedFrameX, schedFrameY, schedFrameW, schedFrameH);
+      ctx.fillStyle = chartScheduleEnabled ? "#38bdf8" : "#64748b";
+      ctx.fillRect(schedFrameX, schedFrameY, 4, schedFrameH);
+
+      // [HORAIRES: ON/OFF] toggle inside the frame
+      canvasSchedToggleRect = { x: schedFrameX + 8, y: schedFrameY + 4, w: 108, h: 18 };
+      ctx.fillStyle = chartScheduleEnabled ? "rgba(6, 78, 59, 0.9)" : "rgba(30, 41, 59, 0.9)";
+      ctx.fillRect(canvasSchedToggleRect.x, canvasSchedToggleRect.y, canvasSchedToggleRect.w, canvasSchedToggleRect.h);
+      ctx.strokeStyle = chartScheduleEnabled ? "#00ff88" : "#94a3b8";
+      ctx.lineWidth = 1.1;
+      ctx.strokeRect(canvasSchedToggleRect.x, canvasSchedToggleRect.y, canvasSchedToggleRect.w, canvasSchedToggleRect.h);
+      ctx.font = "bold 8.5px Consolas, monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(
+        chartScheduleEnabled ? "🕒 HORAIRES: ON" : "🕒 HORAIRES: OFF",
+        canvasSchedToggleRect.x + 7,
+        canvasSchedToggleRect.y + 12.5
+      );
+
+      // DÉBUT label + [-] [HH:mm] [+]
+      let cx = canvasSchedToggleRect.x + canvasSchedToggleRect.w + 10;
+      ctx.font = "bold 9px Consolas, monospace";
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText("DÉBUT:", cx, schedFrameY + 16.5);
+      cx += 42;
+
+      canvasStartMinusRect = { x: cx, y: schedFrameY + 4, w: 19, h: 18 };
+      ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+      ctx.fillRect(canvasStartMinusRect.x, canvasStartMinusRect.y, canvasStartMinusRect.w, canvasStartMinusRect.h);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.strokeRect(canvasStartMinusRect.x, canvasStartMinusRect.y, canvasStartMinusRect.w, canvasStartMinusRect.h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("-", canvasStartMinusRect.x + 6.5, schedFrameY + 16.5);
+      cx += 22;
+
+      canvasStartValRect = { x: cx, y: schedFrameY + 4, w: 46, h: 18 };
+      ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+      ctx.fillRect(canvasStartValRect.x, canvasStartValRect.y, canvasStartValRect.w, canvasStartValRect.h);
+      ctx.strokeStyle = chartScheduleEnabled ? "#00ff88" : "#64748b";
+      ctx.strokeRect(canvasStartValRect.x, canvasStartValRect.y, canvasStartValRect.w, canvasStartValRect.h);
+      ctx.fillStyle = chartScheduleEnabled ? "#00ff88" : "#cbd5e1";
+      ctx.fillText(startStr, canvasStartValRect.x + 8, schedFrameY + 16.5);
+      cx += 49;
+
+      canvasStartPlusRect = { x: cx, y: schedFrameY + 4, w: 19, h: 18 };
+      ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+      ctx.fillRect(canvasStartPlusRect.x, canvasStartPlusRect.y, canvasStartPlusRect.w, canvasStartPlusRect.h);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.strokeRect(canvasStartPlusRect.x, canvasStartPlusRect.y, canvasStartPlusRect.w, canvasStartPlusRect.h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("+", canvasStartPlusRect.x + 6.5, schedFrameY + 16.5);
+      cx += 28;
+
+      // FIN label + [-] [HH:mm] [+]
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText("FIN:", cx, schedFrameY + 16.5);
+      cx += 29;
+
+      canvasEndMinusRect = { x: cx, y: schedFrameY + 4, w: 19, h: 18 };
+      ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+      ctx.fillRect(canvasEndMinusRect.x, canvasEndMinusRect.y, canvasEndMinusRect.w, canvasEndMinusRect.h);
+      ctx.strokeStyle = "#f59e0b";
+      ctx.strokeRect(canvasEndMinusRect.x, canvasEndMinusRect.y, canvasEndMinusRect.w, canvasEndMinusRect.h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("-", canvasEndMinusRect.x + 6.5, schedFrameY + 16.5);
+      cx += 22;
+
+      canvasEndValRect = { x: cx, y: schedFrameY + 4, w: 46, h: 18 };
+      ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+      ctx.fillRect(canvasEndValRect.x, canvasEndValRect.y, canvasEndValRect.w, canvasEndValRect.h);
+      ctx.strokeStyle = chartScheduleEnabled ? "#fbbf24" : "#64748b";
+      ctx.strokeRect(canvasEndValRect.x, canvasEndValRect.y, canvasEndValRect.w, canvasEndValRect.h);
+      ctx.fillStyle = chartScheduleEnabled ? "#fbbf24" : "#cbd5e1";
+      ctx.fillText(endStr, canvasEndValRect.x + 8, schedFrameY + 16.5);
+      cx += 49;
+
+      canvasEndPlusRect = { x: cx, y: schedFrameY + 4, w: 19, h: 18 };
+      ctx.fillStyle = "rgba(30, 41, 59, 0.95)";
+      ctx.fillRect(canvasEndPlusRect.x, canvasEndPlusRect.y, canvasEndPlusRect.w, canvasEndPlusRect.h);
+      ctx.strokeStyle = "#f59e0b";
+      ctx.strokeRect(canvasEndPlusRect.x, canvasEndPlusRect.y, canvasEndPlusRect.w, canvasEndPlusRect.h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText("+", canvasEndPlusRect.x + 6.5, schedFrameY + 16.5);
+
+      // Top Visual Alert Banner (placed right below the On-Chart Schedule Box)
       if (showBuySell && showBanner && lastTradeSignal) {
         const isBuy = lastTradeSignal.dir > 0;
         const col = isBuy ? "#00ff88" : "#ff2a55";
         const bg = isBuy ? "rgba(6, 42, 30, 0.95)" : "rgba(52, 12, 24, 0.95)";
         const bx = 18;
-        const by = 40;
+        const by = 68;
         const bw = 468;
-        const bh = 42;
+        const bh = 40;
 
         ctx.fillStyle = bg;
         ctx.fillRect(bx, by, bw, bh);
@@ -1409,7 +1620,7 @@
         ctx.font = "9.5px Consolas, monospace";
         ctx.fillStyle = "#e2e8f0";
         const sub = `Flux Options ATAS X: Calls ${lastTradeSignal.callPct}% / Puts ${lastTradeSignal.putPct}% (PCR ${lastTradeSignal.pcr}) | ΔOI ${lastTradeSignal.oiDelta > 0 ? "+" : ""}${lastTradeSignal.oiDelta}`;
-        ctx.fillText(sub, bx + 12, by + 33);
+        ctx.fillText(sub, bx + 12, by + 32);
       }
 
       // Draw HUD Panel
@@ -1456,7 +1667,11 @@
         ctx.fillText(`Flux Options ATAS X: Calls ${lastBar.callPct}% / Puts ${lastBar.putPct}% (PCR ${lastBar.pcr})`, hx + 10, hy + 78);
 
         ctx.fillStyle = "#7dd3fc";
-        ctx.fillText(`Signaux Quant : ACHAT ▲ ${totalBuySignals} | VENTE ▼ ${totalSellSignals}`, hx + 10, hy + 94);
+        ctx.fillText(
+          `Signaux: ▲${totalBuySignals} ▼${totalSellSignals} | Plage: ${chartScheduleEnabled ? `${startStr}→${endStr}` : "24h/24"}`,
+          hx + 10,
+          hy + 94
+        );
 
         if (showBot) {
           ctx.fillStyle = botHaltedDd ? "#ff415f" : (botHaltedPnl ? "#00ff88" : "#38bdf8");
@@ -1527,10 +1742,20 @@
         toggleBotModeFromChart();
       } else if (isInsideRect(px, py, canvasBotResetRect)) {
         resetBotFromChart();
+      } else if (isInsideRect(px, py, canvasSchedToggleRect)) {
+        toggleScheduleFromChart();
+      } else if (isInsideRect(px, py, canvasStartMinusRect)) {
+        stepChartTime("inpBotStart", -5);
+      } else if (isInsideRect(px, py, canvasStartPlusRect) || isInsideRect(px, py, canvasStartValRect)) {
+        stepChartTime("inpBotStart", 5);
+      } else if (isInsideRect(px, py, canvasEndMinusRect)) {
+        stepChartTime("inpBotEnd", -5);
+      } else if (isInsideRect(px, py, canvasEndPlusRect) || isInsideRect(px, py, canvasEndValRect)) {
+        stepChartTime("inpBotEnd", 5);
       }
     });
 
-    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud"]
+    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud", "inpBotStart", "inpBotEnd"]
       .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
 
     analyzeAndRender();
