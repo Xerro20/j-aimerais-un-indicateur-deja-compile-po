@@ -1227,6 +1227,15 @@ namespace ATAS.Indicators.Custom
             _buyAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction > 0) ? signal.TriggerPrice : 0m;
             _sellAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction < 0) ? signal.TriggerPrice : 0m;
 
+            // Exécution temps réel du Bot via ATAS ITradingManager sur la bougie active (si mode Live activé)
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && bar == CurrentBar - 1)
+            {
+                var botState = SimulateQuantTradingBot(bar, tickSize, out _);
+                ProcessLiveTradingManagerBot(bar, signal, botState);
+                _botCumPnlSeries[bar] = botState.TotalPnlUsd;
+                _botDrawdownSeries[bar] = botState.CurrentDrawdownUsd;
+            }
+
             // Alerte temps réel sur la dernière bougie
             if (EnableAlerts && bar == CurrentBar - 1)
             {
