@@ -2335,13 +2335,25 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // 6. Rendu de la Bannière Visuelle d'Alerte Achat/Vente en haut du graphique
-            if (_enableVisualBuySellAlerts && ShowVisualAlertBanner && latestTradeSignal.HasValue)
+            // 6. Simulation & Rendu du Bot de Trading Quant (avec coupe-circuit Max Drawdown & Max PnL)
+            BotPerformanceState botPerf = default;
+            List<BotTradeExecutionRecord> botTrades = new List<BotTradeExecutionRecord>();
+            if (_enableTradingBot)
             {
-                RenderVisualAlertBanner(context, chartRegion, latestTradeSignal.Value, latestBarOptMetrics);
+                botPerf = SimulateQuantTradingBot(lastBar, tickSize, out botTrades);
+                if (ShowBotExecutionOnChart && botTrades.Count > 0)
+                {
+                    RenderBotTradesOnChart(context, botTrades, firstBar, lastBar, boldFont, cellFont);
+                }
             }
 
-            // 7. Rendu du panneau HUD récapitulatif en temps réel
+            // 7. Rendu de la Bannière Visuelle d'Alerte Achat/Vente en haut du graphique
+            if (_enableVisualBuySellAlerts && ShowVisualAlertBanner && latestTradeSignal.HasValue)
+            {
+                RenderVisualAlertBanner(context, chartRegion, latestTradeSignal.Value, latestBarOptMetrics, botPerf);
+            }
+
+            // 8. Rendu du panneau HUD récapitulatif en temps réel (incluant Quant Bot, Max DD & Max PnL)
             if (ShowHudPanel)
             {
                 RenderHud(
@@ -2353,7 +2365,482 @@ namespace ATAS.Indicators.Custom
                     visibleTrappedSellers, visibleTrappedBuyers,
                     visibleBuySignals, visibleSellSignals,
                     latestAbsorption, latestTrapped,
-                    latestTradeSignal, latestBarOptMetrics);
+                    latestTradeSignal, latestBarOptMetrics,
+                    botPerf);
+            }
+        }
+
+        // =====================================================================
+        // MOTEUR DU BOT DE TRADING QUANT & GESTION DU RISQUE (MAX DRAWDOWN & MAX PNL)
+        // =====================================================================
+        private decimal GetPointDollarValue(decimal tickSize)
+        {
+            try
+            {
+                var sec = TradingManager?.Security;
+                if (sec != null && sec.TickCost > 0m && sec.TickSize > 0m)
+                    return sec.TickCost / sec.TickSize;
+            }
+            catch
+            {
+                // Ignorer si non supporté par le connecteur
+            }
+            return _botPointValueUsd > 0m ? _botPointValueUsd : 50m;
+        }
+
+        private BotPerformanceState SimulateQuantTradingBot(
+            int upToBar,
+            decimal tickSize,
+            out List<BotTradeExecutionRecord> tradeHistory)
+        {
+            tradeHistory = new List<BotTradeExecutionRecord>();
+            var state = new BotPerformanceState
+            {
+                StatusLabel = _enableTradingBot ? "ACTIF — RECHERCHE SIGNAL QUANT" : "DÉSACTIVÉ"
+            };
+
+            if (!_enableTradingBot || upToBar < 0)
+                return state;
+
+            decimal pointVal = GetPointDollarValue(tickSize);
+            int lookbackStart = Math.Max(0, upToBar - Math.Max(160, ProfileLookbackBars * 3));
+            if (_botResetLimitsEachSession)
+            {
+                int sessionStart = upToBar;
+                while (sessionStart > lookbackStart && !IsNewSession(sessionStart))
+                    sessionStart--;
+                lookbackStart = sessionStart;
+            }
+
+            int activeDir = 0;
+            int activeQty = 0;
+            int initialQty = Math.Max(1, _botTradeQuantity);
+            int entryBar = -1;
+            decimal entryPrice = 0m;
+            decimal stopPrice = 0m;
+            decimal tp1Price = 0m;
+            decimal tp2Price = 0m;
+            bool tp1Hit = false;
+            decimal bankedPartialUsd = 0m;
+
+            var tradeReturns = new List<double>();
+
+            for (int b = lookbackStart; b <= upToBar; b++)
+            {
+                if (_botResetLimitsEachSession && b > lookbackStart && IsNewSession(b))
+                {
+                    state.IsHaltedByMaxDrawdown = false;
+                    state.IsHaltedByMaxProfit = false;
+                    state.RealizedPnlUsd = 0m;
+                    state.PeakPnlUsd = 0m;
+                    state.CurrentDrawdownUsd = 0m;
+                    activeDir = 0;
+                    activeQty = 0;
+                }
+
+                var c = GetCandle(b);
+
+                // 1. Gestion de la position ouverte du Bot sur la bougie b
+                if (activeDir != 0 && b > entryBar)
+                {
+                    // Vérification intra-bougie : Stop-Loss, TP1 (Breakeven + 50%) et TP2
+                    bool stopTriggered = activeDir > 0 ? (c.Low <= stopPrice) : (c.High >= stopPrice);
+                    bool tp2Triggered = activeDir > 0 ? (c.High >= tp2Price) : (c.Low <= tp2Price);
+                    bool tp1Triggered = !tp1Hit && (activeDir > 0 ? (c.High >= tp1Price) : (c.Low <= tp1Price));
+
+                    if (stopTriggered)
+                    {
+                        decimal legPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
+                            - (_botCommissionPerSideUsd * 2m * activeQty);
+                        decimal totalTradePnl = Math.Round(bankedPartialUsd + legPnl, 2);
+
+                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                            stopPrice, totalTradePnl, tp1Hit ? "TP1 + BE" : "STOP LOSS", tp1Hit);
+
+                        activeDir = 0;
+                        activeQty = 0;
+                        bankedPartialUsd = 0m;
+                    }
+                    else if (tp2Triggered)
+                    {
+                        if (!tp1Hit && _botAutoBreakevenOnTp1 && activeQty >= 2)
+                        {
+                            int half = activeQty / 2;
+                            bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
+                                - (_botCommissionPerSideUsd * 2m * half);
+                            activeQty -= half;
+                            tp1Hit = true;
+                        }
+
+                        decimal remPnl = activeDir * (tp2Price - entryPrice) * pointVal * activeQty
+                            - (_botCommissionPerSideUsd * 2m * activeQty);
+                        decimal totalTradePnl = Math.Round(bankedPartialUsd + remPnl, 2);
+
+                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                            tp2Price, totalTradePnl, "TP2 TARGET", true);
+
+                        activeDir = 0;
+                        activeQty = 0;
+                        bankedPartialUsd = 0m;
+                    }
+                    else if (tp1Triggered)
+                    {
+                        tp1Hit = true;
+                        if (_botAutoBreakevenOnTp1)
+                        {
+                            stopPrice = entryPrice; // Passage automatique du Stop à Breakeven
+                            if (activeQty >= 2)
+                            {
+                                int half = activeQty / 2;
+                                bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
+                                    - (_botCommissionPerSideUsd * 2m * half);
+                                activeQty -= half;
+                            }
+                        }
+                    }
+
+                    // Vérification temps réel du PnL latent vis-à-vis du Max Drawdown & Max Profit
+                    if (activeDir != 0)
+                    {
+                        decimal openLegPnl = activeDir * (c.Close - entryPrice) * pointVal * activeQty;
+                        decimal eqNow = state.RealizedPnlUsd + bankedPartialUsd + openLegPnl;
+                        decimal ddNow = Math.Max(0m, state.PeakPnlUsd - eqNow);
+
+                        if (ddNow >= _botMaxDrawdownUsd)
+                        {
+                            decimal forcedLoss = -(_botMaxDrawdownUsd - (state.PeakPnlUsd - state.RealizedPnlUsd));
+                            FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                c.Close, Math.Round(forcedLoss, 2), "KILL-SWITCH DD MAX", tp1Hit);
+
+                            state.IsHaltedByMaxDrawdown = true;
+                            activeDir = 0;
+                            activeQty = 0;
+                            bankedPartialUsd = 0m;
+                        }
+                        else if (eqNow >= _botMaxProfitTargetUsd)
+                        {
+                            decimal lockedGain = _botMaxProfitTargetUsd - state.RealizedPnlUsd;
+                            FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                c.Close, Math.Round(lockedGain, 2), "LOCK PNL MAX", tp1Hit);
+
+                            state.IsHaltedByMaxProfit = true;
+                            activeDir = 0;
+                            activeQty = 0;
+                            bankedPartialUsd = 0m;
+                        }
+                    }
+                }
+
+                // 2. Coupe-circuit si Max Drawdown ou Max PnL est déjà atteint
+                if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
+                    continue;
+
+                // 3. Évaluation d'un nouveau signal d'entrée ou de retournement sur la bougie b
+                var rows = AnalyzeBarClusters(
+                    c, tickSize,
+                    out _, out _,
+                    out int bullAbsIdx, out int bearAbsIdx,
+                    out int trapSellIdx, out int trapBuyIdx);
+
+                if (rows.Length == 0)
+                    continue;
+
+                var opt = AnalyzeBarOptionsFlow(b, c, rows, tickSize);
+                var sig = EvaluateBuySellSignal(
+                    b, c, rows, tickSize,
+                    bullAbsIdx, bearAbsIdx,
+                    trapSellIdx, trapBuyIdx,
+                    opt);
+
+                if (sig.Direction != 0)
+                {
+                    // Si position opposée ouverte, retournement (Reversal Quant)
+                    if (activeDir != 0 && activeDir != sig.Direction)
+                    {
+                        decimal revPnl = bankedPartialUsd
+                            + activeDir * (c.Close - entryPrice) * pointVal * activeQty
+                            - (_botCommissionPerSideUsd * 2m * activeQty);
+
+                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                            c.Close, Math.Round(revPnl, 2), "REVERSAL SIGNAL", tp1Hit);
+
+                        activeDir = 0;
+                        activeQty = 0;
+                        bankedPartialUsd = 0m;
+
+                        if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
+                            continue;
+                    }
+
+                    // Ouverture d'une nouvelle position Quant si flat
+                    if (activeDir == 0)
+                    {
+                        activeDir = sig.Direction;
+                        activeQty = initialQty;
+                        entryBar = b;
+                        entryPrice = sig.EntryPrice;
+                        stopPrice = sig.StopPrice;
+                        tp1Price = sig.Tp1Price;
+                        tp2Price = sig.Tp2Price;
+                        tp1Hit = false;
+                        bankedPartialUsd = 0m;
+                    }
+                }
+            }
+
+            // Mise à jour de l'état courant sur la dernière bougie
+            if (activeDir != 0 && upToBar >= 0)
+            {
+                var lastC = GetCandle(upToBar);
+                state.ActiveDirection = activeDir;
+                state.ActiveContracts = activeQty;
+                state.ActiveEntryBar = entryBar;
+                state.ActiveEntryPrice = entryPrice;
+                state.ActiveStopPrice = stopPrice;
+                state.ActiveTp1Price = tp1Price;
+                state.ActiveTp2Price = tp2Price;
+                state.ActiveTp1Hit = tp1Hit;
+                state.UnrealizedPnlUsd = Math.Round(
+                    bankedPartialUsd + activeDir * (lastC.Close - entryPrice) * pointVal * activeQty, 2);
+
+                tradeHistory.Add(new BotTradeExecutionRecord
+                {
+                    EntryBar = entryBar,
+                    ExitBar = upToBar,
+                    Direction = activeDir,
+                    EntryPrice = entryPrice,
+                    StopPrice = stopPrice,
+                    Tp1Price = tp1Price,
+                    Tp2Price = tp2Price,
+                    ExitPrice = lastC.Close,
+                    RealizedPnlUsd = state.UnrealizedPnlUsd,
+                    ExitReason = tp1Hit ? "EN COURS (BE ACTIF)" : "EN COURS (OPEN)",
+                    Tp1Reached = tp1Hit
+                });
+            }
+
+            state.TotalPnlUsd = Math.Round(state.RealizedPnlUsd + state.UnrealizedPnlUsd, 2);
+            if (state.TotalPnlUsd > state.PeakPnlUsd)
+                state.PeakPnlUsd = state.TotalPnlUsd;
+
+            state.CurrentDrawdownUsd = Math.Round(Math.Max(0m, state.PeakPnlUsd - state.TotalPnlUsd), 2);
+            if (state.CurrentDrawdownUsd > state.MaxObservedDrawdownUsd)
+                state.MaxObservedDrawdownUsd = state.CurrentDrawdownUsd;
+
+            if (state.TotalTrades > 0)
+            {
+                state.WinRatePct = Math.Round((state.WinningTrades / (decimal)state.TotalTrades) * 100m, 1);
+                state.ProfitFactor = state.GrossLossUsd > 0m
+                    ? Math.Round(state.GrossProfitUsd / state.GrossLossUsd, 2)
+                    : (state.GrossProfitUsd > 0m ? 9.99m : 0m);
+                state.ExpectancyUsd = Math.Round(state.RealizedPnlUsd / state.TotalTrades, 2);
+
+                if (tradeReturns.Count >= 2)
+                {
+                    double mean = 0.0;
+                    for (int i = 0; i < tradeReturns.Count; i++) mean += tradeReturns[i];
+                    mean /= tradeReturns.Count;
+
+                    double variance = 0.0;
+                    for (int i = 0; i < tradeReturns.Count; i++)
+                    {
+                        double d = tradeReturns[i] - mean;
+                        variance += d * d;
+                    }
+                    double std = Math.Sqrt(variance / tradeReturns.Count);
+                    if (std > 1e-6)
+                    {
+                        double sharpe = (mean / std) * Math.Sqrt(tradeReturns.Count);
+                        state.SharpeRatio = Math.Round((decimal)Math.Clamp(sharpe, -9.9, 9.9), 2);
+                    }
+                }
+            }
+
+            if (state.IsHaltedByMaxDrawdown)
+                state.StatusLabel = $"COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT (-{state.MaxObservedDrawdownUsd:0}$ / -{_botMaxDrawdownUsd:0}$)";
+            else if (state.IsHaltedByMaxProfit)
+                state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ (+{state.TotalPnlUsd:0}$ / +{_botMaxProfitTargetUsd:0}$)";
+            else if (state.ActiveDirection > 0)
+                state.StatusLabel = $"LONG ACTIF (+{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
+            else if (state.ActiveDirection < 0)
+                state.StatusLabel = $"SHORT ACTIF (-{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
+            else
+                state.StatusLabel = "ARMÉ — EN ATTENTE DE CONFLUENCE QUANT";
+
+            return state;
+        }
+
+        private void FinalizeBotTrade(
+            ref BotPerformanceState state,
+            List<BotTradeExecutionRecord> history,
+            List<double> returnsList,
+            int entryBar,
+            int exitBar,
+            int direction,
+            decimal entryPrice,
+            decimal stopPrice,
+            decimal tp1Price,
+            decimal tp2Price,
+            decimal exitPrice,
+            decimal pnlUsd,
+            string reason,
+            bool tp1Reached)
+        {
+            state.RealizedPnlUsd = Math.Round(state.RealizedPnlUsd + pnlUsd, 2);
+            state.TotalTrades++;
+
+            if (pnlUsd >= 0m)
+            {
+                state.WinningTrades++;
+                state.GrossProfitUsd += pnlUsd;
+            }
+            else
+            {
+                state.LosingTrades++;
+                state.GrossLossUsd += Math.Abs(pnlUsd);
+            }
+
+            if (state.RealizedPnlUsd > state.PeakPnlUsd)
+                state.PeakPnlUsd = state.RealizedPnlUsd;
+
+            decimal dd = Math.Max(0m, state.PeakPnlUsd - state.RealizedPnlUsd);
+            state.CurrentDrawdownUsd = dd;
+            if (dd > state.MaxObservedDrawdownUsd)
+                state.MaxObservedDrawdownUsd = dd;
+
+            if (dd >= _botMaxDrawdownUsd)
+                state.IsHaltedByMaxDrawdown = true;
+            if (state.RealizedPnlUsd >= _botMaxProfitTargetUsd)
+                state.IsHaltedByMaxProfit = true;
+
+            returnsList.Add((double)pnlUsd);
+            history.Add(new BotTradeExecutionRecord
+            {
+                EntryBar = entryBar,
+                ExitBar = exitBar,
+                Direction = direction,
+                EntryPrice = entryPrice,
+                StopPrice = stopPrice,
+                Tp1Price = tp1Price,
+                Tp2Price = tp2Price,
+                ExitPrice = exitPrice,
+                RealizedPnlUsd = pnlUsd,
+                ExitReason = reason,
+                Tp1Reached = tp1Reached
+            });
+        }
+
+        // =====================================================================
+        // Routage Live Optionnel vers ATAS ITradingManager (avec Kill-Switch Max DD / Max PnL)
+        // =====================================================================
+        private void ProcessLiveTradingManagerBot(int bar, VisualTradeSignal signal, BotPerformanceState botState)
+        {
+            try
+            {
+                var tm = TradingManager;
+                if (tm == null || tm.Security == null)
+                    return;
+
+                var pos = tm.Position;
+                decimal liveRealized = pos?.RealizedPnL ?? 0m;
+                decimal liveUnrealized = pos?.UnrealizedPnL ?? 0m;
+                decimal liveNetPnl = liveRealized + liveUnrealized;
+
+                bool hitMaxDd = botState.IsHaltedByMaxDrawdown || (liveNetPnl <= -_botMaxDrawdownUsd);
+                bool hitMaxPnl = botState.IsHaltedByMaxProfit || (liveNetPnl >= _botMaxProfitTargetUsd);
+
+                if (hitMaxDd || hitMaxPnl)
+                {
+                    if (!_liveKillSwitchExecuted && pos != null && pos.Volume != 0m)
+                    {
+                        _liveKillSwitchExecuted = true;
+                        tm.ClosePosition(pos, false, false);
+                    }
+                    return;
+                }
+
+                _liveKillSwitchExecuted = false;
+
+                if (signal.Direction != 0 && (_lastLiveBotOrderBar != bar || _lastLiveBotOrderDir != signal.Direction))
+                {
+                    _lastLiveBotOrderBar = bar;
+                    _lastLiveBotOrderDir = signal.Direction;
+
+                    // Si une position inverse est ouverte dans ATAS, on la clôture d'abord
+                    if (pos != null && ((signal.Direction > 0 && pos.Volume < 0m) || (signal.Direction < 0 && pos.Volume > 0m)))
+                    {
+                        tm.ClosePosition(pos, false, false);
+                    }
+
+                    if (pos == null || pos.Volume == 0m)
+                    {
+                        var mktOrder = new Order
+                        {
+                            Security = tm.Security,
+                            Portfolio = tm.Portfolio,
+                            Type = OrderTypes.Market,
+                            Direction = signal.Direction > 0 ? OrderDirections.Buy : OrderDirections.Sell,
+                            QuantityToFill = Math.Max(1, _botTradeQuantity),
+                            Comment = $"QUANT_BOT_{(signal.Direction > 0 ? "BUY" : "SELL")}_{signal.ConfluenceScore}%"
+                        };
+                        tm.OpenOrder(mktOrder, false, false, false);
+                    }
+                }
+            }
+            catch
+            {
+                // Protection totale si aucun compte de trading n'est connecté dans ATAS X
+            }
+        }
+
+        // =====================================================================
+        // Rendu Graphique des Trades du Bot (Trajectoires Entrée -> Sortie + Badges PnL $)
+        // =====================================================================
+        private void RenderBotTradesOnChart(
+            RenderContext context,
+            List<BotTradeExecutionRecord> trades,
+            int firstVisibleBar,
+            int lastVisibleBar,
+            RenderFont boldFont,
+            RenderFont smallFont)
+        {
+            for (int i = 0; i < trades.Count; i++)
+            {
+                var t = trades[i];
+                if (t.ExitBar < firstVisibleBar || t.EntryBar > lastVisibleBar)
+                    continue;
+
+                int x1 = ChartInfo!.GetXByBar(Math.Max(firstVisibleBar, t.EntryBar), true);
+                int x2 = ChartInfo!.GetXByBar(Math.Min(lastVisibleBar, t.ExitBar), true);
+                int y1 = ChartInfo!.GetYByPrice(t.EntryPrice, false);
+                int y2 = ChartInfo!.GetYByPrice(t.ExitPrice, false);
+
+                bool isWin = t.RealizedPnlUsd >= 0m;
+                Color pathCol = isWin
+                    ? Color.FromArgb(220, 16, 245, 150)
+                    : Color.FromArgb(220, 255, 65, 95);
+
+                var pathPen = new RenderPen(pathCol, 2f, DashStyle.DashDot);
+                context.DrawLine(pathPen, x1, y1, x2, y2);
+
+                // Point d'entrée et de sortie
+                context.FillEllipse(pathCol, new Rectangle(x1 - 4, y1 - 4, 8, 8));
+                context.FillEllipse(pathCol, new Rectangle(x2 - 4, y2 - 4, 8, 8));
+
+                string pnlTag = $"BOT {(t.Direction > 0 ? "LONG" : "SHORT")} {t.ExitReason} : {t.RealizedPnlUsd:+0;-0;0}$";
+                Size sz = context.MeasureString(pnlTag, smallFont);
+                int bx = Math.Max(10, x2 - sz.Width / 2);
+                int by = t.Direction > 0 ? y2 - sz.Height - 10 : y2 + 8;
+
+                Rectangle tagRect = new Rectangle(bx - 4, by - 2, sz.Width + 8, sz.Height + 4);
+                context.FillRectangle(Color.FromArgb(220, 11, 17, 30), tagRect);
+                context.DrawRectangle(new RenderPen(pathCol, 1.2f), tagRect);
+                context.DrawString(pnlTag, smallFont, pathCol, bx, by);
             }
         }
 
