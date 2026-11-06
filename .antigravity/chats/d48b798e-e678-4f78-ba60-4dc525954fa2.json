@@ -220,6 +220,18 @@
       "created_at": "2026-11-06T09:45:24.387Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "f230b9a8-199c-4825-820f-d40ff41cfa2a",
+      "role": "user",
+      "content": "'aimerais bien que le PNL réel se synchronise avec le compte actif parce que là ce n'est pas le cas",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T10:13:14.064Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
