@@ -845,6 +845,41 @@
 
     let chartBotLiveMode = false;
     let chartScheduleEnabled = true;
+    let chartAccountSyncEnabled = true;
+    let chartAccountScopePortfolio = true;
+
+    const atasActiveAccounts = {
+      apex: {
+        name: "Apex-PA-2049",
+        balance: 52480,
+        portfolioRealized: 1100,
+        portfolioUnrealized: 325,
+        instRealized: 850,
+        instUnrealized: 225,
+        openQty: 2,
+        avgPrice: 5891.50
+      },
+      topstep: {
+        name: "Topstep-XFA-881",
+        balance: 151920,
+        portfolioRealized: 1640,
+        portfolioUnrealized: -180,
+        instRealized: 1240,
+        instUnrealized: -180,
+        openQty: -1,
+        avgPrice: 5892.75
+      },
+      sim101: {
+        name: "Sim101",
+        balance: 100675,
+        portfolioRealized: 525,
+        portfolioUnrealized: 150,
+        instRealized: 525,
+        instUnrealized: 150,
+        openQty: 1,
+        avgPrice: 5892.00
+      }
+    };
 
     let canvasBotToggleRect = { x: 18, y: 8, w: 192, h: 25 };
     let canvasBotModeRect = { x: 216, y: 8, w: 118, h: 25 };
@@ -859,6 +894,10 @@
     let canvasEndMinusRect = { x: 290, y: 40, w: 19, h: 20 };
     let canvasEndValRect = { x: 312, y: 40, w: 46, h: 20 };
     let canvasEndPlusRect = { x: 361, y: 40, w: 19, h: 20 };
+
+    // Hit-test rectangles for the On-Chart Active Account & Real PnL Sync Frame
+    let canvasAcctSyncToggleRect = { x: 23, y: 70, w: 162, h: 18 };
+    let canvasAcctScopeToggleRect = { x: 191, y: 70, w: 114, h: 18 };
 
     function parseTimeStrToMinutes(str) {
       if (!str || !str.includes(":")) return 0;
@@ -906,12 +945,23 @@
       analyzeAndRender();
     }
 
+    function toggleAccountSyncFromChart() {
+      chartAccountSyncEnabled = !chartAccountSyncEnabled;
+      analyzeAndRender();
+    }
+
+    function toggleAccountScopeFromChart() {
+      chartAccountScopePortfolio = !chartAccountScopePortfolio;
+      analyzeAndRender();
+    }
+
     function resetBotFromChart() {
       document.getElementById("rngMaxDd").value = 1500;
       document.getElementById("rngMaxPnl").value = 2500;
       document.getElementById("inpBotStart").value = "15:30";
       document.getElementById("inpBotEnd").value = "15:50";
       chartScheduleEnabled = true;
+      chartAccountSyncEnabled = true;
       document.getElementById("chkBot").checked = true;
       analyzeAndRender();
     }
@@ -948,7 +998,7 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const topPad = 128;
+      const topPad = 156;
       const rowH = 30;
       const leftPad = 18;
       const priceAxisX = 820;
