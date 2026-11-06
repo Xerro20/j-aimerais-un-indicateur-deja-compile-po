@@ -499,7 +499,7 @@
 
       <div class="cta-bar">
         <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
-          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (112.5 Ko)
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (118.0 Ko)
         </a>
         <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
           📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
@@ -510,10 +510,10 @@
       </div>
 
       <div class="meta-strip">
-        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (115 200 octets)</span>
+        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (120 832 octets)</span>
         <span><strong>Nom dans ATAS X :</strong> Footprint Quant OrderFlow, Options Flow &amp; Auto-Bot (Max DD / Max PnL)</span>
         <span><strong>Catégorie :</strong> Order Flow - Custom</span>
-        <span><strong>SHA-256 :</strong> c5a3a91974f13849...b3b8452</span>
+        <span><strong>SHA-256 :</strong> ded8274998a3545e...f2dedb35</span>
       </div>
     </div>
   </header>
@@ -537,9 +537,9 @@
           <div class="control-group">
             <div class="control-label">
               <span style="color: #00ff88;">Dominance Min Flux Calls/Puts (%)</span>
-              <span class="control-val" id="valOptDom">55%</span>
+              <span class="control-val" id="valOptDom">53%</span>
             </div>
-            <input type="range" id="rngOptDom" min="50" max="80" value="55" />
+            <input type="range" id="rngOptDom" min="50" max="80" value="53" />
           </div>
 
           <div class="control-group">
@@ -561,9 +561,9 @@
           <div class="control-group">
             <div class="control-label">
               <span>Multiplicateur Heavy Absorption</span>
-              <span class="control-val" id="valAbsMult">1.6x</span>
+              <span class="control-val" id="valAbsMult">1.5x</span>
             </div>
-            <input type="range" id="rngAbsMult" min="12" max="30" value="16" />
+            <input type="range" id="rngAbsMult" min="12" max="30" value="15" />
           </div>
 
           <div class="control-group">
@@ -1443,21 +1443,35 @@
           ctx.save();
           ctx.setLineDash([5, 3]);
           ctx.strokeStyle = tCol;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.2;
           ctx.beginPath();
           ctx.moveTo(s.xMid, y1);
           ctx.lineTo(x2, y2);
           ctx.stroke();
           ctx.restore();
 
-          ctx.fillStyle = "rgba(11, 17, 30, 0.92)";
-          const tag = `BOT ${s.dir > 0 ? "LONG" : "SHORT"}: ${tradeUsd >= 0 ? "+" : ""}${tradeUsd}$`;
-          ctx.fillRect(s.xMid - 46, y1 - 24, 102, 16);
+          // Exact entry dot at the signal's (xMid, y1) + exit dot at (x2, y2)
+          ctx.fillStyle = tCol;
+          ctx.beginPath();
+          ctx.arc(s.xMid, y1, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+
+          ctx.fillStyle = tCol;
+          ctx.beginPath();
+          ctx.arc(x2, y2, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(11, 17, 30, 0.94)";
+          const tag = `BOT ${s.dir > 0 ? "LONG" : "SHORT"} (TP1+TRAIL): ${tradeUsd >= 0 ? "+" : ""}${tradeUsd}$`;
+          ctx.fillRect(s.xMid - 64, y1 - 24, 138, 16);
           ctx.strokeStyle = tCol;
-          ctx.strokeRect(s.xMid - 46, y1 - 24, 102, 16);
+          ctx.strokeRect(s.xMid - 64, y1 - 24, 138, 16);
           ctx.fillStyle = tCol;
           ctx.font = "bold 9px Consolas, monospace";
-          ctx.fillText(tag, s.xMid - 41, y1 - 13);
+          ctx.fillText(tag, s.xMid - 59, y1 - 13);
         }
 
         if (botHaltedDd) botStatus = `COUPE-CIRCUIT : DD MAX (-${maxDdLimit}$)`;
