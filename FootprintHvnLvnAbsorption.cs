@@ -3287,7 +3287,8 @@ namespace ATAS.Indicators.Custom
             RaySignalEvent? latestAbs,
             RaySignalEvent? latestTrapped,
             VisualTradeSignal? latestSignal,
-            BarOptionsFlowMetrics latestOpt)
+            BarOptionsFlowMetrics latestOpt,
+            BotPerformanceState botPerf)
         {
             var titleFont = new RenderFont("Consolas", 11, FontStyle.Bold);
             var bodyFont = new RenderFont("Consolas", 10);
@@ -3302,23 +3303,40 @@ namespace ATAS.Indicators.Custom
 
             var lines = new List<(string text, Color color, bool bold)>
             {
-                ($"FOOTPRINT • ABS • PIÉGÉS • OPTIONS FLOW [{sym}]", Color.White, true),
-                ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}", BarHvnColor, false),
-                ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}", BarLvnColor, false),
-                ($"VPOC Composite: {(compPocPrice > 0m ? $"{compPocPrice} (Vol {compPocVol:0})" : "N/A")}", CompositeHvnColor, false),
-                ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)", Color.FromArgb(255, 220, 230, 240), false),
-                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}", Color.FromArgb(255, 16, 245, 150), false),
+                ($"QUANT ORDERFLOW • OPTIONS • AUTO-BOT [{sym}]", Color.White, true),
+                ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}  |  VPOC : {(compPocPrice > 0m ? $"{compPocPrice}" : "N/A")}", BarHvnColor, false),
+                ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}  |  ATR({_quantAtrPeriod}) : {latestOpt.AtrPoints:0.00}", BarLvnColor, false),
+                ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)  |  Max Z-Score : {latestOpt.MaxVolumeZScore:0.0}σ", Color.FromArgb(255, 220, 230, 240), false),
+                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}  |  VWAP Z : {latestOpt.VwapZScore:+0.0;-0.0;0.0}σ", Color.FromArgb(255, 16, 245, 150), false),
                 ($"Flux Options ATAS X : Calls {latestOpt.CallFlowPct:0}% / Puts {latestOpt.PutFlowPct:0}% (PCR {latestOpt.PutCallRatio:0.00}) [{optBiasTxt}]", optBiasCol, true),
-                ($"Alertes Visuelles   : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (ΔOI {latestOpt.OiDelta:+0;-0;0}, Sweeps {latestOpt.SweepCount})", Color.FromArgb(255, 125, 211, 252), false)
+                ($"Signaux Quant       : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (ΔOI {latestOpt.OiDelta:+0;-0;0}, Sweeps {latestOpt.SweepCount})", Color.FromArgb(255, 125, 211, 252), false)
             };
+
+            if (_enableTradingBot)
+            {
+                Color statusCol = botPerf.IsHaltedByMaxDrawdown
+                    ? Color.FromArgb(255, 255, 65, 85)
+                    : (botPerf.IsHaltedByMaxProfit
+                        ? Color.FromArgb(255, 16, 245, 150)
+                        : Color.FromArgb(255, 56, 189, 248));
+
+                Color pnlCol = botPerf.TotalPnlUsd >= 0m
+                    ? Color.FromArgb(255, 0, 255, 136)
+                    : Color.FromArgb(255, 255, 65, 85);
+
+                lines.Add(($"BOT STATUS          : {botPerf.StatusLabel}", statusCol, true));
+                lines.Add(($"BOT PnL / OBJECTIF  : {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ / Max PnL +{_botMaxProfitTargetUsd:0}$ (Pic: +{botPerf.PeakPnlUsd:0}$)", pnlCol, true));
+                lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
+                lines.Add(($"STATS QUANT BOT     : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
+            }
 
             if (latestSignal.HasValue)
             {
                 var s = latestSignal.Value;
                 bool isBuy = s.Direction > 0;
-                string tag = isBuy ? "★ SIGNAL ACHAT ▲" : "★ SIGNAL VENTE ▼";
+                string tag = isBuy ? "★ DERNIER SIGNAL ACHAT ▲" : "★ DERNIER SIGNAL VENTE ▼";
                 Color c = isBuy ? BuySignalColor : SellSignalColor;
-                lines.Add(($"{tag}: Entrée {s.EntryPrice} | SL {s.StopPrice} | Score {s.ConfluenceScore}% ({s.ReasonTag})", c, true));
+                lines.Add(($"{tag}: Entrée {s.EntryPrice} | SL {s.StopPrice} | TP1 {s.Tp1Price} | TP2 {s.Tp2Price} [{s.ConfluenceScore}%]", c, true));
             }
             else if (latestAbs.HasValue)
             {
@@ -3349,8 +3367,9 @@ namespace ATAS.Indicators.Custom
                     maxW = sz.Width;
             }
 
-            int boxW = maxW + pad * 2;
-            int boxH = lines.Count * lineH + pad * 2;
+            int gaugeAreaH = _enableTradingBot ? 34 : 0;
+            int boxW = Math.Max(420, maxW + pad * 2);
+            int boxH = lines.Count * lineH + pad * 2 + gaugeAreaH;
 
             int x = HudPosition switch
             {
@@ -3365,8 +3384,8 @@ namespace ATAS.Indicators.Custom
             };
 
             Rectangle boxRect = new Rectangle(x, y, boxW, boxH);
-            context.FillRectangle(Color.FromArgb(220, 11, 16, 28), boxRect);
-            context.DrawRectangle(new RenderPen(Color.FromArgb(225, 56, 189, 248), 1.5f), boxRect);
+            context.FillRectangle(Color.FromArgb(228, 9, 14, 26), boxRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(230, 56, 189, 248), 1.6f), boxRect);
 
             int curY = y + pad;
             for (int i = 0; i < lines.Count; i++)
@@ -3378,6 +3397,44 @@ namespace ATAS.Indicators.Custom
                     x + pad,
                     curY);
                 curY += lineH;
+            }
+
+            // Jauges graphiques de progression vers PnL Max et Drawdown Max
+            if (_enableTradingBot)
+            {
+                int barY = curY + 6;
+                int halfW = (boxW - pad * 3) / 2;
+                int barH = 14;
+
+                // 1. Jauge PnL Max (Gauche)
+                decimal pnlRatio = _botMaxProfitTargetUsd > 0m
+                    ? Math.Clamp(botPerf.TotalPnlUsd / _botMaxProfitTargetUsd, 0m, 1m)
+                    : 0m;
+                Rectangle pnlBg = new Rectangle(x + pad, barY, halfW, barH);
+                context.FillRectangle(Color.FromArgb(200, 20, 30, 48), pnlBg);
+                int pnlFillW = (int)Math.Round(halfW * (double)pnlRatio);
+                if (pnlFillW > 0)
+                {
+                    context.FillRectangle(Color.FromArgb(220, 0, 230, 125), new Rectangle(pnlBg.Left, pnlBg.Top, pnlFillW, barH));
+                }
+                context.DrawRectangle(new RenderPen(Color.FromArgb(200, 0, 255, 136), 1f), pnlBg);
+                string pnlLbl = $"PnL Max: {(pnlRatio * 100m):0}% ({botPerf.TotalPnlUsd:+0;-0;0}$/{_botMaxProfitTargetUsd:0}$)";
+                context.DrawString(pnlLbl, bodyFont, Color.White, pnlBg.Left + 5, pnlBg.Top - 1);
+
+                // 2. Jauge Drawdown Max (Droite)
+                decimal ddRatio = _botMaxDrawdownUsd > 0m
+                    ? Math.Clamp(botPerf.MaxObservedDrawdownUsd / _botMaxDrawdownUsd, 0m, 1m)
+                    : 0m;
+                Rectangle ddBg = new Rectangle(x + pad * 2 + halfW, barY, halfW, barH);
+                context.FillRectangle(Color.FromArgb(200, 35, 18, 28), ddBg);
+                int ddFillW = (int)Math.Round(halfW * (double)ddRatio);
+                if (ddFillW > 0)
+                {
+                    context.FillRectangle(Color.FromArgb(220, 255, 55, 85), new Rectangle(ddBg.Left, ddBg.Top, ddFillW, barH));
+                }
+                context.DrawRectangle(new RenderPen(Color.FromArgb(200, 255, 80, 100), 1f), ddBg);
+                string ddLbl = $"DD Max: {(ddRatio * 100m):0}% (-{botPerf.MaxObservedDrawdownUsd:0}$/-{_botMaxDrawdownUsd:0}$)";
+                context.DrawString(ddLbl, bodyFont, Color.White, ddBg.Left + 5, ddBg.Top - 1);
             }
         }
     }
