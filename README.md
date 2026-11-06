@@ -11,6 +11,7 @@ Indicateur & Bot Quant Senior Order Flow **déjà compilé** (`FootprintHvnLvnAb
    - **Exécution & Simulation Temps Réel** : Ouvre/inverse les positions sur les signaux Quant validés, gère la sortie partielle 50 % + passage automatique à **Breakeven** sur `TP1`, et la clôture finale sur `TP2` ou `SL`.
    - **Risk Guard — Drawdown Max (`BotMaxDrawdownUsd`)** : Suit le *High-Water Mark* (pic d'équité) en temps réel. Si le drawdown courant atteint la limite fixée en `$`, le Bot liquide immédiatement la position et coupe toute nouvelle prise de position (`COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT`).
    - **Profit Lock — PnL Max (`BotMaxProfitTargetUsd`)** : Dès que le PnL cumulé atteint l'objectif de gain maximum en `$`, le Bot sécurise les gains et verrouille la session (`OBJECTIF PNL MAX VERROUILLÉ`).
+   - **Bouton d'Activation Interactif directement sur la Charte (`ShowChartBotToggleButton`)** : Barre de contrôle cliquable à la souris directement sur le graphique ATAS X (`ProcessMouseClick` / `ProcessMouseMove`) avec voyant LED permettant d'activer/désactiver le Bot en un clic (`[ ● BOT QUANT : ON (ACTIF) ]` / `[ ○ BOT QUANT : OFF ]`), de basculer le mode (`[ MODE: SIM/PAPER ]` ↔ `[ MODE: LIVE ATAS ]`), de réinitialiser le coupe-circuit (`[ RESET ]`), ainsi qu'un bouton rapide `[ ● BOT : ON/OFF ]` intégré dans l'en-tête du panneau HUD.
    - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne par défaut en mode sécurisé `BacktestAndPaperOnly` sur le graphique ou en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`).
 
 ---
@@ -27,8 +28,8 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 | **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `92 672 octets` (90,5 Ko) |
-| **SHA-256** | `cb21da9f2d05d4a53c8c881cec8885571747e7d93ac8ebbef48991d1a47264a7` |
+| **Taille du binaire** | `96 768 octets` (94,5 Ko) |
+| **SHA-256** | `baad65111a7d1b1a8e7839702cc26838cc8f48a3c23c7c14334a3901d14a46f7` |
 
 ---
 

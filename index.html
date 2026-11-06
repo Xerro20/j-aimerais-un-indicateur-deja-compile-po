@@ -561,7 +561,24 @@
             <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN</span>
           </div>
           <div class="canvas-wrap">
-            <canvas id="fpCanvas" width="900" height="620"></canvas>
+            <div class="chart-bot-bar">
+              <div class="chart-bot-actions">
+                <button type="button" id="btnChartBotToggle" class="chart-bot-btn" onclick="toggleBotFromChart()">
+                  <span class="led" id="ledChartBot"></span>
+                  <span id="lblChartBotToggle">🤖 BOT QUANT : ON (ACTIF)</span>
+                </button>
+                <button type="button" id="btnChartBotMode" class="chart-sub-btn" onclick="toggleBotModeFromChart()">
+                  ⚡ MODE : SIM / PAPER
+                </button>
+                <button type="button" id="btnChartBotReset" class="chart-sub-btn" onclick="resetBotFromChart()">
+                  ⟲ RESET DD/PnL
+                </button>
+              </div>
+              <div class="chart-bot-telemetry" id="lblChartBotTelemetry">
+                <span>Cliquez sur le bouton ou directement sur la charte ATAS X pour activer/désactiver le Bot</span>
+              </div>
+            </div>
+            <canvas id="fpCanvas" width="900" height="635" style="cursor: pointer;"></canvas>
           </div>
         </div>
       </div>
@@ -709,6 +726,30 @@
     const canvas = document.getElementById("fpCanvas");
     const ctx = canvas.getContext("2d");
 
+    let chartBotLiveMode = false;
+    let canvasBotToggleRect = { x: 18, y: 8, w: 192, h: 26 };
+    let canvasBotModeRect = { x: 216, y: 8, w: 118, h: 26 };
+    let canvasBotResetRect = { x: 340, y: 8, w: 66, h: 26 };
+    let canvasHudBotBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+
+    function toggleBotFromChart() {
+      const chk = document.getElementById("chkBot");
+      chk.checked = !chk.checked;
+      analyzeAndRender();
+    }
+
+    function toggleBotModeFromChart() {
+      chartBotLiveMode = !chartBotLiveMode;
+      analyzeAndRender();
+    }
+
+    function resetBotFromChart() {
+      document.getElementById("rngMaxDd").value = 1500;
+      document.getElementById("rngMaxPnl").value = 2500;
+      document.getElementById("chkBot").checked = true;
+      analyzeAndRender();
+    }
+
     function analyzeAndRender() {
       const optDom = parseInt(document.getElementById("rngOptDom").value, 10);
       const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
@@ -738,7 +779,7 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const topPad = 92;
+      const topPad = 104;
       const rowH = 30;
       const leftPad = 18;
       const priceAxisX = 820;
@@ -1118,37 +1159,6 @@
         ctx.fillText(l2, boxX + 7, boxY + 28);
       });
 
-      // Top Visual Alert Banner
-      if (showBuySell && showBanner && lastTradeSignal) {
-        const isBuy = lastTradeSignal.dir > 0;
-        const col = isBuy ? "#00ff88" : "#ff2a55";
-        const bg = isBuy ? "rgba(6, 42, 30, 0.95)" : "rgba(52, 12, 24, 0.95)";
-        const bx = 18;
-        const by = 8;
-        const bw = 468;
-        const bh = 44;
-
-        ctx.fillStyle = bg;
-        ctx.fillRect(bx, by, bw, bh);
-        ctx.strokeStyle = col;
-        ctx.lineWidth = 1.8;
-        ctx.strokeRect(bx, by, bw, bh);
-        ctx.fillStyle = col;
-        ctx.fillRect(bx, by, 5, bh);
-
-        ctx.font = "bold 10.5px Consolas, monospace";
-        ctx.fillStyle = col;
-        const title = isBuy
-          ? `▲ ALERTE VISUELLE ACHAT @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`
-          : `▼ ALERTE VISUELLE VENTE @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`;
-        ctx.fillText(title, bx + 12, by + 17);
-
-        ctx.font = "9.5px Consolas, monospace";
-        ctx.fillStyle = "#e2e8f0";
-        const sub = `Flux Options ATAS X: Calls ${lastTradeSignal.callPct}% / Puts ${lastTradeSignal.putPct}% (PCR ${lastTradeSignal.pcr}) | ΔOI ${lastTradeSignal.oiDelta > 0 ? "+" : ""}${lastTradeSignal.oiDelta}`;
-        ctx.fillText(sub, bx + 12, by + 34);
-      }
-
       // Simulate Quant Bot Trades & Risk Guard (Max DD / Max PnL)
       let botPnl = 0;
       let botPeak = 0;
@@ -1208,12 +1218,123 @@
         if (botHaltedDd) botStatus = `COUPE-CIRCUIT : DD MAX (-${maxDdLimit}$)`;
         else if (botHaltedPnl) botStatus = `OBJECTIF PNL MAX VERROUILLÉ (+${maxPnlLimit}$)`;
         else botStatus = `ACTIF (${tradeSignalsToDraw.length} trades exécutés)`;
+      } else if (!showBot) {
+        botStatus = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
+      }
+
+      // Sync HTML On-Chart Toolbar Buttons
+      const btnToggle = document.getElementById("btnChartBotToggle");
+      const lblToggle = document.getElementById("lblChartBotToggle");
+      const btnMode = document.getElementById("btnChartBotMode");
+      const lblTelemetry = document.getElementById("lblChartBotTelemetry");
+
+      if (btnToggle && lblToggle) {
+        if (showBot) {
+          btnToggle.classList.remove("off");
+          lblToggle.textContent = botHaltedDd
+            ? "🤖 BOT QUANT : STOP DD MAX"
+            : (botHaltedPnl ? "🤖 BOT QUANT : LOCK PNL MAX" : "🤖 BOT QUANT : ON (ACTIF)");
+        } else {
+          btnToggle.classList.add("off");
+          lblToggle.textContent = "🤖 BOT QUANT : OFF (CLIQUEZ)";
+        }
+      }
+      if (btnMode) {
+        if (chartBotLiveMode) {
+          btnMode.classList.add("live");
+          btnMode.textContent = "🔥 MODE : LIVE ATAS";
+        } else {
+          btnMode.classList.remove("live");
+          btnMode.textContent = "⚡ MODE : SIM / PAPER";
+        }
+      }
+      if (lblTelemetry) {
+        lblTelemetry.innerHTML = showBot
+          ? `<span style="color:${botPnl >= 0 ? '#00ff88' : '#ff415f'};font-weight:700;">PnL Bot: ${botPnl >= 0 ? '+' : ''}${botPnl}$ / +${maxPnlLimit}$</span> • <span style="color:#fbbf24;">DD: -${botMaxDdObs}$ / -${maxDdLimit}$</span>`
+          : `<span>Bot en veille — Cliquez sur le bouton directement sur la charte pour l'activer</span>`;
+      }
+
+      // 1. Draw On-Chart Interactive Bot Activation Buttons directly on Canvas (matching ATAS X OnRender)
+      ctx.fillStyle = showBot
+        ? (botHaltedDd ? "rgba(127, 29, 29, 0.94)" : "rgba(6, 78, 59, 0.94)")
+        : "rgba(17, 24, 39, 0.94)";
+      ctx.fillRect(canvasBotToggleRect.x, canvasBotToggleRect.y, canvasBotToggleRect.w, canvasBotToggleRect.h);
+      ctx.strokeStyle = showBot ? (botHaltedDd ? "#ff415f" : "#00ff88") : "#64748b";
+      ctx.lineWidth = 1.6;
+      ctx.strokeRect(canvasBotToggleRect.x, canvasBotToggleRect.y, canvasBotToggleRect.w, canvasBotToggleRect.h);
+
+      // LED circle inside canvas button
+      ctx.fillStyle = showBot ? (botHaltedDd ? "#ff415f" : "#00ff88") : "#ef4444";
+      ctx.beginPath();
+      ctx.arc(canvasBotToggleRect.x + 13, canvasBotToggleRect.y + 13, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = "bold 9.5px Consolas, monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(
+        showBot ? "BOT QUANT : ON (ACTIF)" : "BOT QUANT : OFF (CLIQUEZ)",
+        canvasBotToggleRect.x + 24,
+        canvasBotToggleRect.y + 16
+      );
+
+      // Mode Button on Canvas
+      ctx.fillStyle = chartBotLiveMode ? "rgba(88, 28, 135, 0.92)" : "rgba(15, 23, 42, 0.92)";
+      ctx.fillRect(canvasBotModeRect.x, canvasBotModeRect.y, canvasBotModeRect.w, canvasBotModeRect.h);
+      ctx.strokeStyle = chartBotLiveMode ? "#f59e0b" : "#38bdf8";
+      ctx.lineWidth = 1.3;
+      ctx.strokeRect(canvasBotModeRect.x, canvasBotModeRect.y, canvasBotModeRect.w, canvasBotModeRect.h);
+      ctx.font = "bold 9px Consolas, monospace";
+      ctx.fillStyle = chartBotLiveMode ? "#fde047" : "#bae6fd";
+      ctx.fillText(
+        chartBotLiveMode ? "MODE: LIVE ATAS" : "MODE: SIM/PAPER",
+        canvasBotModeRect.x + 10,
+        canvasBotModeRect.y + 16
+      );
+
+      // Reset Button on Canvas
+      ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+      ctx.fillRect(canvasBotResetRect.x, canvasBotResetRect.y, canvasBotResetRect.w, canvasBotResetRect.h);
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(canvasBotResetRect.x, canvasBotResetRect.y, canvasBotResetRect.w, canvasBotResetRect.h);
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillText("⟲ RESET", canvasBotResetRect.x + 9, canvasBotResetRect.y + 16);
+
+      // Top Visual Alert Banner (placed right below the On-Chart Bot Button Bar)
+      if (showBuySell && showBanner && lastTradeSignal) {
+        const isBuy = lastTradeSignal.dir > 0;
+        const col = isBuy ? "#00ff88" : "#ff2a55";
+        const bg = isBuy ? "rgba(6, 42, 30, 0.95)" : "rgba(52, 12, 24, 0.95)";
+        const bx = 18;
+        const by = 40;
+        const bw = 468;
+        const bh = 42;
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = col;
+        ctx.fillRect(bx, by, 5, bh);
+
+        ctx.font = "bold 10.5px Consolas, monospace";
+        ctx.fillStyle = col;
+        const title = isBuy
+          ? `▲ ALERTE VISUELLE ACHAT @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`
+          : `▼ ALERTE VISUELLE VENTE @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`;
+        ctx.fillText(title, bx + 12, by + 16);
+
+        ctx.font = "9.5px Consolas, monospace";
+        ctx.fillStyle = "#e2e8f0";
+        const sub = `Flux Options ATAS X: Calls ${lastTradeSignal.callPct}% / Puts ${lastTradeSignal.putPct}% (PCR ${lastTradeSignal.pcr}) | ΔOI ${lastTradeSignal.oiDelta > 0 ? "+" : ""}${lastTradeSignal.oiDelta}`;
+        ctx.fillText(sub, bx + 12, by + 33);
       }
 
       // Draw HUD Panel
       if (showHud) {
         const hudW = 352;
-        const hudH = showBot ? 186 : 148;
+        const hudH = showBot ? 186 : 154;
         const hx = priceAxisX - hudW - 8;
         const hy = 8;
 
@@ -1223,9 +1344,20 @@
         ctx.lineWidth = 1.5;
         ctx.strokeRect(hx, hy, hudW, hudH);
 
-        ctx.font = "bold 10px Consolas, monospace";
+        ctx.font = "bold 9.5px Consolas, monospace";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("QUANT ORDERFLOW • OPTIONS • AUTO-BOT [ES]", hx + 10, hy + 16);
+        ctx.fillText("QUANT ORDERFLOW • OPTIONS • AUTO-BOT", hx + 10, hy + 16);
+
+        // Mini clickable Bot ON/OFF button inside HUD top-right
+        canvasHudBotBtnRect = { x: hx + hudW - 84, y: hy + 4, w: 78, h: 17 };
+        ctx.fillStyle = showBot ? "rgba(6, 95, 70, 0.95)" : "rgba(30, 41, 59, 0.95)";
+        ctx.fillRect(canvasHudBotBtnRect.x, canvasHudBotBtnRect.y, canvasHudBotBtnRect.w, canvasHudBotBtnRect.h);
+        ctx.strokeStyle = showBot ? "#00ff88" : "#94a3b8";
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(canvasHudBotBtnRect.x, canvasHudBotBtnRect.y, canvasHudBotBtnRect.w, canvasHudBotBtnRect.h);
+        ctx.font = "bold 8.5px Consolas, monospace";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(showBot ? "● BOT : ON" : "○ BOT : OFF", canvasHudBotBtnRect.x + 8, canvasHudBotBtnRect.y + 12);
 
         ctx.font = "9.5px Consolas, monospace";
         ctx.fillStyle = "#f59e0b";
@@ -1277,6 +1409,9 @@
           ctx.strokeRect(hx + 178, gy, gw, gh);
           ctx.fillStyle = "#ffffff";
           ctx.fillText(`DD Max: ${Math.round(ddRatio * 100)}%`, hx + 183, gy + 10);
+        } else {
+          ctx.fillStyle = "#94a3b8";
+          ctx.fillText(`BOT STATUS : ${botStatus}`, hx + 10, hy + 114);
         }
 
         if (lastTradeSignal) {
@@ -1286,11 +1421,33 @@
           ctx.fillText(
             `${isB ? "★ QUANT ACHAT ▲" : "★ QUANT VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
             hx + 10,
-            hy + 145
+            hy + (showBot ? 145 : 136)
           );
         }
+      } else {
+        canvasHudBotBtnRect = { x: 0, y: 0, w: 0, h: 0 };
       }
     }
+
+    function isInsideRect(px, py, r) {
+      return r && r.w > 0 && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+    }
+
+    canvas.addEventListener("click", function (ev) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (ev.clientX - rect.left) * scaleX;
+      const py = (ev.clientY - rect.top) * scaleY;
+
+      if (isInsideRect(px, py, canvasBotToggleRect) || isInsideRect(px, py, canvasHudBotBtnRect)) {
+        toggleBotFromChart();
+      } else if (isInsideRect(px, py, canvasBotModeRect)) {
+        toggleBotModeFromChart();
+      } else if (isInsideRect(px, py, canvasBotResetRect)) {
+        resetBotFromChart();
+      }
+    });
 
     ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud"]
       .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
