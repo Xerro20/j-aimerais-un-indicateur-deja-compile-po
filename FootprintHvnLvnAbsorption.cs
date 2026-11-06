@@ -2622,7 +2622,7 @@ namespace ATAS.Indicators.Custom
                 _hudBotToggleBtnRect = Rectangle.Empty;
             }
 
-            // 9. Rendu du Bouton Interactif d'Activation du Bot directement sur la Charte (ON/OFF + Mode + Reset)
+            // 9. Rendu du Bouton Interactif d'Activation du Bot & Encadrement Horaire directement sur la Charte
             if (ShowChartBotToggleButton)
             {
                 RenderOnChartBotControlButton(context, chartRegion, botPerf);
@@ -2632,6 +2632,13 @@ namespace ATAS.Indicators.Custom
                 _chartBotToggleBtnRect = Rectangle.Empty;
                 _chartBotModeBtnRect = Rectangle.Empty;
                 _chartBotResetBtnRect = Rectangle.Empty;
+                _chartSchedToggleRect = Rectangle.Empty;
+                _chartStartMinusRect = Rectangle.Empty;
+                _chartStartValRect = Rectangle.Empty;
+                _chartStartPlusRect = Rectangle.Empty;
+                _chartEndMinusRect = Rectangle.Empty;
+                _chartEndValRect = Rectangle.Empty;
+                _chartEndPlusRect = Rectangle.Empty;
             }
         }
 
@@ -2808,6 +2815,27 @@ namespace ATAS.Indicators.Custom
                 if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
                     continue;
 
+                // 2bis. Vérification de la Plage Horaire (Heures de Démarrage & de Fin)
+                bool inSchedule = IsBarWithinBotSchedule(c.Time);
+                if (!inSchedule)
+                {
+                    if (activeDir != 0 && _botFlattenAtEndTime)
+                    {
+                        decimal eodPnl = bankedPartialUsd
+                            + activeDir * (c.Close - entryPrice) * pointVal * activeQty
+                            - (_botCommissionPerSideUsd * 2m * activeQty);
+
+                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                            c.Close, Math.Round(eodPnl, 2), "FIN PLAGE HORAIRE", tp1Hit);
+
+                        activeDir = 0;
+                        activeQty = 0;
+                        bankedPartialUsd = 0m;
+                    }
+                    continue;
+                }
+
                 // 3. Évaluation d'un nouveau signal d'entrée ou de retournement sur la bougie b
                 var rows = AnalyzeBarClusters(
                     c, tickSize,
@@ -2930,16 +2958,20 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
+            bool latestInSched = upToBar < 0 || IsBarWithinBotSchedule(GetCandle(upToBar).Time);
+
             if (state.IsHaltedByMaxDrawdown)
                 state.StatusLabel = $"COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT (-{state.MaxObservedDrawdownUsd:0}$ / -{_botMaxDrawdownUsd:0}$)";
             else if (state.IsHaltedByMaxProfit)
                 state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ (+{state.TotalPnlUsd:0}$ / +{_botMaxProfitTargetUsd:0}$)";
+            else if (!latestInSched)
+                state.StatusLabel = $"VEILLE HORAIRE — ACTIF DE {BotStartTimeText} À {BotEndTimeText}";
             else if (state.ActiveDirection > 0)
                 state.StatusLabel = $"LONG ACTIF (+{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
             else if (state.ActiveDirection < 0)
                 state.StatusLabel = $"SHORT ACTIF (-{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
             else
-                state.StatusLabel = "ARMÉ — EN ATTENTE DE CONFLUENCE QUANT";
+                state.StatusLabel = $"ARMÉ ({BotStartTimeText}-{BotEndTimeText}) — EN ATTENTE DE SIGNAL QUANT";
 
             return state;
         }
@@ -3028,6 +3060,16 @@ namespace ATAS.Indicators.Custom
                     if (!_liveKillSwitchExecuted && pos != null && pos.Volume != 0m)
                     {
                         _liveKillSwitchExecuted = true;
+                        _ = tm.ClosePositionAsync(pos, false, false);
+                    }
+                    return;
+                }
+
+                // Vérification de la plage horaire (Heures de Démarrage et de Fin)
+                if (_enableBotSchedule && !IsBarWithinBotSchedule(GetCandle(bar).Time))
+                {
+                    if (_botFlattenAtEndTime && pos != null && pos.Volume != 0m)
+                    {
                         _ = tm.ClosePositionAsync(pos, false, false);
                     }
                     return;
@@ -3257,7 +3299,7 @@ namespace ATAS.Indicators.Custom
             if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
                 x = Math.Max(x, chartRegion.Left + 380);
 
-            int y = ShowChartBotToggleButton ? chartRegion.Top + 44 : chartRegion.Top + 10;
+            int y = ShowChartBotToggleButton ? chartRegion.Top + 78 : chartRegion.Top + 10;
 
             Rectangle bannerRect = new Rectangle(x, y, w, h);
             context.FillRectangle(bg, bannerRect);
@@ -3594,6 +3636,7 @@ namespace ATAS.Indicators.Custom
                     : Color.FromArgb(255, 255, 65, 85);
 
                 lines.Add(($"BOT STATUS          : {botPerf.StatusLabel}", statusCol, true));
+                lines.Add(($"HORAIRES DU BOT     : {( _enableBotSchedule ? $"{BotStartTimeText} -> {BotEndTimeText} (Filtre Horaire ACTIF)" : "24h/24 (Filtre Horaire DÉSACTIVÉ)" )}", Color.FromArgb(255, 165, 243, 252), false));
                 lines.Add(($"BOT PnL / OBJECTIF  : {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ / Max PnL +{_botMaxProfitTargetUsd:0}$ (Pic: +{botPerf.PeakPnlUsd:0}$)", pnlCol, true));
                 lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
                 lines.Add(($"STATS QUANT BOT     : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
@@ -3601,6 +3644,7 @@ namespace ATAS.Indicators.Custom
             else
             {
                 lines.Add(("BOT STATUS          : DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte pour activer)", Color.FromArgb(255, 148, 163, 184), true));
+                lines.Add(($"HORAIRES CONFIGURÉS : {BotStartTimeText} -> {BotEndTimeText} ({(_enableBotSchedule ? "ON" : "OFF")})", Color.FromArgb(255, 148, 163, 184), false));
             }
 
             if (latestSignal.HasValue)
@@ -3829,6 +3873,79 @@ namespace ATAS.Indicators.Custom
             context.FillRectangle(rstBg, _chartBotResetBtnRect);
             context.DrawRectangle(new RenderPen(rstBorder, _hoverBotResetBtn ? 2f : 1.3f), _chartBotResetBtnRect);
             context.DrawString(resetTxt, subFont, Color.FromArgb(255, 226, 232, 240), _chartBotResetBtnRect.Left + 8, _chartBotResetBtnRect.Top + 7);
+
+            // 4. Encadrement Horaire Interactif sur la Charte (Heures de Démarrage & de Fin)
+            int schedY = startY + h + 6;
+            int schedH = 28;
+            int frameW = Math.Max(428, (_chartBotResetBtnRect.Right - startX));
+            Rectangle schedFrameRect = new Rectangle(startX, schedY, frameW, schedH);
+
+            Color frameBg = Color.FromArgb(236, 11, 17, 30);
+            Color frameBorder = _enableBotSchedule
+                ? Color.FromArgb(235, 56, 189, 248)
+                : Color.FromArgb(190, 100, 116, 139);
+
+            context.FillRectangle(frameBg, schedFrameRect);
+            context.DrawRectangle(new RenderPen(frameBorder, 1.5f), schedFrameRect);
+
+            // Bouton ON/OFF Plage Horaire
+            string schedToggleTxt = _enableBotSchedule ? "HORAIRES: ON" : "HORAIRES: OFF";
+            Size sSched = context.MeasureString(schedToggleTxt, subFont);
+            int wSchedBtn = sSched.Width + 14;
+            _chartSchedToggleRect = new Rectangle(startX + 5, schedY + 4, wSchedBtn, schedH - 8);
+
+            Color schedBtnBg = _enableBotSchedule
+                ? (_hoverSchedToggleBtn ? Color.FromArgb(245, 14, 116, 144) : Color.FromArgb(230, 8, 51, 68))
+                : (_hoverSchedToggleBtn ? Color.FromArgb(245, 71, 85, 105) : Color.FromArgb(230, 30, 41, 59));
+            context.FillRectangle(schedBtnBg, _chartSchedToggleRect);
+            context.DrawRectangle(new RenderPen(_enableBotSchedule ? Color.FromArgb(255, 56, 189, 248) : Color.FromArgb(200, 148, 163, 184), 1.2f), _chartSchedToggleRect);
+            context.DrawString(schedToggleTxt, subFont, Color.White, _chartSchedToggleRect.Left + 7, _chartSchedToggleRect.Top + 3);
+
+            // Contrôle Heure de Démarrage : DÉBUT [-] [08:00] [+]
+            int curX = _chartSchedToggleRect.Right + 8;
+            string lblDebut = "DÉBUT";
+            Size sDeb = context.MeasureString(lblDebut, subFont);
+            context.DrawString(lblDebut, subFont, Color.FromArgb(255, 148, 163, 184), curX, schedY + 7);
+            curX += sDeb.Width + 5;
+
+            _chartStartMinusRect = new Rectangle(curX, schedY + 4, 20, schedH - 8);
+            _chartStartValRect = new Rectangle(_chartStartMinusRect.Right + 3, schedY + 4, 48, schedH - 8);
+            _chartStartPlusRect = new Rectangle(_chartStartValRect.Right + 3, schedY + 4, 20, schedH - 8);
+
+            context.FillRectangle(_hoverStartMinus ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(230, 22, 31, 51), _chartStartMinusRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(200, 100, 116, 139), 1f), _chartStartMinusRect);
+            context.DrawString("-", btnFont, Color.White, _chartStartMinusRect.Left + 6, _chartStartMinusRect.Top + 2);
+
+            context.FillRectangle(Color.FromArgb(240, 7, 10, 18), _chartStartValRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(230, 0, 255, 136), 1.2f), _chartStartValRect);
+            context.DrawString(BotStartTimeText, subFont, Color.FromArgb(255, 0, 255, 136), _chartStartValRect.Left + 6, _chartStartValRect.Top + 3);
+
+            context.FillRectangle(_hoverStartPlus ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(230, 22, 31, 51), _chartStartPlusRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(200, 100, 116, 139), 1f), _chartStartPlusRect);
+            context.DrawString("+", btnFont, Color.White, _chartStartPlusRect.Left + 5, _chartStartPlusRect.Top + 2);
+
+            // Contrôle Heure de Fin : FIN [-] [22:00] [+]
+            curX = _chartStartPlusRect.Right + 10;
+            string lblFin = "FIN";
+            Size sFin = context.MeasureString(lblFin, subFont);
+            context.DrawString(lblFin, subFont, Color.FromArgb(255, 148, 163, 184), curX, schedY + 7);
+            curX += sFin.Width + 5;
+
+            _chartEndMinusRect = new Rectangle(curX, schedY + 4, 20, schedH - 8);
+            _chartEndValRect = new Rectangle(_chartEndMinusRect.Right + 3, schedY + 4, 48, schedH - 8);
+            _chartEndPlusRect = new Rectangle(_chartEndValRect.Right + 3, schedY + 4, 20, schedH - 8);
+
+            context.FillRectangle(_hoverEndMinus ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(230, 22, 31, 51), _chartEndMinusRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(200, 100, 116, 139), 1f), _chartEndMinusRect);
+            context.DrawString("-", btnFont, Color.White, _chartEndMinusRect.Left + 6, _chartEndMinusRect.Top + 2);
+
+            context.FillRectangle(Color.FromArgb(240, 7, 10, 18), _chartEndValRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(230, 251, 191, 36), 1.2f), _chartEndValRect);
+            context.DrawString(BotEndTimeText, subFont, Color.FromArgb(255, 251, 191, 36), _chartEndValRect.Left + 6, _chartEndValRect.Top + 3);
+
+            context.FillRectangle(_hoverEndPlus ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(230, 22, 31, 51), _chartEndPlusRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(200, 100, 116, 139), 1f), _chartEndPlusRect);
+            context.DrawString("+", btnFont, Color.White, _chartEndPlusRect.Left + 5, _chartEndPlusRect.Top + 2);
         }
     }
 }
