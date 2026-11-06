@@ -2759,7 +2759,7 @@ namespace ATAS.Indicators.Custom
                     if (!_liveKillSwitchExecuted && pos != null && pos.Volume != 0m)
                     {
                         _liveKillSwitchExecuted = true;
-                        tm.ClosePosition(pos, false, false);
+                        _ = tm.ClosePositionAsync(pos, false, false);
                     }
                     return;
                 }
@@ -2774,7 +2774,7 @@ namespace ATAS.Indicators.Custom
                     // Si une position inverse est ouverte dans ATAS, on la clôture d'abord
                     if (pos != null && ((signal.Direction > 0 && pos.Volume < 0m) || (signal.Direction < 0 && pos.Volume > 0m)))
                     {
-                        tm.ClosePosition(pos, false, false);
+                        _ = tm.ClosePositionAsync(pos, false, false);
                     }
 
                     if (pos == null || pos.Volume == 0m)
@@ -2788,7 +2788,7 @@ namespace ATAS.Indicators.Custom
                             QuantityToFill = Math.Max(1, _botTradeQuantity),
                             Comment = $"QUANT_BOT_{(signal.Direction > 0 ? "BUY" : "SELL")}_{signal.ConfluenceScore}%"
                         };
-                        tm.OpenOrder(mktOrder, false, false, false);
+                        _ = tm.OpenOrderAsync(mktOrder, false, false, false);
                     }
                 }
             }
