@@ -86,6 +86,12 @@ namespace ATAS.Indicators.Custom
             LiveAutoTradingManager
         }
 
+        public enum ActiveAccountPnlScope
+        {
+            ActivePortfolioTotal,
+            ChartInstrumentOnly
+        }
+
         // =====================================================================
         // Énumérations
         // =====================================================================
@@ -802,6 +808,24 @@ namespace ATAS.Indicators.Custom
         {
             get => _botFlattenAtEndTime;
             set { _botFlattenAtEndTime = value; RecalculateValues(); }
+        }
+
+        private bool _syncPnlWithActiveAccount = true;
+        [Display(Name = "Synchroniser le PnL Réel avec le Compte Actif ATAS", GroupName = GrpQuantBot, Order = 160,
+            Description = "Synchronise en temps réel le PnL Réalisé, le PnL Latent (Open PnL), la Position ouverte, le Solde et le Drawdown Max directement avec le compte actif sélectionné dans ATAS X (TradingManager.Portfolio / Position / MyTrades).")]
+        public bool SyncPnlWithActiveAccount
+        {
+            get => _syncPnlWithActiveAccount;
+            set { _syncPnlWithActiveAccount = value; RecalculateValues(); RedrawChart(); }
+        }
+
+        private ActiveAccountPnlScope _accountPnlScope = ActiveAccountPnlScope.ActivePortfolioTotal;
+        [Display(Name = "Portée du PnL Réel Synchronisé (Compte Global vs Instrument)", GroupName = GrpQuantBot, Order = 170,
+            Description = "ActivePortfolioTotal = synchronise le PnL total du compte actif ATAS ; ChartInstrumentOnly = synchronise uniquement le PnL du compte actif sur l'instrument du graphique.")]
+        public ActiveAccountPnlScope AccountPnlScope
+        {
+            get => _accountPnlScope;
+            set { _accountPnlScope = value; RecalculateValues(); RedrawChart(); }
         }
 
         // =====================================================================
