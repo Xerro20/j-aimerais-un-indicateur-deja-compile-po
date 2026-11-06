@@ -2864,24 +2864,33 @@ namespace ATAS.Indicators.Custom
                 ? Color.FromArgb(235, 6, 48, 34)
                 : Color.FromArgb(235, 58, 12, 26);
 
-            // Lignes de Prix d'Entrée (ENT) et Stop-Loss (SL) suggérés
+            // Lignes de Prix d'Entrée (ENT), Stop-Loss (SL) et Objectifs Quant TP1 / TP2
             if (ShowEntryAndStopLevels)
             {
                 int endBar = Math.Min(lastVisibleBar + 1, sig.Bar + 4);
-                int x2 = Math.Max(xCellRight + 32, ChartInfo!.GetXByBar(endBar, true));
+                int x2 = Math.Max(xCellRight + 38, ChartInfo!.GetXByBar(endBar, true));
                 int yEntry = ChartInfo!.GetYByPrice(sig.EntryPrice, false);
                 int yStop = ChartInfo!.GetYByPrice(sig.StopPrice, false);
+                int yTp1 = ChartInfo!.GetYByPrice(sig.Tp1Price, false);
+                int yTp2 = ChartInfo!.GetYByPrice(sig.Tp2Price, false);
 
                 var entryPen = new RenderPen(sigColor, 2f, DashStyle.Solid);
-                var stopPen = new RenderPen(Color.FromArgb(210, 255, 165, 0), 1.5f, DashStyle.Dot);
+                var stopPen = new RenderPen(Color.FromArgb(220, 255, 165, 0), 1.6f, DashStyle.Dot);
+                var tpPen = new RenderPen(Color.FromArgb(205, 56, 189, 248), 1.4f, DashStyle.Dash);
 
                 context.DrawLine(entryPen, xCellRight + 2, yEntry, x2, yEntry);
                 context.DrawLine(stopPen, xCellRight + 2, yStop, x2, yStop);
+                context.DrawLine(tpPen, xCellRight + 2, yTp1, x2, yTp1);
+                context.DrawLine(tpPen, xCellRight + 2, yTp2, x2, yTp2);
 
                 string entTxt = $"{(isBuy ? "ACHAT" : "VENTE")} @ {sig.EntryPrice}";
                 string slTxt = $"SL @ {sig.StopPrice}";
+                string tp1Txt = $"TP1 ({_quantTp1RiskReward:0.0}R) @ {sig.Tp1Price}";
+                string tp2Txt = $"TP2 ({_quantTp2RiskReward:0.0}R) @ {sig.Tp2Price}";
                 context.DrawString(entTxt, smallFont, sigColor, xCellRight + 6, yEntry - 14);
                 context.DrawString(slTxt, smallFont, Color.FromArgb(255, 251, 191, 36), xCellRight + 6, yStop + 2);
+                context.DrawString(tp1Txt, smallFont, Color.FromArgb(255, 125, 211, 252), xCellRight + 6, yTp1 - 13);
+                context.DrawString(tp2Txt, smallFont, Color.FromArgb(255, 56, 189, 248), xCellRight + 6, yTp2 - 13);
             }
 
             if (!ShowSignalCalloutOnBar)
@@ -2893,11 +2902,11 @@ namespace ATAS.Indicators.Custom
                 : ChartInfo!.GetYByPrice(candle.High, false) - baseOffset;
 
             string line1 = isBuy
-                ? $"★ ACHAT ▲ [{sig.ConfluenceScore}%]"
-                : $"★ VENTE ▼ [{sig.ConfluenceScore}%]";
+                ? $"★ QUANT ACHAT ▲ [{sig.ConfluenceScore}% | Z:{sig.ClusterZScore:0.0}σ]"
+                : $"★ QUANT VENTE ▼ [{sig.ConfluenceScore}% | Z:{sig.ClusterZScore:0.0}σ]";
             string line2 = isBuy
-                ? $"Calls {sig.CallFlowPct:0}% | PCR {sig.PutCallRatio:0.00}"
-                : $"Puts {sig.PutFlowPct:0}% | PCR {sig.PutCallRatio:0.00}";
+                ? $"Calls {sig.CallFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | TP2 {sig.Tp2Price}"
+                : $"Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | TP2 {sig.Tp2Price}";
 
             Size sz1 = context.MeasureString(line1, boldFont);
             Size sz2 = context.MeasureString(line2, smallFont);
@@ -2931,13 +2940,14 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Bannière Visuelle d'Alerte ACHAT / VENTE en haut du graphique ATAS X
+        // Bannière Visuelle d'Alerte ACHAT / VENTE + Statut Bot en haut du graphique ATAS X
         // =====================================================================
         private void RenderVisualAlertBanner(
             RenderContext context,
             Rectangle chartRegion,
             VisualTradeSignal sig,
-            BarOptionsFlowMetrics latestOpt)
+            BarOptionsFlowMetrics latestOpt,
+            BotPerformanceState botPerf)
         {
             bool isBuy = sig.Direction > 0;
             Color accent = isBuy ? BuySignalColor : SellSignalColor;
@@ -2945,15 +2955,28 @@ namespace ATAS.Indicators.Custom
                 ? Color.FromArgb(235, 6, 42, 30)
                 : Color.FromArgb(235, 52, 12, 24);
 
+            if (_enableTradingBot && botPerf.IsHaltedByMaxDrawdown)
+            {
+                accent = Color.FromArgb(255, 255, 59, 48);
+                bg = Color.FromArgb(240, 68, 10, 18);
+            }
+            else if (_enableTradingBot && botPerf.IsHaltedByMaxProfit)
+            {
+                accent = Color.FromArgb(255, 16, 245, 150);
+                bg = Color.FromArgb(240, 6, 52, 36);
+            }
+
             var headerFont = new RenderFont("Consolas", 11, FontStyle.Bold);
             var subFont = new RenderFont("Consolas", 10);
 
             string title = isBuy
-                ? $"▲ ALERTE VISUELLE ACHAT (BUY) @ {sig.EntryPrice}  |  STOP: {sig.StopPrice}  |  SCORE: {sig.ConfluenceScore}%"
-                : $"▼ ALERTE VISUELLE VENTE (SELL) @ {sig.EntryPrice}  |  STOP: {sig.StopPrice}  |  SCORE: {sig.ConfluenceScore}%";
+                ? $"▲ SIGNAL QUANT ACHAT @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]"
+                : $"▼ SIGNAL QUANT VENTE @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]";
 
-            string optSource = latestOpt.IsNativeChainActive ? "ATAS X Options Chain + Footprint" : "ATAS X Options Flow (Calls/Puts + ΔOI + Sweeps)";
-            string detail = $"Flux d'Options [{optSource}] : Calls {sig.CallFlowPct:0}% vs Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | ΔOI {sig.OiDelta:+0;-0;0} | {sig.ReasonTag}";
+            string botTag = _enableTradingBot
+                ? $" | BOT PnL: {botPerf.TotalPnlUsd:+0;-0;0}$ (Max {BotMaxProfitTargetUsd:0}$) • DD: -{botPerf.MaxObservedDrawdownUsd:0}$ (Max -{BotMaxDrawdownUsd:0}$)"
+                : string.Empty;
+            string detail = $"Options Flow : Calls {sig.CallFlowPct:0}% / Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}, ΔOI {sig.OiDelta:+0;-0;0}) | {sig.ReasonTag}{botTag}";
 
             Size s1 = context.MeasureString(title, headerFont);
             Size s2 = context.MeasureString(detail, subFont);
@@ -2962,7 +2985,6 @@ namespace ATAS.Indicators.Custom
             int h = s1.Height + s2.Height + 16;
 
             int x = chartRegion.Left + Math.Max(14, (chartRegion.Width - w) / 2);
-            // Si le HUD est en haut à gauche, on évite tout chevauchement
             if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
                 x = Math.Max(x, chartRegion.Left + 380);
 
