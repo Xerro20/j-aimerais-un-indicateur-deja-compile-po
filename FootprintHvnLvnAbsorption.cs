@@ -755,6 +755,55 @@ namespace ATAS.Indicators.Custom
             Description = "Affiche un bouton interactif cliquable directement sur le graphique ATAS X permettant d'activer/désactiver le Bot (ON/OFF), de basculer le mode (SIM / LIVE) et de réinitialiser le coupe-circuit en un clic.")]
         public bool ShowChartBotToggleButton { get; set; } = true;
 
+        private bool _enableBotSchedule = true;
+        [Display(Name = "Activer Plage Horaire du Bot (Démarrage / Fin)", GroupName = GrpQuantBot, Order = 120,
+            Description = "Restreint l'exécution du Bot Quant à la plage horaire comprise entre l'Heure de Démarrage et l'Heure de Fin (modifiable directement dans l'encadrement sur la charte).")]
+        public bool EnableBotSchedule
+        {
+            get => _enableBotSchedule;
+            set { _enableBotSchedule = value; RecalculateValues(); }
+        }
+
+        private int _botStartMinutesOfDay = 8 * 60; // 08:00 par défaut
+        [Display(Name = "Heure de Démarrage du Bot (HH:mm)", GroupName = GrpQuantBot, Order = 130,
+            Description = "Format HH:mm (ex: 08:00, 09:30, 14:30). Peut aussi être ajusté directement dans l'encadrement horaire sur la charte.")]
+        public string BotStartTimeText
+        {
+            get => FormatMinutesOfDay(_botStartMinutesOfDay);
+            set
+            {
+                if (TryParseTimeOfDayMinutes(value, out int mins))
+                {
+                    _botStartMinutesOfDay = mins;
+                    RecalculateValues();
+                }
+            }
+        }
+
+        private int _botEndMinutesOfDay = 22 * 60; // 22:00 par défaut
+        [Display(Name = "Heure de Fin du Bot (HH:mm)", GroupName = GrpQuantBot, Order = 140,
+            Description = "Format HH:mm (ex: 17:30, 21:30, 22:00). Peut aussi être ajusté directement dans l'encadrement horaire sur la charte.")]
+        public string BotEndTimeText
+        {
+            get => FormatMinutesOfDay(_botEndMinutesOfDay);
+            set
+            {
+                if (TryParseTimeOfDayMinutes(value, out int mins))
+                {
+                    _botEndMinutesOfDay = mins;
+                    RecalculateValues();
+                }
+            }
+        }
+
+        private bool _botFlattenAtEndTime = true;
+        [Display(Name = "Clôturer automatiquement la position à l'Heure de Fin", GroupName = GrpQuantBot, Order = 150)]
+        public bool BotFlattenAtEndTime
+        {
+            get => _botFlattenAtEndTime;
+            set { _botFlattenAtEndTime = value; RecalculateValues(); }
+        }
+
         // =====================================================================
         // Séries de données ATAS (compatibles Market Replay / Stratégies / Alertes)
         // =====================================================================
