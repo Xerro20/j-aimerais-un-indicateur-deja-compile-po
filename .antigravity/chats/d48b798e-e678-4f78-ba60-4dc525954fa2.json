@@ -112,6 +112,18 @@
       "created_at": "2026-11-06T07:34:58.619Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "458aa321-244e-4b6f-b598-7573b0095699",
+      "role": "agent",
+      "content": "I stopped after 30 minutes without getting anywhere.\n\nAnything I had already written is still here. This usually means the model I was\nusing has no capacity left this week — try another one from the model picker — or\nthat the task is a big one, in which case ask for it a step at a time.",
+      "status": "error",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "72ce57fd-8a62-45e5-864c-c9b51ef9f582",
+      "created_at": "2026-11-06T08:05:01.898Z",
+      "sender": "macOS",
+      "is_cancelled": false
     }
   ]
 }
