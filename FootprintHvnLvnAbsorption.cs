@@ -4038,7 +4038,7 @@ namespace ATAS.Indicators.Custom
             int xE = ChartInfo!.GetXByBar(barIndex + 1, true);
             int span = xE - xS;
             if (span <= 4)
-                span = Math.Max(8, (int)ChartInfo.PriceChartContainer.BarsWidth);
+                span = Math.Max(8, (int)(ChartInfo.PriceChartContainer?.BarsWidth ?? 12));
             return xS + span / 2;
         }
 
