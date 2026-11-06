@@ -53,6 +53,7 @@ using ATAS.DataFeedsCore;
 using ATAS.Indicators;
 using OFT.Attributes;
 using OFT.Rendering.Context;
+using OFT.Rendering.Control;
 using OFT.Rendering.Settings;
 using OFT.Rendering.Tools;
 
@@ -749,6 +750,10 @@ namespace ATAS.Indicators.Custom
 
         [Display(Name = "Afficher Panneau Quant Bot & jauges Max DD / Max PnL", GroupName = GrpQuantBot, Order = 100)]
         public bool ShowBotExecutionOnChart { get; set; } = true;
+
+        [Display(Name = "Afficher le Bouton ON/OFF du Bot directement sur la Charte", GroupName = GrpQuantBot, Order = 110,
+            Description = "Affiche un bouton interactif cliquable directement sur le graphique ATAS X permettant d'activer/désactiver le Bot (ON/OFF), de basculer le mode (SIM / LIVE) et de réinitialiser le coupe-circuit en un clic.")]
+        public bool ShowChartBotToggleButton { get; set; } = true;
 
         // =====================================================================
         // Séries de données ATAS (compatibles Market Replay / Stratégies / Alertes)
