@@ -124,6 +124,18 @@
       "created_at": "2026-11-06T08:05:01.898Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "46947431-619a-4f08-9a65-42277d3d71cb",
+      "role": "user",
+      "content": "termine ce que tu as déjà pu faire et dit moi ce qui n'a pas été fait",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T08:06:01.946Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
