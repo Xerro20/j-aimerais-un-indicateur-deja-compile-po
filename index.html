@@ -342,6 +342,87 @@
       align-items: center;
       gap: 10px;
     }
+    .chart-schedule-frame {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: rgba(11, 17, 30, 0.96);
+      border: 1.5px solid rgba(56, 189, 248, 0.55);
+      border-radius: 8px;
+      box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.08);
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 0.8rem;
+    }
+    .chart-schedule-frame.disabled {
+      border-color: rgba(100, 116, 139, 0.45);
+      opacity: 0.8;
+    }
+    .sched-toggle-btn {
+      background: rgba(8, 51, 68, 0.9);
+      color: #38bdf8;
+      border: 1px solid #38bdf8;
+      border-radius: 5px;
+      padding: 4px 9px;
+      font-family: "Consolas", monospace;
+      font-weight: 700;
+      font-size: 0.76rem;
+      cursor: pointer;
+    }
+    .sched-toggle-btn.off {
+      background: rgba(30, 41, 59, 0.9);
+      color: #94a3b8;
+      border-color: #64748b;
+    }
+    .sched-field-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(7, 10, 18, 0.9);
+      padding: 3px 7px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .sched-field-label {
+      color: #94a3b8;
+      font-weight: 700;
+      font-size: 0.74rem;
+      margin-right: 2px;
+    }
+    .sched-time-input {
+      background: #070a12;
+      color: #00ff88;
+      border: 1px solid rgba(0, 255, 136, 0.45);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: "Consolas", monospace;
+      font-weight: 700;
+      font-size: 0.82rem;
+      outline: none;
+    }
+    .sched-time-input.end-time {
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.45);
+    }
+    .sched-step-btn {
+      background: #161f33;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      width: 22px;
+      height: 22px;
+      font-family: "Consolas", monospace;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sched-step-btn:hover {
+      border-color: var(--accent);
+      color: #ffffff;
+    }
     canvas {
       display: block;
       width: 100%;
