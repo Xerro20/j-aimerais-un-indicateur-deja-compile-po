@@ -11,6 +11,10 @@ Indicateur & Bot Quant Senior Order Flow **déjà compilé** (`FootprintHvnLvnAb
    - **Exécution & Simulation Temps Réel** : Ouvre/inverse les positions sur les signaux Quant validés, gère la sortie partielle 50 % + passage automatique à **Breakeven** sur `TP1`, et la clôture finale sur `TP2` ou `SL`.
    - **Risk Guard — Drawdown Max (`BotMaxDrawdownUsd`)** : Suit le *High-Water Mark* (pic d'équité) en temps réel. Si le drawdown courant atteint la limite fixée en `$`, le Bot liquide immédiatement la position et coupe toute nouvelle prise de position (`COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT`).
    - **Profit Lock — PnL Max (`BotMaxProfitTargetUsd`)** : Dès que le PnL cumulé atteint l'objectif de gain maximum en `$`, le Bot sécurise les gains et verrouille la session (`OBJECTIF PNL MAX VERROUILLÉ`).
+   - **Synchronisation Temps Réel du PnL Réel avec le Compte Actif ATAS (`SyncPnlWithActiveAccount`, `AccountPnlScope`)** :
+     - Se connecte directement à `TradingManager.Portfolio`, `TradingManager.Position`, `TradingStatisticsProvider.FilteredStatistics.HistoryMyTrades` et `TradingManager.MyTrades`, et écoute en temps réel les événements `OnPortfolioChanged`, `OnPositionChanged`, `OnNewMyTrade`, `OnOrderChanged` et `TradingManager.PortfolioSelected`.
+     - Synchronise automatiquement le **Compte Actif sélectionné dans Chart Trader** (`AccountID`), le **Solde (`Balance`)**, la **Position Réelle Ouverte (`Volume` & `AveragePrice`)**, le **PnL Réalisé (`ClosedPnL`)**, le **PnL Latent Tick-par-Tick (`UnrealizedPnL` avec repli Mark-to-Market temps réel)** et le **PnL Réel Total (`Réalisé + Latent`)**.
+     - Applique le coupe-circuit **Max Drawdown (`$`)** et **Max PnL (`$`)** directement sur le **PnL Réel du Compte Actif**, avec un 3ᵉ encadrement interactif cliquable sur la charte (`[ ● SYNC COMPTE: ... ] | [ PORTÉE: COMPTE GLOBAL / INSTRUMENT ] | PNL RÉEL: ...$`).
    - **Bouton d'Activation Interactif directement sur la Charte (`ShowChartBotToggleButton`)** : Barre de contrôle cliquable à la souris directement sur le graphique ATAS X (`ProcessMouseClick` / `ProcessMouseMove`) avec voyant LED permettant d'activer/désactiver le Bot en un clic (`[ ● BOT QUANT : ON (ACTIF) ]` / `[ ○ BOT QUANT : OFF ]`), de basculer le mode (`[ MODE: SIM/PAPER ]` ↔ `[ MODE: LIVE ATAS ]`), de réinitialiser le coupe-circuit (`[ RESET ]`), ainsi qu'un bouton rapide `[ ● BOT : ON/OFF ]` intégré dans l'en-tête du panneau HUD.
    - **Encadrement Interactif des Horaires sur la Charte (`EnableBotSchedule`, `BotStartTimeText`, `BotEndTimeText`, `BotFlattenAtEndTime`)** : Encadrement dessiné directement sur la charte (`[ 🕒 HORAIRES: ON/OFF ] | DÉBUT: [-] [08:00] [+] → FIN: [-] [22:00] [+]`) permettant d'activer/désactiver le filtre horaire et de régler l'**Heure de Démarrage** et l'**Heure de Fin** directement à la souris sur le graphique (par pas de 15 min ou 1 h) ou en saisissant `HH:mm` dans les paramètres, avec clôture automatique optionnelle à l'heure de fin.
    - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne par défaut en mode sécurisé `BacktestAndPaperOnly` sur le graphique ou en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`).
@@ -29,8 +33,8 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 | **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `102 912 octets` (100,5 Ko) |
-| **SHA-256** | `9ef76db03833c9924300661e5a91953d37dc0aafe2ec10e980dab6b46b1bdef1` |
+| **Taille du binaire** | `115 200 octets` (112,5 Ko) |
+| **SHA-256** | `c5a3a91974f13849b334748d20333374c12ed011fc0f5cc3acb317174b3b8452` |
 
 ---
 

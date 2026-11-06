@@ -484,8 +484,8 @@
   <header>
     <div class="container">
       <div class="badge-row">
-        <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0 — 100.5 Ko)</span>
-        <span class="badge new">★ BOUTON BOT ON/OFF + ENCADREMENT HORAIRE (DÉBUT / FIN) SUR LA CHARTE</span>
+        <span class="badge ok">✓ Binaire .DLL Compilé (.NET 10.0 — 112.5 Ko)</span>
+        <span class="badge new">★ SYNC PNL RÉEL COMPTE ACTIF ATAS + HORAIRES + BOUTON BOT SUR LA CHARTE</span>
         <span class="badge opt">Risk Guard : Drawdown Max ($) &amp; PnL Max ($) + Flux d'Options ATAS X</span>
         <span class="badge">Compatible ATAS X (Windows &amp; macOS)</span>
       </div>
@@ -494,12 +494,12 @@
         Suite Quantitative Senior déjà compilée pour <strong>ATAS X</strong> : détection <strong>HVN / LVN</strong>,
         <strong>Heavy Absorption</strong>, <strong>Acheteurs &amp; Vendeurs Piégés</strong>, confirmation par le
         <strong>Flux d'Options ATAS X</strong>, filtrage statistique <strong>Z-Score (σ) / ATR(14)</strong> et
-        <strong>Bot de Trading Automatique intégré</strong> avec <strong>Bouton ON/OFF</strong> et <strong>Encadrement Horaire (Heure de Démarrage &amp; Heure de Fin) directement sur la charte</strong>.
+        <strong>Bot de Trading Automatique intégré</strong> avec <strong>Synchronisation Temps Réel du PnL Réel (Réalisé + Latent) sur le Compte Actif ATAS</strong>, <strong>Bouton ON/OFF</strong> et <strong>Encadrement Horaire (Heure de Démarrage &amp; Heure de Fin) directement sur la charte</strong>.
       </p>
 
       <div class="cta-bar">
         <a class="btn btn-primary" href="./FootprintHvnLvnAbsorption.dll" download="FootprintHvnLvnAbsorption.dll">
-          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (100.5 Ko)
+          ⬇ Télécharger FootprintHvnLvnAbsorption.dll (112.5 Ko)
         </a>
         <a class="btn btn-secondary" href="./FootprintHvnLvnAbsorption.cs" download="FootprintHvnLvnAbsorption.cs">
           📄 Code Source C# (FootprintHvnLvnAbsorption.cs)
@@ -510,10 +510,10 @@
       </div>
 
       <div class="meta-strip">
-        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (102 912 octets)</span>
+        <span><strong>Fichier :</strong> FootprintHvnLvnAbsorption.dll (115 200 octets)</span>
         <span><strong>Nom dans ATAS X :</strong> Footprint Quant OrderFlow, Options Flow &amp; Auto-Bot (Max DD / Max PnL)</span>
         <span><strong>Catégorie :</strong> Order Flow - Custom</span>
-        <span><strong>SHA-256 :</strong> 9ef76db03833c992...6b1bdef1</span>
+        <span><strong>SHA-256 :</strong> c5a3a91974f13849...b3b8452</span>
       </div>
     </div>
   </header>
@@ -674,11 +674,28 @@
                 </div>
                 <span id="lblSchedBadge" style="color: #00ff88; font-weight: 700; font-size: 0.75rem;">● PLAGE ACTIVE</span>
               </div>
+              <div class="chart-schedule-frame" id="boxChartAccountSync" style="border-color: rgba(0, 255, 136, 0.65);">
+                <button type="button" id="btnAcctSyncToggle" class="sched-toggle-btn" style="border-color: #00ff88; color: #00ff88;" onclick="toggleAccountSyncFromChart()">
+                  ● SYNC COMPTE : ON
+                </button>
+                <div class="sched-field-group">
+                  <span class="sched-field-label">COMPTE ACTIF ATAS</span>
+                  <select id="selActiveAccount" class="sched-time-input" style="cursor: pointer;" onchange="analyzeAndRender()">
+                    <option value="apex">Apex-PA-2049 (Rithmic)</option>
+                    <option value="topstep">Topstep-XFA-881 (Tradovate)</option>
+                    <option value="sim101">Sim101 (ATAS Sim)</option>
+                  </select>
+                </div>
+                <button type="button" id="btnAcctScopeToggle" class="sched-toggle-btn" onclick="toggleAccountScopeFromChart()">
+                  PORTÉE : COMPTE GLOBAL
+                </button>
+                <span id="lblActiveAccountPnl" style="color: #00ff88; font-weight: 700; font-size: 0.78rem;">PNL RÉEL: +1 425$ (Réal: +1 100$ | Lat: +325$)</span>
+              </div>
               <div class="chart-bot-telemetry" id="lblChartBotTelemetry">
-                <span>Cliquez sur le bouton ou l'encadrement horaire directement sur la charte</span>
+                <span>PnL Réel synchronisé en direct avec TradingManager.Portfolio &amp; Position d'ATAS X</span>
               </div>
             </div>
-            <canvas id="fpCanvas" width="900" height="665" style="cursor: pointer;"></canvas>
+            <canvas id="fpCanvas" width="900" height="695" style="cursor: pointer;"></canvas>
           </div>
         </div>
       </div>
