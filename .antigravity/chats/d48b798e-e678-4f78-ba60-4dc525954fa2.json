@@ -88,6 +88,18 @@
       "created_at": "2026-11-06T07:02:06.843Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "4f325fa5-08b2-4834-bda1-4dca7fe55fdd",
+      "role": "agent",
+      "content": "[TIMEOUT] The request took too long in Antigravity CLI.\nPlease try a shorter prompt or split the request into smaller steps.",
+      "status": "error",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "9a36087e-ae18-492e-9d3d-95f5e45ffb64",
+      "created_at": "2026-11-06T07:32:12.391Z",
+      "sender": "macOS",
+      "is_cancelled": false
     }
   ]
 }
