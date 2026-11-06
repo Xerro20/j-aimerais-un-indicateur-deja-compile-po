@@ -1469,7 +1469,29 @@
         botStatus = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
       }
 
-      // Sync HTML On-Chart Toolbar Buttons & Schedule Box
+      // Active Account Real PnL Synchronization (TradingManager.Portfolio & Position)
+      const acctKey = (document.getElementById("selActiveAccount") || {}).value || "apex";
+      const acct = atasActiveAccounts[acctKey] || atasActiveAccounts.apex;
+      const realRealized = chartAccountScopePortfolio ? acct.portfolioRealized : acct.instRealized;
+      const realUnrealized = chartAccountScopePortfolio ? acct.portfolioUnrealized : acct.instUnrealized;
+      const realTotalPnl = realRealized + realUnrealized;
+      const simTotalPnl = botPnl;
+
+      if (chartAccountSyncEnabled) {
+        botPnl = realTotalPnl;
+        if (botPnl > botPeak) botPeak = botPnl;
+        const syncDd = Math.max(0, botPeak - botPnl);
+        if (syncDd > botMaxDdObs) botMaxDdObs = syncDd;
+        if (botMaxDdObs >= maxDdLimit) {
+          botHaltedDd = true;
+          botStatus = `COUPE-CIRCUIT COMPTE ACTIF : DD MAX (-${botMaxDdObs}$)`;
+        } else if (botPnl >= maxPnlLimit) {
+          botHaltedPnl = true;
+          botStatus = `OBJECTIF PNL RÉEL COMPTE VERROUILLÉ (+${botPnl}$)`;
+        }
+      }
+
+      // Sync HTML On-Chart Toolbar Buttons, Schedule Box & Active Account Sync Box
       const btnToggle = document.getElementById("btnChartBotToggle");
       const lblToggle = document.getElementById("lblChartBotToggle");
       const btnMode = document.getElementById("btnChartBotMode");
@@ -1477,6 +1499,10 @@
       const boxSched = document.getElementById("boxChartSchedule");
       const btnSched = document.getElementById("btnSchedToggle");
       const lblSchedBadge = document.getElementById("lblSchedBadge");
+      const boxAcctSync = document.getElementById("boxChartAccountSync");
+      const btnAcctSync = document.getElementById("btnAcctSyncToggle");
+      const btnAcctScope = document.getElementById("btnAcctScopeToggle");
+      const lblAcctPnl = document.getElementById("lblActiveAccountPnl");
 
       if (btnToggle && lblToggle) {
         if (showBot) {
@@ -1513,10 +1539,26 @@
           lblSchedBadge.textContent = "24H / 24";
         }
       }
+      if (boxAcctSync && btnAcctSync && btnAcctScope && lblAcctPnl) {
+        if (chartAccountSyncEnabled) {
+          boxAcctSync.classList.remove("disabled");
+          btnAcctSync.classList.remove("off");
+          btnAcctSync.textContent = `● SYNC COMPTE : ${acct.name}`;
+          lblAcctPnl.style.color = realTotalPnl >= 0 ? "#00ff88" : "#ff415f";
+          lblAcctPnl.textContent = `PNL RÉEL (${acct.name}): ${realTotalPnl >= 0 ? "+" : ""}${realTotalPnl}$ (Réal: ${realRealized >= 0 ? "+" : ""}${realRealized}$ | Lat: ${realUnrealized >= 0 ? "+" : ""}${realUnrealized}$)`;
+        } else {
+          boxAcctSync.classList.add("disabled");
+          btnAcctSync.classList.add("off");
+          btnAcctSync.textContent = "○ SYNC COMPTE : OFF (SIM)";
+          lblAcctPnl.style.color = "#94a3b8";
+          lblAcctPnl.textContent = `PnL Théorique Bot: ${simTotalPnl >= 0 ? "+" : ""}${simTotalPnl}$ (Compte Actif non lié)`;
+        }
+        btnAcctScope.textContent = chartAccountScopePortfolio ? "PORTÉE : COMPTE GLOBAL" : "PORTÉE : INSTRUMENT";
+      }
       if (lblTelemetry) {
-        lblTelemetry.innerHTML = showBot
-          ? `<span style="color:${botPnl >= 0 ? '#00ff88' : '#ff415f'};font-weight:700;">PnL Bot: ${botPnl >= 0 ? '+' : ''}${botPnl}$ / +${maxPnlLimit}$</span> • <span style="color:#fbbf24;">DD: -${botMaxDdObs}$ / -${maxDdLimit}$</span>`
-          : `<span>Bot en veille — Cliquez sur le bouton directement sur la charte pour l'activer</span>`;
+        lblTelemetry.innerHTML = chartAccountSyncEnabled
+          ? `<span style="color:${botPnl >= 0 ? '#00ff88' : '#ff415f'};font-weight:700;">PnL Réel (${acct.name}): ${botPnl >= 0 ? '+' : ''}${botPnl}$ / +${maxPnlLimit}$</span> • <span style="color:#fbbf24;">DD: -${botMaxDdObs}$ / -${maxDdLimit}$</span> • <span>Solde: ${acct.balance}$</span>`
+          : `<span style="color:${botPnl >= 0 ? '#00ff88' : '#ff415f'};font-weight:700;">PnL Simulé Bot: ${botPnl >= 0 ? '+' : ''}${botPnl}$ / +${maxPnlLimit}$</span>`;
       }
 
       // 1. Draw On-Chart Interactive Bot Activation Buttons directly on Canvas (matching ATAS X OnRender)
@@ -1659,13 +1701,60 @@
       ctx.fillStyle = "#ffffff";
       ctx.fillText("+", canvasEndPlusRect.x + 6.5, schedFrameY + 16.5);
 
-      // Top Visual Alert Banner (placed right below the On-Chart Schedule Box)
+      // 3. Draw Framed On-Chart Active Account & Real PnL Sync Box directly on Canvas (matching ATAS X 3rd Frame)
+      const acctFrameX = 18;
+      const acctFrameY = 67;
+      const acctFrameW = 468;
+      const acctFrameH = 26;
+
+      ctx.fillStyle = "rgba(10, 16, 29, 0.95)";
+      ctx.fillRect(acctFrameX, acctFrameY, acctFrameW, acctFrameH);
+      ctx.strokeStyle = chartAccountSyncEnabled ? "#00ff88" : "#64748b";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(acctFrameX, acctFrameY, acctFrameW, acctFrameH);
+      ctx.fillStyle = chartAccountSyncEnabled ? "#00ff88" : "#64748b";
+      ctx.fillRect(acctFrameX, acctFrameY, 4, acctFrameH);
+
+      canvasAcctSyncToggleRect = { x: acctFrameX + 8, y: acctFrameY + 4, w: 158, h: 18 };
+      ctx.fillStyle = chartAccountSyncEnabled ? "rgba(6, 78, 59, 0.92)" : "rgba(30, 41, 59, 0.92)";
+      ctx.fillRect(canvasAcctSyncToggleRect.x, canvasAcctSyncToggleRect.y, canvasAcctSyncToggleRect.w, canvasAcctSyncToggleRect.h);
+      ctx.strokeStyle = chartAccountSyncEnabled ? "#00ff88" : "#94a3b8";
+      ctx.lineWidth = 1.1;
+      ctx.strokeRect(canvasAcctSyncToggleRect.x, canvasAcctSyncToggleRect.y, canvasAcctSyncToggleRect.w, canvasAcctSyncToggleRect.h);
+      ctx.font = "bold 8.5px Consolas, monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(
+        chartAccountSyncEnabled ? `● SYNC: ${acct.name}` : "○ SYNC COMPTE: OFF",
+        canvasAcctSyncToggleRect.x + 6,
+        canvasAcctSyncToggleRect.y + 12.5
+      );
+
+      canvasAcctScopeToggleRect = { x: canvasAcctSyncToggleRect.x + canvasAcctSyncToggleRect.w + 5, y: acctFrameY + 4, w: 108, h: 18 };
+      ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+      ctx.fillRect(canvasAcctScopeToggleRect.x, canvasAcctScopeToggleRect.y, canvasAcctScopeToggleRect.w, canvasAcctScopeToggleRect.h);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.strokeRect(canvasAcctScopeToggleRect.x, canvasAcctScopeToggleRect.y, canvasAcctScopeToggleRect.w, canvasAcctScopeToggleRect.h);
+      ctx.fillStyle = "#bae6fd";
+      ctx.fillText(
+        chartAccountScopePortfolio ? "PORTÉE: GLOBAL" : "PORTÉE: INSTR.",
+        canvasAcctScopeToggleRect.x + 6,
+        canvasAcctScopeToggleRect.y + 12.5
+      );
+
+      ctx.font = "bold 8.5px Consolas, monospace";
+      ctx.fillStyle = chartAccountSyncEnabled ? (realTotalPnl >= 0 ? "#00ff88" : "#ff415f") : "#94a3b8";
+      const acctPnlCanvasTxt = chartAccountSyncEnabled
+        ? `PNL RÉEL: ${realTotalPnl >= 0 ? "+" : ""}${realTotalPnl}$ (${realRealized >= 0 ? "+" : ""}${realRealized}$/${realUnrealized >= 0 ? "+" : ""}${realUnrealized}$)`
+        : `PNL SIM: ${simTotalPnl >= 0 ? "+" : ""}${simTotalPnl}$`;
+      ctx.fillText(acctPnlCanvasTxt, canvasAcctScopeToggleRect.x + canvasAcctScopeToggleRect.w + 7, acctFrameY + 16.5);
+
+      // Top Visual Alert Banner (placed right below the On-Chart Active Account Sync Box)
       if (showBuySell && showBanner && lastTradeSignal) {
         const isBuy = lastTradeSignal.dir > 0;
         const col = isBuy ? "#00ff88" : "#ff2a55";
         const bg = isBuy ? "rgba(6, 42, 30, 0.95)" : "rgba(52, 12, 24, 0.95)";
         const bx = 18;
-        const by = 68;
+        const by = 97;
         const bw = 468;
         const bh = 40;
 
@@ -1741,11 +1830,24 @@
         );
 
         if (showBot) {
-          ctx.fillStyle = botHaltedDd ? "#ff415f" : (botHaltedPnl ? "#00ff88" : "#38bdf8");
-          ctx.fillText(`BOT STATUS : ${botStatus}`, hx + 10, hy + 111);
+          ctx.fillStyle = chartAccountSyncEnabled ? "#00ff88" : "#38bdf8";
+          const posTag = acct.openQty > 0 ? `LONG +${acct.openQty}` : (acct.openQty < 0 ? `SHORT ${acct.openQty}` : "FLAT 0");
+          ctx.fillText(
+            chartAccountSyncEnabled
+              ? `COMPTE ACTIF: ${acct.name} (${posTag}) | Solde: ${acct.balance}$`
+              : `BOT STATUS : ${botStatus}`,
+            hx + 10,
+            hy + 111
+          );
 
           ctx.fillStyle = botPnl >= 0 ? "#00ff88" : "#ff415f";
-          ctx.fillText(`BOT PnL : ${botPnl >= 0 ? "+" : ""}${botPnl}$ / Max +${maxPnlLimit}$ | DD: -${botMaxDdObs}$ / -${maxDdLimit}$`, hx + 10, hy + 127);
+          ctx.fillText(
+            chartAccountSyncEnabled
+              ? `PNL RÉEL: ${botPnl >= 0 ? "+" : ""}${botPnl}$ (Réal ${realRealized >= 0 ? "+" : ""}${realRealized}$ | Lat ${realUnrealized >= 0 ? "+" : ""}${realUnrealized}$) | DD -${botMaxDdObs}$`
+              : `BOT PnL : ${botPnl >= 0 ? "+" : ""}${botPnl}$ / Max +${maxPnlLimit}$ | DD: -${botMaxDdObs}$ / -${maxDdLimit}$`,
+            hx + 10,
+            hy + 127
+          );
 
           // Gauges
           const gw = 158;
@@ -1812,13 +1914,17 @@
       } else if (isInsideRect(px, py, canvasSchedToggleRect)) {
         toggleScheduleFromChart();
       } else if (isInsideRect(px, py, canvasStartMinusRect)) {
-        stepChartTime("inpBotStart", -5);
+        stepChartTime("start", -5);
       } else if (isInsideRect(px, py, canvasStartPlusRect) || isInsideRect(px, py, canvasStartValRect)) {
-        stepChartTime("inpBotStart", 5);
+        stepChartTime("start", 5);
       } else if (isInsideRect(px, py, canvasEndMinusRect)) {
-        stepChartTime("inpBotEnd", -5);
+        stepChartTime("end", -5);
       } else if (isInsideRect(px, py, canvasEndPlusRect) || isInsideRect(px, py, canvasEndValRect)) {
-        stepChartTime("inpBotEnd", 5);
+        stepChartTime("end", 5);
+      } else if (isInsideRect(px, py, canvasAcctSyncToggleRect)) {
+        toggleAccountSyncFromChart();
+      } else if (isInsideRect(px, py, canvasAcctScopeToggleRect)) {
+        toggleAccountScopeFromChart();
       }
     });
 
