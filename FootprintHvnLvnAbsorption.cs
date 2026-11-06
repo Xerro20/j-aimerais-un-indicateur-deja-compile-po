@@ -1185,7 +1185,27 @@ namespace ATAS.Indicators.Custom
                 if (ShowChartBotToggleButton && _chartBotResetBtnRect.Contains(pt))
                 {
                     _manualResetBarIndex = Math.Max(0, CurrentBar - 1);
+                    _liveAccountPeakPnlUsd = decimal.MinValue;
+                    _liveAccountMaxDrawdownUsd = 0m;
                     _liveKillSwitchExecuted = false;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartAcctSyncToggleRect.Contains(pt))
+                {
+                    _syncPnlWithActiveAccount = !_syncPnlWithActiveAccount;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartAcctScopeToggleRect.Contains(pt))
+                {
+                    _accountPnlScope = _accountPnlScope == ActiveAccountPnlScope.ActivePortfolioTotal
+                        ? ActiveAccountPnlScope.ChartInstrumentOnly
+                        : ActiveAccountPnlScope.ActivePortfolioTotal;
                     RecalculateValues();
                     RedrawChart();
                     return true;
@@ -1263,10 +1283,13 @@ namespace ATAS.Indicators.Custom
             bool hSPls = ShowChartBotToggleButton && _chartStartPlusRect.Contains(pt);
             bool hEMin = ShowChartBotToggleButton && _chartEndMinusRect.Contains(pt);
             bool hEPls = ShowChartBotToggleButton && _chartEndPlusRect.Contains(pt);
+            bool hAcctSync = ShowChartBotToggleButton && _chartAcctSyncToggleRect.Contains(pt);
+            bool hAcctScope = ShowChartBotToggleButton && _chartAcctScopeToggleRect.Contains(pt);
 
             if (hToggle != _hoverBotToggleBtn || hMode != _hoverBotModeBtn || hReset != _hoverBotResetBtn ||
                 hSched != _hoverSchedToggleBtn || hSMin != _hoverStartMinus || hSPls != _hoverStartPlus ||
-                hEMin != _hoverEndMinus || hEPls != _hoverEndPlus)
+                hEMin != _hoverEndMinus || hEPls != _hoverEndPlus ||
+                hAcctSync != _hoverAcctSyncBtn || hAcctScope != _hoverAcctScopeBtn)
             {
                 _hoverBotToggleBtn = hToggle;
                 _hoverBotModeBtn = hMode;
@@ -1276,10 +1299,129 @@ namespace ATAS.Indicators.Custom
                 _hoverStartPlus = hSPls;
                 _hoverEndMinus = hEMin;
                 _hoverEndPlus = hEPls;
+                _hoverAcctSyncBtn = hAcctSync;
+                _hoverAcctScopeBtn = hAcctScope;
                 RedrawChart();
             }
 
             return base.ProcessMouseMove(e);
+        }
+
+        // =====================================================================
+        // Synchronisation Temps Réel avec le Compte Actif ATAS X (Portfolio / Position / MyTrades)
+        // =====================================================================
+        private void EnsureTradingManagerSubscriptions()
+        {
+            try
+            {
+                var tm = TradingManager;
+                if (ReferenceEquals(tm, _subscribedTradingManager))
+                    return;
+
+                if (_subscribedTradingManager != null)
+                {
+                    _subscribedTradingManager.PortfolioSelected -= OnTradingManagerPortfolioSelected;
+                    _subscribedTradingManager.PortfolioChanged -= OnTradingManagerPortfolioChanged;
+                    _subscribedTradingManager.PositionChanged -= OnTradingManagerPositionChanged;
+                    _subscribedTradingManager.NewMyTrade -= OnTradingManagerNewMyTrade;
+                }
+
+                _subscribedTradingManager = tm;
+
+                if (_subscribedTradingManager != null)
+                {
+                    _subscribedTradingManager.PortfolioSelected += OnTradingManagerPortfolioSelected;
+                    _subscribedTradingManager.PortfolioChanged += OnTradingManagerPortfolioChanged;
+                    _subscribedTradingManager.PositionChanged += OnTradingManagerPositionChanged;
+                    _subscribedTradingManager.NewMyTrade += OnTradingManagerNewMyTrade;
+                }
+            }
+            catch
+            {
+                // Ignorer si le connecteur ne supporte pas les événements TradingManager
+            }
+        }
+
+        private void OnTradingManagerPortfolioSelected(Portfolio portfolio)
+        {
+            _liveAccountPeakPnlUsd = decimal.MinValue;
+            _liveAccountMaxDrawdownUsd = 0m;
+            _liveKillSwitchExecuted = false;
+            RedrawChart();
+        }
+
+        private void OnTradingManagerPortfolioChanged(Portfolio portfolio)
+        {
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        private void OnTradingManagerPositionChanged(Position position)
+        {
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        private void OnTradingManagerNewMyTrade(MyTrade myTrade)
+        {
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        protected override void OnPortfolioChanged(Portfolio portfolio)
+        {
+            base.OnPortfolioChanged(portfolio);
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        protected override void OnPositionChanged(Position position)
+        {
+            base.OnPositionChanged(position);
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        protected override void OnNewMyTrade(MyTrade myTrade)
+        {
+            base.OnNewMyTrade(myTrade);
+            CheckRealtimeAccountKillSwitch();
+            RedrawChart();
+        }
+
+        protected override void OnOrderChanged(Order order)
+        {
+            base.OnOrderChanged(order);
+            RedrawChart();
+        }
+
+        private void CheckRealtimeAccountKillSwitch()
+        {
+            if (!_enableTradingBot || !_syncPnlWithActiveAccount)
+                return;
+
+            try
+            {
+                decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+                int lastBar = Math.Max(0, CurrentBar - 1);
+                BotPerformanceState state = default;
+                SynchronizeWithActiveAccount(lastBar, tickSize, ref state);
+
+                if ((state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit) && !_liveKillSwitchExecuted)
+                {
+                    var tm = TradingManager;
+                    var pos = tm?.Position;
+                    if (tm != null && pos != null && pos.Volume != 0m)
+                    {
+                        _liveKillSwitchExecuted = true;
+                        _ = tm.ClosePositionAsync(pos, false, false);
+                    }
+                }
+            }
+            catch
+            {
+                // Protection temps réel
+            }
         }
 
         // =====================================================================
@@ -1518,11 +1660,22 @@ namespace ATAS.Indicators.Custom
             _buyAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction > 0) ? signal.TriggerPrice : 0m;
             _sellAlertSeries[bar] = (_enableVisualBuySellAlerts && signal.Direction < 0) ? signal.TriggerPrice : 0m;
 
-            // Exécution temps réel du Bot via ATAS ITradingManager sur la bougie active (si mode Live activé)
-            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && bar == CurrentBar - 1)
+            // Synchronisation temps réel du PnL avec le Compte Actif ATAS X et exécution du Bot sur la bougie active
+            if (bar == CurrentBar - 1)
             {
-                var botState = SimulateQuantTradingBot(bar, tickSize, out _);
-                ProcessLiveTradingManagerBot(bar, signal, botState);
+                EnsureTradingManagerSubscriptions();
+
+                BotPerformanceState botState = _enableTradingBot
+                    ? SimulateQuantTradingBot(bar, tickSize, out _)
+                    : default;
+
+                SynchronizeWithActiveAccount(bar, tickSize, ref botState);
+
+                if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
+                {
+                    ProcessLiveTradingManagerBot(bar, signal, botState);
+                }
+
                 _botCumPnlSeries[bar] = botState.TotalPnlUsd;
                 _botDrawdownSeries[bar] = botState.CurrentDrawdownUsd;
             }
@@ -2626,16 +2779,26 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // 6. Simulation & Rendu du Bot de Trading Quant (avec coupe-circuit Max Drawdown & Max PnL)
+            // 6. Simulation, Synchronisation Temps Réel avec le Compte Actif ATAS X & Rendu du Bot Quant
+            EnsureTradingManagerSubscriptions();
+
             BotPerformanceState botPerf = default;
             List<BotTradeExecutionRecord> botTrades = new List<BotTradeExecutionRecord>();
             if (_enableTradingBot)
             {
                 botPerf = SimulateQuantTradingBot(lastBar, tickSize, out botTrades);
-                if (ShowBotExecutionOnChart && botTrades.Count > 0)
-                {
-                    RenderBotTradesOnChart(context, botTrades, firstBar, lastBar, boldFont, cellFont);
-                }
+            }
+            else
+            {
+                botPerf.StatusLabel = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
+            }
+
+            // Synchronise le PnL Réel (Réalisé + Latent), la Position ouverte, le Solde et le Drawdown avec le Compte Actif ATAS
+            SynchronizeWithActiveAccount(lastBar, tickSize, ref botPerf);
+
+            if (_enableTradingBot && ShowBotExecutionOnChart && botTrades.Count > 0)
+            {
+                RenderBotTradesOnChart(context, botTrades, firstBar, lastBar, boldFont, cellFont);
             }
 
             // 7. Rendu de la Bannière Visuelle d'Alerte Achat/Vente en haut du graphique
@@ -2664,7 +2827,7 @@ namespace ATAS.Indicators.Custom
                 _hudBotToggleBtnRect = Rectangle.Empty;
             }
 
-            // 9. Rendu du Bouton Interactif d'Activation du Bot & Encadrement Horaire directement sur la Charte
+            // 9. Rendu du Bouton Interactif d'Activation du Bot, Encadrement Horaire & Encadrement Compte Actif sur la Charte
             if (ShowChartBotToggleButton)
             {
                 RenderOnChartBotControlButton(context, chartRegion, botPerf);
@@ -2681,6 +2844,8 @@ namespace ATAS.Indicators.Custom
                 _chartEndMinusRect = Rectangle.Empty;
                 _chartEndValRect = Rectangle.Empty;
                 _chartEndPlusRect = Rectangle.Empty;
+                _chartAcctSyncToggleRect = Rectangle.Empty;
+                _chartAcctScopeToggleRect = Rectangle.Empty;
             }
         }
 
@@ -3079,6 +3244,389 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
+        // Synchronisation Multi-Sources du PnL Réel avec le Compte Actif ATAS X
+        // (Portfolio.ClosedPnL / OpenPnL / TotalPnL + Position.RealizedPnL / UnrealizedPnL + HistoryMyTrades + MyTrades)
+        // =====================================================================
+        private void SynchronizeWithActiveAccount(int upToBar, decimal tickSize, ref BotPerformanceState state)
+        {
+            state.SimulatedTotalPnlUsd = state.TotalPnlUsd;
+
+            if (!_syncPnlWithActiveAccount)
+            {
+                state.IsSyncedWithActiveAccount = false;
+                state.ActiveAccountName = "SIMULATION GRAPHIQUE";
+                state.ActiveAccountCurrency = "$";
+                return;
+            }
+
+            try
+            {
+                var tm = TradingManager;
+                if (tm == null)
+                {
+                    state.IsSyncedWithActiveAccount = false;
+                    state.ActiveAccountName = "SIMULATION (HORS CONNEXION)";
+                    state.ActiveAccountCurrency = "$";
+                    return;
+                }
+
+                var pf = tm.Portfolio;
+                var pos = tm.Position;
+                var sec = tm.Security;
+
+                if (pf == null && pos == null)
+                {
+                    state.IsSyncedWithActiveAccount = false;
+                    state.ActiveAccountName = "AUCUN COMPTE ACTIF";
+                    state.ActiveAccountCurrency = "$";
+                    return;
+                }
+
+                string accountId = !string.IsNullOrWhiteSpace(pf?.AccountID)
+                    ? pf.AccountID!
+                    : (!string.IsNullOrWhiteSpace(pf?.DepoName)
+                        ? pf.DepoName!
+                        : (!string.IsNullOrWhiteSpace(pos?.AccountID) ? pos.AccountID! : "Compte Actif"));
+
+                string currency = pf?.Currency != null ? pf.Currency.Value.ToString() : "$";
+                decimal balance = pf?.Balance ?? pf?.BalanceAvailable ?? 0m;
+
+                // Réinitialisation automatique du suivi High-Water Mark si l'utilisateur change de compte actif dans ATAS
+                if (!string.Equals(_lastSyncedAccountId, accountId, StringComparison.Ordinal))
+                {
+                    _lastSyncedAccountId = accountId;
+                    _liveAccountPeakPnlUsd = decimal.MinValue;
+                    _liveAccountMaxDrawdownUsd = 0m;
+                    _liveKillSwitchExecuted = false;
+                }
+
+                decimal pointVal = GetPointDollarValue(tickSize);
+                decimal posVol = pos?.Volume ?? 0m;
+                decimal avgPrice = pos?.AveragePrice ?? 0m;
+                int realDir = posVol > 0m ? 1 : (posVol < 0m ? -1 : 0);
+                int realQty = (int)Math.Round(Math.Abs(posVol));
+
+                // 1. Extraction du PnL Latent / Open PnL temps réel du Compte Actif
+                decimal? posUnrealized = pos?.UnrealizedPnL;
+                decimal? pfOpen = pf?.OpenPnL;
+                decimal realUnrealized = 0m;
+
+                if (_accountPnlScope == ActiveAccountPnlScope.ChartInstrumentOnly)
+                {
+                    if (posUnrealized.HasValue && posUnrealized.Value != 0m)
+                        realUnrealized = posUnrealized.Value;
+                    else if (posVol != 0m && avgPrice > 0m)
+                    {
+                        decimal lastPx = (sec?.LastTradePrice > 0m)
+                            ? sec.LastTradePrice.Value
+                            : (upToBar >= 0 ? GetCandle(upToBar).Close : avgPrice);
+                        realUnrealized = posVol * (lastPx - avgPrice) * pointVal;
+                    }
+                    else if (pfOpen.HasValue && pfOpen.Value != 0m)
+                    {
+                        realUnrealized = pfOpen.Value;
+                    }
+                }
+                else
+                {
+                    if (pfOpen.HasValue && pfOpen.Value != 0m)
+                        realUnrealized = pfOpen.Value;
+                    else if (posUnrealized.HasValue && posUnrealized.Value != 0m)
+                        realUnrealized = posUnrealized.Value;
+                    else if (posVol != 0m && avgPrice > 0m)
+                    {
+                        decimal lastPx = (sec?.LastTradePrice > 0m)
+                            ? sec.LastTradePrice.Value
+                            : (upToBar >= 0 ? GetCandle(upToBar).Close : avgPrice);
+                        realUnrealized = posVol * (lastPx - avgPrice) * pointVal;
+                    }
+                }
+
+                // 2. Extraction du PnL Réalisé (Closed PnL) et des Statistiques de Trades Réels du Compte Actif
+                ComputeActiveAccountTradesMetrics(
+                    accountId,
+                    sec?.SecurityId,
+                    pointVal,
+                    out decimal tradesRealizedPnl,
+                    out decimal tradesComm,
+                    out int realTotalTrades,
+                    out int realWinTrades,
+                    out int realLossTrades,
+                    out decimal realGrossProf,
+                    out decimal realGrossLoss);
+
+                decimal? pfClosed = pf?.ClosedPnL ?? pf?.TotalClosedPnL;
+                decimal? pfTotal = pf?.TotalPnL;
+                decimal? posRealized = pos?.RealizedPnL;
+                decimal realRealized = 0m;
+
+                if (_accountPnlScope == ActiveAccountPnlScope.ChartInstrumentOnly)
+                {
+                    if (posRealized.HasValue && posRealized.Value != 0m)
+                        realRealized = posRealized.Value;
+                    else if (tradesRealizedPnl != 0m)
+                        realRealized = tradesRealizedPnl;
+                    else if (pfClosed.HasValue && pfClosed.Value != 0m)
+                        realRealized = pfClosed.Value;
+                    else
+                        realRealized = posRealized ?? pfClosed ?? 0m;
+                }
+                else
+                {
+                    if (pfClosed.HasValue && pfClosed.Value != 0m)
+                        realRealized = pfClosed.Value;
+                    else if (pfTotal.HasValue && pfTotal.Value != 0m)
+                        realRealized = pfTotal.Value - realUnrealized;
+                    else if (posRealized.HasValue && posRealized.Value != 0m)
+                        realRealized = posRealized.Value;
+                    else if (tradesRealizedPnl != 0m)
+                        realRealized = tradesRealizedPnl;
+                    else
+                        realRealized = pfClosed ?? posRealized ?? 0m;
+                }
+
+                decimal realTotalPnl = realRealized + realUnrealized;
+                if (_accountPnlScope == ActiveAccountPnlScope.ActivePortfolioTotal &&
+                    pfTotal.HasValue && pfTotal.Value != 0m && realRealized == 0m && realUnrealized == 0m)
+                {
+                    realTotalPnl = pfTotal.Value;
+                    realRealized = pfTotal.Value;
+                }
+
+                state.IsSyncedWithActiveAccount = true;
+                state.ActiveAccountName = accountId;
+                state.ActiveAccountCurrency = currency;
+                state.ActiveAccountBalance = Math.Round(balance, 2);
+                state.ActiveAccountCommissionUsd = Math.Round(pf?.Commission ?? pos?.Commission ?? tradesComm, 2);
+
+                state.RealizedPnlUsd = Math.Round(realRealized, 2);
+                state.UnrealizedPnlUsd = Math.Round(realUnrealized, 2);
+                state.TotalPnlUsd = Math.Round(realTotalPnl, 2);
+
+                state.ActiveDirection = realDir;
+                state.ActiveContracts = realQty;
+                if (realDir != 0 && avgPrice > 0m)
+                    state.ActiveEntryPrice = avgPrice;
+
+                if (realTotalTrades > 0)
+                {
+                    state.TotalTrades = realTotalTrades;
+                    state.WinningTrades = realWinTrades;
+                    state.LosingTrades = realLossTrades;
+                    state.GrossProfitUsd = Math.Round(realGrossProf, 2);
+                    state.GrossLossUsd = Math.Round(realGrossLoss, 2);
+                    state.WinRatePct = Math.Round((realWinTrades / (decimal)realTotalTrades) * 100m, 1);
+                    state.ProfitFactor = realGrossLoss > 0m
+                        ? Math.Round(realGrossProf / realGrossLoss, 2)
+                        : (realGrossProf > 0m ? 9.99m : 0m);
+                    state.ExpectancyUsd = Math.Round(state.RealizedPnlUsd / realTotalTrades, 2);
+                }
+
+                // 3. Suivi Temps Réel du High-Water Mark (Pic d'Équité) et du Drawdown Réel du Compte Actif
+                if (_liveAccountPeakPnlUsd == decimal.MinValue)
+                    _liveAccountPeakPnlUsd = Math.Max(0m, state.TotalPnlUsd);
+
+                if (state.TotalPnlUsd > _liveAccountPeakPnlUsd)
+                    _liveAccountPeakPnlUsd = state.TotalPnlUsd;
+
+                decimal realDd = Math.Round(Math.Max(0m, _liveAccountPeakPnlUsd - state.TotalPnlUsd), 2);
+                if (realDd > _liveAccountMaxDrawdownUsd)
+                    _liveAccountMaxDrawdownUsd = realDd;
+
+                state.PeakPnlUsd = _liveAccountPeakPnlUsd;
+                state.CurrentDrawdownUsd = realDd;
+                state.MaxObservedDrawdownUsd = _liveAccountMaxDrawdownUsd;
+
+                state.IsHaltedByMaxDrawdown = _liveAccountMaxDrawdownUsd >= _botMaxDrawdownUsd || state.TotalPnlUsd <= -_botMaxDrawdownUsd;
+                state.IsHaltedByMaxProfit = state.TotalPnlUsd >= _botMaxProfitTargetUsd;
+
+                bool latestInSched = upToBar < 0 || IsBarWithinBotSchedule(GetCandle(upToBar).Time);
+
+                if (!_enableTradingBot)
+                {
+                    state.StatusLabel = $"DÉSACTIVÉ | COMPTE ACTIF [{accountId}] PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$";
+                }
+                else if (state.IsHaltedByMaxDrawdown)
+                {
+                    state.StatusLabel = $"COUPE-CIRCUIT [{accountId}] : DD MAX RÉEL ATTEINT (-{state.MaxObservedDrawdownUsd:0.00}$ / -{_botMaxDrawdownUsd:0}$)";
+                }
+                else if (state.IsHaltedByMaxProfit)
+                {
+                    state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ [{accountId}] (+{state.TotalPnlUsd:0.00}$ / +{_botMaxProfitTargetUsd:0}$)";
+                }
+                else if (!latestInSched)
+                {
+                    state.StatusLabel = $"VEILLE HORAIRE [{accountId}] — ACTIF DE {BotStartTimeText} À {BotEndTimeText}";
+                }
+                else if (state.ActiveDirection > 0)
+                {
+                    state.StatusLabel = $"LONG RÉEL [{accountId}] (+{state.ActiveContracts} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
+                }
+                else if (state.ActiveDirection < 0)
+                {
+                    state.StatusLabel = $"SHORT RÉEL [{accountId}] (-{state.ActiveContracts} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
+                }
+                else
+                {
+                    state.StatusLabel = $"SYNCHRONISÉ [{accountId}] — PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$ (En attente signal)";
+                }
+            }
+            catch
+            {
+                // Protection totale si le connecteur de compte est en cours d'initialisation
+            }
+        }
+
+        private void ComputeActiveAccountTradesMetrics(
+            string accountId,
+            string? securityId,
+            decimal pointVal,
+            out decimal realizedPnlUsd,
+            out decimal totalCommissionUsd,
+            out int totalTrades,
+            out int winningTrades,
+            out int losingTrades,
+            out decimal grossProfitUsd,
+            out decimal grossLossUsd)
+        {
+            realizedPnlUsd = 0m;
+            totalCommissionUsd = 0m;
+            totalTrades = 0;
+            winningTrades = 0;
+            losingTrades = 0;
+            grossProfitUsd = 0m;
+            grossLossUsd = 0m;
+
+            bool filterBySec = _accountPnlScope == ActiveAccountPnlScope.ChartInstrumentOnly && !string.IsNullOrWhiteSpace(securityId);
+
+            // 1. Lecture prioritaire via TradingStatisticsProvider (HistoryMyTrades d'ATAS X)
+            try
+            {
+                var tsp = TradingStatisticsProvider;
+                var stats = tsp?.FilteredStatistics ?? tsp?.RawStatistics;
+                if (stats != null)
+                {
+                    var prop = typeof(ATAS.DataFeedsCore.Statistics.ITradingStatistics).GetProperty("HistoryMyTrades");
+                    if (prop?.GetValue(stats) is IEnumerable histEnum)
+                    {
+                        foreach (var item in histEnum)
+                        {
+                            if (item is HistoryMyTrade h && h.IsComplete)
+                            {
+                                if (!string.IsNullOrWhiteSpace(h.AccountID) &&
+                                    !string.Equals(h.AccountID, accountId, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                if (filterBySec && !string.IsNullOrWhiteSpace(h.SecurityId) &&
+                                    !string.Equals(h.SecurityId, securityId, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                decimal comm = h.Commission ?? 0m;
+                                decimal net = h.PnL - comm;
+                                realizedPnlUsd += net;
+                                totalCommissionUsd += comm;
+                                totalTrades++;
+
+                                if (net >= 0m)
+                                {
+                                    winningTrades++;
+                                    grossProfitUsd += net;
+                                }
+                                else
+                                {
+                                    losingTrades++;
+                                    grossLossUsd += Math.Abs(net);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback sur TradingManager.MyTrades si HistoryMyTrades n'est pas disponible
+            }
+
+            if (totalTrades > 0)
+                return;
+
+            // 2. Fallback : Reconstruction FIFO / Prix Moyen à partir de TradingManager.MyTrades
+            try
+            {
+                var myTrades = TradingManager?.MyTrades;
+                if (myTrades == null)
+                    return;
+
+                decimal netPos = 0m;
+                decimal avgEntry = 0m;
+
+                foreach (var t in myTrades)
+                {
+                    if (t == null || t.Volume <= 0m)
+                        continue;
+
+                    string? tAcc = t.AccountID ?? t.Portfolio?.AccountID;
+                    if (!string.IsNullOrWhiteSpace(tAcc) &&
+                        !string.Equals(tAcc, accountId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string? tSec = t.SecurityId ?? t.Security?.SecurityId;
+                    if (filterBySec && !string.IsNullOrWhiteSpace(tSec) &&
+                        !string.Equals(tSec, securityId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    decimal comm = t.Commission ?? 0m;
+                    totalCommissionUsd += comm;
+
+                    decimal signedVol = t.OrderDirection == OrderDirections.Buy ? t.Volume : -t.Volume;
+
+                    if (netPos == 0m || Math.Sign(netPos) == Math.Sign(signedVol))
+                    {
+                        decimal newVol = Math.Abs(netPos) + t.Volume;
+                        avgEntry = newVol > 0m ? ((Math.Abs(netPos) * avgEntry) + (t.Volume * t.Price)) / newVol : t.Price;
+                        netPos += signedVol;
+                    }
+                    else
+                    {
+                        decimal closedQty = Math.Min(Math.Abs(netPos), t.Volume);
+                        int prevDir = netPos > 0m ? 1 : -1;
+                        decimal tradePnl = prevDir * (t.Price - avgEntry) * pointVal * closedQty - comm;
+
+                        realizedPnlUsd += tradePnl;
+                        totalTrades++;
+                        if (tradePnl >= 0m)
+                        {
+                            winningTrades++;
+                            grossProfitUsd += tradePnl;
+                        }
+                        else
+                        {
+                            losingTrades++;
+                            grossLossUsd += Math.Abs(tradePnl);
+                        }
+
+                        decimal rem = t.Volume - closedQty;
+                        if (rem > 0m)
+                        {
+                            netPos = Math.Sign(signedVol) * rem;
+                            avgEntry = t.Price;
+                        }
+                        else
+                        {
+                            netPos += signedVol;
+                            if (netPos == 0m)
+                                avgEntry = 0m;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignorer si MyTrades est vide ou en cours de modification
+            }
+        }
+
+        // =====================================================================
         // Routage Live Optionnel vers ATAS ITradingManager (avec Kill-Switch Max DD / Max PnL)
         // =====================================================================
         private void ProcessLiveTradingManagerBot(int bar, VisualTradeSignal signal, BotPerformanceState botState)
@@ -3090,11 +3638,13 @@ namespace ATAS.Indicators.Custom
                     return;
 
                 var pos = tm.Position;
-                decimal liveRealized = pos?.RealizedPnL ?? 0m;
-                decimal liveUnrealized = pos?.UnrealizedPnL ?? 0m;
-                decimal liveNetPnl = liveRealized + liveUnrealized;
+                decimal liveNetPnl = botState.IsSyncedWithActiveAccount
+                    ? botState.TotalPnlUsd
+                    : ((pos?.RealizedPnL ?? 0m) + (pos?.UnrealizedPnL ?? 0m));
 
-                bool hitMaxDd = botState.IsHaltedByMaxDrawdown || (liveNetPnl <= -_botMaxDrawdownUsd);
+                bool hitMaxDd = botState.IsHaltedByMaxDrawdown ||
+                                (botState.CurrentDrawdownUsd >= _botMaxDrawdownUsd) ||
+                                (liveNetPnl <= -_botMaxDrawdownUsd);
                 bool hitMaxPnl = botState.IsHaltedByMaxProfit || (liveNetPnl >= _botMaxProfitTargetUsd);
 
                 if (hitMaxDd || hitMaxPnl)
@@ -3326,8 +3876,9 @@ namespace ATAS.Indicators.Custom
                 ? $"▲ SIGNAL QUANT ACHAT @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]"
                 : $"▼ SIGNAL QUANT VENTE @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]";
 
-            string botTag = _enableTradingBot
-                ? $" | BOT PnL: {botPerf.TotalPnlUsd:+0;-0;0}$ (Max {BotMaxProfitTargetUsd:0}$) • DD: -{botPerf.MaxObservedDrawdownUsd:0}$ (Max -{BotMaxDrawdownUsd:0}$)"
+            string acctTag = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName) ? $" [{botPerf.ActiveAccountName}]" : string.Empty;
+            string botTag = (_enableTradingBot || botPerf.IsSyncedWithActiveAccount)
+                ? $" | PnL Réel{acctTag}: {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ (Max {BotMaxProfitTargetUsd:0}$) • DD: -{botPerf.MaxObservedDrawdownUsd:0.00}$ (Max -{BotMaxDrawdownUsd:0}$)"
                 : string.Empty;
             string detail = $"Options Flow : Calls {sig.CallFlowPct:0}% / Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}, ΔOI {sig.OiDelta:+0;-0;0}) | {sig.ReasonTag}{botTag}";
 
@@ -3341,7 +3892,7 @@ namespace ATAS.Indicators.Custom
             if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
                 x = Math.Max(x, chartRegion.Left + 380);
 
-            int y = ShowChartBotToggleButton ? chartRegion.Top + 78 : chartRegion.Top + 10;
+            int y = ShowChartBotToggleButton ? chartRegion.Top + 112 : chartRegion.Top + 10;
 
             Rectangle bannerRect = new Rectangle(x, y, w, h);
             context.FillRectangle(bg, bannerRect);
@@ -3665,6 +4216,23 @@ namespace ATAS.Indicators.Custom
                 ($"Signaux Quant       : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (ΔOI {latestOpt.OiDelta:+0;-0;0}, Sweeps {latestOpt.SweepCount})", Color.FromArgb(255, 125, 211, 252), false)
             };
 
+            string acctDisplay = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName)
+                ? botPerf.ActiveAccountName
+                : (_syncPnlWithActiveAccount ? "AUCUN COMPTE ACTIF" : "SIMULATION GRAPHIQUE");
+            string scopeTxt = _accountPnlScope == ActiveAccountPnlScope.ActivePortfolioTotal ? "Compte Global" : "Instrument Seul";
+            string syncStatusTxt = botPerf.IsSyncedWithActiveAccount
+                ? $"SYNC PNL RÉEL: ACTIF ({scopeTxt})"
+                : (_syncPnlWithActiveAccount ? "EN ATTENTE COMPTE ATAS (Fallback Sim)" : "SYNC DÉSACTIVÉE (Sim)");
+
+            Color pnlCol = botPerf.TotalPnlUsd >= 0m
+                ? Color.FromArgb(255, 0, 255, 136)
+                : Color.FromArgb(255, 255, 65, 85);
+
+            lines.Add(($"COMPTE ACTIF ATAS   : {acctDisplay} (Solde: {botPerf.ActiveAccountBalance:0.00}$) [{syncStatusTxt}]",
+                botPerf.IsSyncedWithActiveAccount ? Color.FromArgb(255, 56, 189, 248) : Color.FromArgb(255, 148, 163, 184), true));
+            lines.Add(($"PNL RÉEL DU COMPTE  : {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ (Réalisé: {botPerf.RealizedPnlUsd:+0.00;-0.00;0.00}$ | Latent: {botPerf.UnrealizedPnlUsd:+0.00;-0.00;0.00}$) / Max +{_botMaxProfitTargetUsd:0}$",
+                pnlCol, true));
+
             if (_enableTradingBot)
             {
                 Color statusCol = botPerf.IsHaltedByMaxDrawdown
@@ -3673,14 +4241,9 @@ namespace ATAS.Indicators.Custom
                         ? Color.FromArgb(255, 16, 245, 150)
                         : Color.FromArgb(255, 56, 189, 248));
 
-                Color pnlCol = botPerf.TotalPnlUsd >= 0m
-                    ? Color.FromArgb(255, 0, 255, 136)
-                    : Color.FromArgb(255, 255, 65, 85);
-
                 lines.Add(($"BOT STATUS          : {botPerf.StatusLabel}", statusCol, true));
                 lines.Add(($"HORAIRES DU BOT     : {( _enableBotSchedule ? $"{BotStartTimeText} -> {BotEndTimeText} (Filtre Horaire ACTIF)" : "24h/24 (Filtre Horaire DÉSACTIVÉ)" )}", Color.FromArgb(255, 165, 243, 252), false));
-                lines.Add(($"BOT PnL / OBJECTIF  : {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ / Max PnL +{_botMaxProfitTargetUsd:0}$ (Pic: +{botPerf.PeakPnlUsd:0}$)", pnlCol, true));
-                lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
+                lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0.00}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
                 lines.Add(($"STATS QUANT BOT     : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
             }
             else
@@ -3988,6 +4551,55 @@ namespace ATAS.Indicators.Custom
             context.FillRectangle(_hoverEndPlus ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(230, 22, 31, 51), _chartEndPlusRect);
             context.DrawRectangle(new RenderPen(Color.FromArgb(200, 100, 116, 139), 1f), _chartEndPlusRect);
             context.DrawString("+", btnFont, Color.White, _chartEndPlusRect.Left + 5, _chartEndPlusRect.Top + 2);
+
+            // 5. Encadrement Synchronisation PnL Réel & Compte Actif ATAS directement sur la Charte
+            int acctY = schedY + schedH + 5;
+            int acctH = 28;
+            string acctNameShort = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName) ? botPerf.ActiveAccountName : "Compte Actif";
+            string syncBtnTxt = _syncPnlWithActiveAccount
+                ? (botPerf.IsSyncedWithActiveAccount ? $"SYNC COMPTE: {acctNameShort}" : "SYNC COMPTE: ATTENTE ATAS")
+                : "SYNC COMPTE: OFF (SIM)";
+
+            string scopeBtnTxt = _accountPnlScope == ActiveAccountPnlScope.ActivePortfolioTotal
+                ? "PORTÉE: COMPTE GLOBAL"
+                : "PORTÉE: INSTRUMENT";
+
+            string realPnlTxt = $"PNL RÉEL: {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ (Réal: {botPerf.RealizedPnlUsd:+0;-0;0}$ | Lat: {botPerf.UnrealizedPnlUsd:+0;-0;0}$)";
+
+            Size sSyncBtn = context.MeasureString(syncBtnTxt, subFont);
+            Size sScopeBtn = context.MeasureString(scopeBtnTxt, subFont);
+            Size sPnlTxt = context.MeasureString(realPnlTxt, btnFont);
+
+            int wSyncBtn = sSyncBtn.Width + 14;
+            int wScopeBtn = sScopeBtn.Width + 14;
+            int acctFrameW = Math.Max(frameW, wSyncBtn + wScopeBtn + sPnlTxt.Width + 32);
+
+            Rectangle acctFrameRect = new Rectangle(startX, acctY, acctFrameW, acctH);
+            Color acctFrameBorder = botPerf.IsSyncedWithActiveAccount
+                ? Color.FromArgb(235, 0, 255, 136)
+                : (_syncPnlWithActiveAccount ? Color.FromArgb(220, 251, 191, 36) : Color.FromArgb(190, 100, 116, 139));
+
+            context.FillRectangle(Color.FromArgb(238, 10, 16, 28), acctFrameRect);
+            context.DrawRectangle(new RenderPen(acctFrameBorder, 1.5f), acctFrameRect);
+
+            _chartAcctSyncToggleRect = new Rectangle(startX + 5, acctY + 4, wSyncBtn, acctH - 8);
+            Color syncBtnBg = _syncPnlWithActiveAccount
+                ? (_hoverAcctSyncBtn ? Color.FromArgb(245, 5, 122, 85) : Color.FromArgb(230, 6, 78, 59))
+                : (_hoverAcctSyncBtn ? Color.FromArgb(245, 71, 85, 105) : Color.FromArgb(230, 30, 41, 59));
+            context.FillRectangle(syncBtnBg, _chartAcctSyncToggleRect);
+            context.DrawRectangle(new RenderPen(_syncPnlWithActiveAccount ? Color.FromArgb(255, 0, 255, 136) : Color.FromArgb(200, 148, 163, 184), 1.2f), _chartAcctSyncToggleRect);
+            context.DrawString(syncBtnTxt, subFont, Color.White, _chartAcctSyncToggleRect.Left + 7, _chartAcctSyncToggleRect.Top + 3);
+
+            _chartAcctScopeToggleRect = new Rectangle(_chartAcctSyncToggleRect.Right + 6, acctY + 4, wScopeBtn, acctH - 8);
+            Color scopeBtnBg = _hoverAcctScopeBtn ? Color.FromArgb(245, 30, 58, 138) : Color.FromArgb(230, 15, 23, 42);
+            context.FillRectangle(scopeBtnBg, _chartAcctScopeToggleRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(220, 56, 189, 248), 1.1f), _chartAcctScopeToggleRect);
+            context.DrawString(scopeBtnTxt, subFont, Color.FromArgb(255, 186, 230, 253), _chartAcctScopeToggleRect.Left + 7, _chartAcctScopeToggleRect.Top + 3);
+
+            Color realPnlCol = botPerf.TotalPnlUsd >= 0m
+                ? Color.FromArgb(255, 0, 255, 136)
+                : Color.FromArgb(255, 255, 65, 85);
+            context.DrawString(realPnlTxt, btnFont, realPnlCol, _chartAcctScopeToggleRect.Right + 10, acctY + 6);
         }
     }
 }
