@@ -1443,6 +1443,25 @@ namespace ATAS.Indicators.Custom
             metrics.NetOptionsDelta = Math.Round(callFlow - putFlow, 0);
             metrics.SweepCount = sweeps;
 
+            // 5. Métriques Quant Senior : ATR(N), Z-Score Max, Divergence CVD & Écart VWAP
+            metrics.AtrPoints = ComputeQuantAtr(bar, tickSize);
+            decimal maxVZ = 0m, maxDZ = 0m;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                if (rows[i].VolumeZScore > maxVZ) maxVZ = rows[i].VolumeZScore;
+                if (rows[i].DeltaZScore > maxDZ) maxDZ = rows[i].DeltaZScore;
+            }
+            metrics.MaxVolumeZScore = maxVZ;
+            metrics.MaxDeltaZScore = maxDZ;
+
+            // Divergence CVD d'Absorption : Bougie haussière avec Delta négatif absorbé, ou Bougie baissière avec Delta positif absorbé
+            bool bullCvdDiv = candle.Close >= candle.Open && candle.Delta < 0m;
+            bool bearCvdDiv = candle.Close <= candle.Open && candle.Delta > 0m;
+            metrics.HasCvdAbsorptionDivergence = bullCvdDiv || bearCvdDiv;
+
+            decimal atrSafe = Math.Max(tickSize * 2m, metrics.AtrPoints);
+            metrics.VwapZScore = Math.Round((candle.Close - vwap) / atrSafe, 2);
+
             if (metrics.CallFlowPct >= _optionsMinDominancePct)
                 metrics.OptionsBias = 1;
             else if (metrics.PutFlowPct >= _optionsMinDominancePct)
@@ -1453,8 +1472,41 @@ namespace ATAS.Indicators.Custom
             return metrics;
         }
 
+        private decimal ComputeQuantAtr(int bar, decimal tickSize)
+        {
+            int n = Math.Max(3, _quantAtrPeriod);
+            int start = Math.Max(0, bar - n + 1);
+            decimal sumTr = 0m;
+            int count = 0;
+
+            for (int b = start; b <= bar; b++)
+            {
+                var c = GetCandle(b);
+                decimal tr = c.High - c.Low;
+                if (b > 0)
+                {
+                    var prev = GetCandle(b - 1);
+                    decimal hc = Math.Abs(c.High - prev.Close);
+                    decimal lc = Math.Abs(c.Low - prev.Close);
+                    if (hc > tr) tr = hc;
+                    if (lc > tr) tr = lc;
+                }
+                sumTr += tr;
+                count++;
+            }
+
+            decimal atr = count > 0 ? sumTr / count : tickSize * 8m;
+            return Math.Max(tickSize * 2m, Math.Round(atr / tickSize, 0) * tickSize);
+        }
+
+        private static decimal RoundToTick(decimal price, decimal tickSize)
+        {
+            if (tickSize <= 0m) return Math.Round(price, 2);
+            return Math.Round(price / tickSize, 0, MidpointRounding.AwayFromZero) * tickSize;
+        }
+
         // =====================================================================
-        // Évaluation du Signal Visuel Achat / Vente (Confluence Footprint + Flux d'Options)
+        // Évaluation du Signal Visuel & Quant Achat / Vente (Confluence Footprint + Flux d'Options + Modèle Quant)
         // =====================================================================
         private VisualTradeSignal EvaluateBuySellSignal(
             int bar,
@@ -1472,108 +1524,149 @@ namespace ATAS.Indicators.Custom
                 return sig;
 
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
+            decimal atr = Math.Max(step * 2m, opt.AtrPoints);
             bool hasBullAbs = _enableAbsorption && bestBullAbsIdx >= 0;
             bool hasBearAbs = _enableAbsorption && bestBearAbsIdx >= 0;
             bool hasTrapSellers = _enableTrappedTraders && bestTrappedSellersIdx >= 0;
             bool hasTrapBuyers = _enableTrappedTraders && bestTrappedBuyersIdx >= 0;
 
-            // --- 1. Vérification Signal ACHAT (BUY ▲) ---
+            // --- 1. Vérification Signal Quant ACHAT (BUY ▲) ---
             if ((hasBullAbs || hasTrapSellers) && !hasBearAbs)
             {
+                ClusterRow keyRow = hasBullAbs ? rows[bestBullAbsIdx] : rows[bestTrappedSellersIdx];
+                decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
+
+                bool quantZOk = !_enableQuantFilter || clusterZ >= _quantMinClusterZScore || (hasBullAbs && hasTrapSellers);
                 bool optionsOk = !_enableAtasOptionsFlow
                     || !_requireOptionsFlowConfirmation
                     || opt.OptionsBias > 0
                     || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 50m);
 
-                if (optionsOk)
+                if (quantZOk && optionsOk)
                 {
-                    int score = 55;
+                    int score = 52;
                     if (hasBullAbs && hasTrapSellers) score += 18;
-                    else if (hasBullAbs) score += 10;
-                    else score += 8;
+                    else if (hasBullAbs) score += 11;
+                    else score += 9;
 
                     if (opt.CallFlowPct >= _optionsMinDominancePct)
-                        score += (int)Math.Min(18m, (opt.CallFlowPct - 50m) * 0.7m);
-                    if (opt.SweepCount > 0)
-                        score += Math.Min(6, opt.SweepCount * 2);
-                    if (opt.OiDelta > 0m || candle.Close > candle.Open)
+                        score += (int)Math.Min(16m, (opt.CallFlowPct - 50m) * 0.65m);
+                    if (clusterZ >= 1.5m)
+                        score += (int)Math.Min(8m, clusterZ * 3m);
+                    if (opt.HasCvdAbsorptionDivergence)
                         score += 5;
+                    if (opt.SweepCount > 0)
+                        score += Math.Min(5, opt.SweepCount * 2);
+                    if (opt.OiDelta > 0m || candle.Close > candle.Open)
+                        score += 4;
 
-                    score = Math.Clamp(score, 55, 99);
+                    score = Math.Clamp(score, 50, 99);
 
-                    decimal triggerPrice = hasBullAbs
-                        ? rows[bestBullAbsIdx].Price
-                        : rows[bestTrappedSellersIdx].Price;
-
-                    string reason = (hasBullAbs && hasTrapSellers)
-                        ? "ABS BID + V.PIÉGÉS + CALL FLOW"
-                        : (hasBullAbs ? "ABS BID + CALL FLOW" : "V.PIÉGÉS + CALL FLOW");
-
-                    return new VisualTradeSignal
+                    if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
                     {
-                        Bar = bar,
-                        Direction = 1,
-                        TriggerPrice = triggerPrice,
-                        EntryPrice = candle.Close,
-                        StopPrice = candle.Low - step * 2m,
-                        ConfluenceScore = score,
-                        CallFlowPct = opt.CallFlowPct,
-                        PutFlowPct = opt.PutFlowPct,
-                        PutCallRatio = opt.PutCallRatio,
-                        OiDelta = opt.OiDelta,
-                        SweepCount = opt.SweepCount,
-                        ReasonTag = reason
-                    };
+                        decimal triggerPrice = keyRow.Price;
+                        decimal entryPrice = candle.Close;
+                        decimal atrStopDist = Math.Max(step * 2m, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
+                        decimal stopPrice = RoundToTick(Math.Min(candle.Low - step, entryPrice - atrStopDist), tickSize);
+                        decimal riskPts = Math.Max(step, entryPrice - stopPrice);
+                        decimal tp1Price = RoundToTick(entryPrice + riskPts * _quantTp1RiskReward, tickSize);
+                        decimal tp2Price = RoundToTick(entryPrice + riskPts * _quantTp2RiskReward, tickSize);
+
+                        string reason = (hasBullAbs && hasTrapSellers)
+                            ? $"ABS+V.PIÉGÉS + CALLS + Z:{clusterZ:0.0}σ"
+                            : (hasBullAbs ? $"ABS BID + CALLS + Z:{clusterZ:0.0}σ" : $"V.PIÉGÉS + CALLS + Z:{clusterZ:0.0}σ");
+
+                        return new VisualTradeSignal
+                        {
+                            Bar = bar,
+                            Direction = 1,
+                            TriggerPrice = triggerPrice,
+                            EntryPrice = entryPrice,
+                            StopPrice = stopPrice,
+                            Tp1Price = tp1Price,
+                            Tp2Price = tp2Price,
+                            RiskRewardRatio = _quantTp2RiskReward,
+                            ClusterZScore = clusterZ,
+                            AtrValue = atr,
+                            ConfluenceScore = score,
+                            CallFlowPct = opt.CallFlowPct,
+                            PutFlowPct = opt.PutFlowPct,
+                            PutCallRatio = opt.PutCallRatio,
+                            OiDelta = opt.OiDelta,
+                            SweepCount = opt.SweepCount,
+                            ReasonTag = reason
+                        };
+                    }
                 }
             }
 
-            // --- 2. Vérification Signal VENTE (SELL ▼) ---
+            // --- 2. Vérification Signal Quant VENTE (SELL ▼) ---
             if ((hasBearAbs || hasTrapBuyers) && !hasBullAbs)
             {
+                ClusterRow keyRow = hasBearAbs ? rows[bestBearAbsIdx] : rows[bestTrappedBuyersIdx];
+                decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
+
+                bool quantZOk = !_enableQuantFilter || clusterZ >= _quantMinClusterZScore || (hasBearAbs && hasTrapBuyers);
                 bool optionsOk = !_enableAtasOptionsFlow
                     || !_requireOptionsFlowConfirmation
                     || opt.OptionsBias < 0
                     || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 50m);
 
-                if (optionsOk)
+                if (quantZOk && optionsOk)
                 {
-                    int score = 55;
+                    int score = 52;
                     if (hasBearAbs && hasTrapBuyers) score += 18;
-                    else if (hasBearAbs) score += 10;
-                    else score += 8;
+                    else if (hasBearAbs) score += 11;
+                    else score += 9;
 
                     if (opt.PutFlowPct >= _optionsMinDominancePct)
-                        score += (int)Math.Min(18m, (opt.PutFlowPct - 50m) * 0.7m);
-                    if (opt.SweepCount > 0)
-                        score += Math.Min(6, opt.SweepCount * 2);
-                    if (opt.OiDelta != 0m || candle.Close < candle.Open)
+                        score += (int)Math.Min(16m, (opt.PutFlowPct - 50m) * 0.65m);
+                    if (clusterZ >= 1.5m)
+                        score += (int)Math.Min(8m, clusterZ * 3m);
+                    if (opt.HasCvdAbsorptionDivergence)
                         score += 5;
+                    if (opt.SweepCount > 0)
+                        score += Math.Min(5, opt.SweepCount * 2);
+                    if (opt.OiDelta != 0m || candle.Close < candle.Open)
+                        score += 4;
 
-                    score = Math.Clamp(score, 55, 99);
+                    score = Math.Clamp(score, 50, 99);
 
-                    decimal triggerPrice = hasBearAbs
-                        ? rows[bestBearAbsIdx].Price
-                        : rows[bestTrappedBuyersIdx].Price;
-
-                    string reason = (hasBearAbs && hasTrapBuyers)
-                        ? "ABS ASK + A.PIÉGÉS + PUT FLOW"
-                        : (hasBearAbs ? "ABS ASK + PUT FLOW" : "A.PIÉGÉS + PUT FLOW");
-
-                    return new VisualTradeSignal
+                    if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
                     {
-                        Bar = bar,
-                        Direction = -1,
-                        TriggerPrice = triggerPrice,
-                        EntryPrice = candle.Close,
-                        StopPrice = candle.High + step * 2m,
-                        ConfluenceScore = score,
-                        CallFlowPct = opt.CallFlowPct,
-                        PutFlowPct = opt.PutFlowPct,
-                        PutCallRatio = opt.PutCallRatio,
-                        OiDelta = opt.OiDelta,
-                        SweepCount = opt.SweepCount,
-                        ReasonTag = reason
-                    };
+                        decimal triggerPrice = keyRow.Price;
+                        decimal entryPrice = candle.Close;
+                        decimal atrStopDist = Math.Max(step * 2m, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
+                        decimal stopPrice = RoundToTick(Math.Max(candle.High + step, entryPrice + atrStopDist), tickSize);
+                        decimal riskPts = Math.Max(step, stopPrice - entryPrice);
+                        decimal tp1Price = RoundToTick(entryPrice - riskPts * _quantTp1RiskReward, tickSize);
+                        decimal tp2Price = RoundToTick(entryPrice - riskPts * _quantTp2RiskReward, tickSize);
+
+                        string reason = (hasBearAbs && hasTrapBuyers)
+                            ? $"ABS+A.PIÉGÉS + PUTS + Z:{clusterZ:0.0}σ"
+                            : (hasBearAbs ? $"ABS ASK + PUTS + Z:{clusterZ:0.0}σ" : $"A.PIÉGÉS + PUTS + Z:{clusterZ:0.0}σ");
+
+                        return new VisualTradeSignal
+                        {
+                            Bar = bar,
+                            Direction = -1,
+                            TriggerPrice = triggerPrice,
+                            EntryPrice = entryPrice,
+                            StopPrice = stopPrice,
+                            Tp1Price = tp1Price,
+                            Tp2Price = tp2Price,
+                            RiskRewardRatio = _quantTp2RiskReward,
+                            ClusterZScore = clusterZ,
+                            AtrValue = atr,
+                            ConfluenceScore = score,
+                            CallFlowPct = opt.CallFlowPct,
+                            PutFlowPct = opt.PutFlowPct,
+                            PutCallRatio = opt.PutCallRatio,
+                            OiDelta = opt.OiDelta,
+                            SweepCount = opt.SweepCount,
+                            ReasonTag = reason
+                        };
+                    }
                 }
             }
 
