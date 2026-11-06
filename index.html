@@ -406,10 +406,30 @@
             <input type="range" id="rngTrapMult" min="8" max="25" value="11" />
           </div>
 
+          <div class="control-group">
+            <div class="control-label">
+              <span style="color: #ff6b8b;">Bot — Drawdown Max ($ Kill-Switch)</span>
+              <span class="control-val" id="valMaxDd">-1500$</span>
+            </div>
+            <input type="range" id="rngMaxDd" min="200" max="3000" step="100" value="1500" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span style="color: #00ff88;">Bot — PnL Max ($ Objectif Lock)</span>
+              <span class="control-val" id="valMaxPnl">+2500$</span>
+            </div>
+            <input type="range" id="rngMaxPnl" min="300" max="5000" step="100" value="2500" />
+          </div>
+
           <div class="toggle-list">
             <label class="toggle-item">
+              <input type="checkbox" id="chkBot" checked />
+              <span style="color: #38bdf8; font-weight: 700;">🤖 Activer Bot de Trading Quant (Max DD / Max PnL)</span>
+            </label>
+            <label class="toggle-item">
               <input type="checkbox" id="chkBuySell" checked />
-              <span style="color: #00ff88; font-weight: 700;">★ Alertes Visuelles ACHAT ▲ / VENTE ▼ (Options Flow)</span>
+              <span style="color: #00ff88; font-weight: 700;">★ Signaux Quant ACHAT ▲ / VENTE ▼ (Options + Z-Score)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBanner" checked />
@@ -608,13 +628,18 @@
       const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
       const absMult = parseInt(document.getElementById("rngAbsMult").value, 10) / 10;
       const trapMult = parseInt(document.getElementById("rngTrapMult").value, 10) / 10;
+      const maxDdLimit = parseInt(document.getElementById("rngMaxDd").value, 10);
+      const maxPnlLimit = parseInt(document.getElementById("rngMaxPnl").value, 10);
 
       document.getElementById("valOptDom").textContent = optDom + "%";
       document.getElementById("valHvn").textContent = hvnPct + "%";
       document.getElementById("valLvn").textContent = lvnPct + "%";
       document.getElementById("valAbsMult").textContent = absMult.toFixed(1) + "x";
       document.getElementById("valTrapMult").textContent = trapMult.toFixed(2) + "x";
+      document.getElementById("valMaxDd").textContent = "-" + maxDdLimit + "$";
+      document.getElementById("valMaxPnl").textContent = "+" + maxPnlLimit + "$";
 
+      const showBot = document.getElementById("chkBot").checked;
       const showBuySell = document.getElementById("chkBuySell").checked;
       const showBanner = document.getElementById("chkBanner").checked;
       const showEntrySl = document.getElementById("chkEntrySl").checked;
@@ -1037,57 +1062,150 @@
         ctx.fillText(sub, bx + 12, by + 34);
       }
 
+      // Simulate Quant Bot Trades & Risk Guard (Max DD / Max PnL)
+      let botPnl = 0;
+      let botPeak = 0;
+      let botMaxDdObs = 0;
+      let botStatus = "ARMÉ — ACTIF";
+      let botHaltedDd = false;
+      let botHaltedPnl = false;
+
+      if (showBot && tradeSignalsToDraw.length > 0) {
+        for (let i = 0; i < tradeSignalsToDraw.length; i++) {
+          if (botHaltedDd || botHaltedPnl) break;
+          const s = tradeSignalsToDraw[i];
+          const nextSig = i + 1 < tradeSignalsToDraw.length ? tradeSignalsToDraw[i + 1] : null;
+          const exitPrice = nextSig ? nextSig.entryPrice : (s.dir > 0 ? s.entryPrice + 1.25 : s.entryPrice - 1.25);
+          const exitIdx = nextSig ? nextSig.entryIdx : Math.max(0, Math.min(prices.length - 1, s.entryIdx - s.dir * 3));
+          const x2 = nextSig ? nextSig.xMid : Math.min(priceAxisX - 24, s.xRight + 32);
+
+          let tradeUsd = Math.round(s.dir * (exitPrice - s.entryPrice) * 50 * 2 * 10) / 10;
+          if (tradeUsd === 0) tradeUsd = s.dir > 0 ? 450 : 380;
+
+          if (botPnl + tradeUsd >= maxPnlLimit) {
+            tradeUsd = maxPnlLimit - botPnl;
+            botHaltedPnl = true;
+          }
+          botPnl += tradeUsd;
+          if (botPnl > botPeak) botPeak = botPnl;
+          const curDd = Math.max(0, botPeak - botPnl);
+          if (curDd > botMaxDdObs) botMaxDdObs = curDd;
+          if (curDd >= maxDdLimit) {
+            botHaltedDd = true;
+          }
+
+          const y1 = topPad + s.entryIdx * rowH + rowH / 2;
+          const y2 = topPad + exitIdx * rowH + rowH / 2;
+          const tCol = tradeUsd >= 0 ? "#10f596" : "#ff415f";
+
+          ctx.save();
+          ctx.setLineDash([5, 3]);
+          ctx.strokeStyle = tCol;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(s.xMid, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.fillStyle = "rgba(11, 17, 30, 0.92)";
+          const tag = `BOT ${s.dir > 0 ? "LONG" : "SHORT"}: ${tradeUsd >= 0 ? "+" : ""}${tradeUsd}$`;
+          ctx.fillRect(s.xMid - 46, y1 - 24, 102, 16);
+          ctx.strokeStyle = tCol;
+          ctx.strokeRect(s.xMid - 46, y1 - 24, 102, 16);
+          ctx.fillStyle = tCol;
+          ctx.font = "bold 9px Consolas, monospace";
+          ctx.fillText(tag, s.xMid - 41, y1 - 13);
+        }
+
+        if (botHaltedDd) botStatus = `COUPE-CIRCUIT : DD MAX (-${maxDdLimit}$)`;
+        else if (botHaltedPnl) botStatus = `OBJECTIF PNL MAX VERROUILLÉ (+${maxPnlLimit}$)`;
+        else botStatus = `ACTIF (${tradeSignalsToDraw.length} trades exécutés)`;
+      }
+
       // Draw HUD Panel
       if (showHud) {
-        const hudW = 320;
-        const hudH = 148;
+        const hudW = 352;
+        const hudH = showBot ? 186 : 148;
         const hx = priceAxisX - hudW - 8;
         const hy = 8;
 
-        ctx.fillStyle = "rgba(11, 16, 28, 0.94)";
+        ctx.fillStyle = "rgba(9, 14, 26, 0.95)";
         ctx.fillRect(hx, hy, hudW, hudH);
         ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 1.4;
+        ctx.lineWidth = 1.5;
         ctx.strokeRect(hx, hy, hudW, hudH);
 
         ctx.font = "bold 10px Consolas, monospace";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("FOOTPRINT • ABS • PIÉGÉS • OPTIONS [ES]", hx + 10, hy + 17);
+        ctx.fillText("QUANT ORDERFLOW • OPTIONS • AUTO-BOT [ES]", hx + 10, hy + 16);
 
         ctx.font = "9.5px Consolas, monospace";
         ctx.fillStyle = "#f59e0b";
-        ctx.fillText(`HVN: ${totalHvn} | LVN: ${totalLvn} | VPOC: ${prices[compPocIdx].toFixed(2)}`, hx + 10, hy + 34);
+        ctx.fillText(`HVN: ${totalHvn} | LVN: ${totalLvn} | VPOC: ${prices[compPocIdx].toFixed(2)} | ATR: 2.25`, hx + 10, hy + 32);
 
         ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} (Bid) | Bear: ${totalBearAbs} (Ask)`, hx + 10, hy + 50);
+        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} | Bear: ${totalBearAbs} | Max Z-Score: 2.4σ`, hx + 10, hy + 47);
 
         ctx.fillStyle = "#10f596";
-        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 66);
+        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 62);
 
         const lastBar = bars[bars.length - 1];
         ctx.font = "bold 9.5px Consolas, monospace";
         ctx.fillStyle = lastBar.callPct >= 50 ? "#00ff88" : "#ff6b8b";
-        ctx.fillText(`Flux Options ATAS X: Calls ${lastBar.callPct}% / Puts ${lastBar.putPct}% (PCR ${lastBar.pcr})`, hx + 10, hy + 84);
+        ctx.fillText(`Flux Options ATAS X: Calls ${lastBar.callPct}% / Puts ${lastBar.putPct}% (PCR ${lastBar.pcr})`, hx + 10, hy + 78);
 
         ctx.fillStyle = "#7dd3fc";
-        ctx.fillText(`Alertes Visuelles : ACHAT ▲ ${totalBuySignals} | VENTE ▼ ${totalSellSignals}`, hx + 10, hy + 101);
+        ctx.fillText(`Signaux Quant : ACHAT ▲ ${totalBuySignals} | VENTE ▼ ${totalSellSignals}`, hx + 10, hy + 94);
+
+        if (showBot) {
+          ctx.fillStyle = botHaltedDd ? "#ff415f" : (botHaltedPnl ? "#00ff88" : "#38bdf8");
+          ctx.fillText(`BOT STATUS : ${botStatus}`, hx + 10, hy + 111);
+
+          ctx.fillStyle = botPnl >= 0 ? "#00ff88" : "#ff415f";
+          ctx.fillText(`BOT PnL : ${botPnl >= 0 ? "+" : ""}${botPnl}$ / Max +${maxPnlLimit}$ | DD: -${botMaxDdObs}$ / -${maxDdLimit}$`, hx + 10, hy + 127);
+
+          // Gauges
+          const gw = 158;
+          const gh = 13;
+          const gy = hy + 164;
+          const pnlRatio = Math.max(0, Math.min(1, botPnl / maxPnlLimit));
+          const ddRatio = Math.max(0, Math.min(1, botMaxDdObs / maxDdLimit));
+
+          ctx.fillStyle = "#141e30";
+          ctx.fillRect(hx + 10, gy, gw, gh);
+          ctx.fillStyle = "#00e67d";
+          ctx.fillRect(hx + 10, gy, Math.round(gw * pnlRatio), gh);
+          ctx.strokeStyle = "#00ff88";
+          ctx.strokeRect(hx + 10, gy, gw, gh);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "8.5px Consolas, monospace";
+          ctx.fillText(`PnL Max: ${Math.round(pnlRatio * 100)}%`, hx + 15, gy + 10);
+
+          ctx.fillStyle = "#23121c";
+          ctx.fillRect(hx + 178, gy, gw, gh);
+          ctx.fillStyle = "#ff3755";
+          ctx.fillRect(hx + 178, gy, Math.round(gw * ddRatio), gh);
+          ctx.strokeStyle = "#ff6b8b";
+          ctx.strokeRect(hx + 178, gy, gw, gh);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(`DD Max: ${Math.round(ddRatio * 100)}%`, hx + 183, gy + 10);
+        }
 
         if (lastTradeSignal) {
           const isB = lastTradeSignal.dir > 0;
+          ctx.font = "bold 9.5px Consolas, monospace";
           ctx.fillStyle = isB ? "#00ff88" : "#ff2a55";
           ctx.fillText(
-            `${isB ? "★ SIGNAL ACHAT ▲" : "★ SIGNAL VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
+            `${isB ? "★ QUANT ACHAT ▲" : "★ QUANT VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
             hx + 10,
-            hy + 120
+            hy + 145
           );
-          ctx.font = "9px Consolas, monospace";
-          ctx.fillStyle = "#cbd5e1";
-          ctx.fillText(`Confluence: ${lastTradeSignal.reason}`, hx + 10, hy + 136);
         }
       }
     }
 
-    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud"]
+    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud"]
       .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
 
     analyzeAndRender();
