@@ -255,6 +255,93 @@
       overflow: hidden;
       position: relative;
     }
+    .chart-bot-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(9, 13, 22, 0.96) 100%);
+      border-bottom: 1px solid var(--border);
+    }
+    .chart-bot-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .chart-bot-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-family: "Consolas", "Monaco", monospace;
+      font-weight: 700;
+      font-size: 0.84rem;
+      cursor: pointer;
+      transition: all 0.16s ease;
+      border: 1.5px solid #00ff88;
+      background: rgba(6, 78, 59, 0.92);
+      color: #ffffff;
+      box-shadow: 0 0 14px rgba(0, 255, 136, 0.25);
+    }
+    .chart-bot-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 18px rgba(0, 255, 136, 0.45);
+    }
+    .chart-bot-btn.off {
+      background: rgba(30, 41, 59, 0.92);
+      border-color: #64748b;
+      color: #cbd5e1;
+      box-shadow: none;
+    }
+    .chart-bot-btn .led {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #00ff88;
+      box-shadow: 0 0 8px #00ff88;
+      display: inline-block;
+    }
+    .chart-bot-btn.off .led {
+      background: #ef4444;
+      box-shadow: 0 0 6px #ef4444;
+    }
+    .chart-sub-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      border-radius: 6px;
+      font-family: "Consolas", "Monaco", monospace;
+      font-weight: 600;
+      font-size: 0.78rem;
+      cursor: pointer;
+      background: rgba(15, 23, 42, 0.9);
+      color: #bae6fd;
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      transition: all 0.15s ease;
+    }
+    .chart-sub-btn:hover {
+      border-color: #38bdf8;
+      background: rgba(30, 58, 138, 0.65);
+      color: #ffffff;
+    }
+    .chart-sub-btn.live {
+      background: rgba(88, 28, 135, 0.85);
+      border-color: #f59e0b;
+      color: #fde047;
+    }
+    .chart-bot-telemetry {
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
     canvas {
       display: block;
       width: 100%;
