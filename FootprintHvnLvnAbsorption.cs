@@ -291,9 +291,9 @@ namespace ATAS.Indicators.Custom
             set { _absMinVolume = value; RecalculateValues(); }
         }
 
-        private decimal _absVolumeMultiplier = 1.6m;
+        private decimal _absVolumeMultiplier = 1.5m;
         [Display(Name = "Multiplicateur de Volume vs Moyenne Bougie", GroupName = GrpAbsorption, Order = 30,
-            Description = "Le volume du cluster doit être au moins X fois supérieur au volume moyen par niveau de la bougie (ex: 1.6x).")]
+            Description = "Le volume du cluster doit être au moins X fois supérieur au volume moyen par niveau de la bougie (ex: 1.5x).")]
         [Range(1.0, 10.0)]
         public decimal AbsVolumeMultiplier
         {
@@ -301,7 +301,7 @@ namespace ATAS.Indicators.Custom
             set { _absVolumeMultiplier = value; RecalculateValues(); }
         }
 
-        private int _absMinDominantPct = 62;
+        private int _absMinDominantPct = 60;
         [Display(Name = "Dominance Minimale Bid ou Ask (%)", GroupName = GrpAbsorption, Order = 40,
             Description = "Pourcentage minimum du côté agressif absorbé : Bid/(Bid+Ask) en bas ou Ask/(Bid+Ask) en haut.")]
         [Range(50, 99)]
@@ -320,7 +320,7 @@ namespace ATAS.Indicators.Custom
             set { _absMinAbsDelta = value; RecalculateValues(); }
         }
 
-        private decimal _absDiagonalRatio = 1.8m;
+        private decimal _absDiagonalRatio = 1.6m;
         [Display(Name = "Ratio d'Imbalance Diagonale Min", GroupName = GrpAbsorption, Order = 60,
             Description = "Ratio diagonal Bid vs Ask supérieur (ou Ask vs Bid inférieur). Mettre 1.0 pour désactiver ce filtre.")]
         [Range(1.0, 20.0)]
