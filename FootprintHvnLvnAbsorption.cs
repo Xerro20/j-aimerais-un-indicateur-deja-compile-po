@@ -975,6 +975,16 @@ namespace ATAS.Indicators.Custom
         private int _lastLiveBotOrderDir = 0;
         private bool _liveKillSwitchExecuted;
 
+        // Zones cliquables & états de survol du Bouton d'Activation du Bot sur la Charte
+        private Rectangle _chartBotToggleBtnRect = Rectangle.Empty;
+        private Rectangle _chartBotModeBtnRect = Rectangle.Empty;
+        private Rectangle _chartBotResetBtnRect = Rectangle.Empty;
+        private Rectangle _hudBotToggleBtnRect = Rectangle.Empty;
+        private bool _hoverBotToggleBtn;
+        private bool _hoverBotModeBtn;
+        private bool _hoverBotResetBtn;
+        private int _manualResetBarIndex = -1;
+
         // =====================================================================
         // Constructeur
         // =====================================================================
@@ -994,6 +1004,67 @@ namespace ATAS.Indicators.Custom
             DataSeries.Add(_sellAlertSeries);
             DataSeries.Add(_botCumPnlSeries);
             DataSeries.Add(_botDrawdownSeries);
+        }
+
+        // =====================================================================
+        // Gestion des clics souris directement sur la Charte ATAS X (Bouton Bot ON/OFF)
+        // =====================================================================
+        public override bool ProcessMouseClick(RenderControlMouseEventArgs e)
+        {
+            if (e.Button == RenderControlMouseButtons.Left)
+            {
+                Point pt = e.Location;
+                if ((ShowChartBotToggleButton && _chartBotToggleBtnRect.Contains(pt)) ||
+                    (ShowHudPanel && _hudBotToggleBtnRect.Contains(pt)))
+                {
+                    _enableTradingBot = !_enableTradingBot;
+                    if (!_enableTradingBot)
+                        _liveKillSwitchExecuted = false;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartBotModeBtnRect.Contains(pt))
+                {
+                    _botMode = _botMode == BotExecutionMode.BacktestAndPaperOnly
+                        ? BotExecutionMode.LiveAutoTradingManager
+                        : BotExecutionMode.BacktestAndPaperOnly;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartBotResetBtnRect.Contains(pt))
+                {
+                    _manualResetBarIndex = Math.Max(0, CurrentBar - 1);
+                    _liveKillSwitchExecuted = false;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+            }
+
+            return base.ProcessMouseClick(e);
+        }
+
+        public override bool ProcessMouseMove(RenderControlMouseEventArgs e)
+        {
+            Point pt = e.Location;
+            bool hToggle = (ShowChartBotToggleButton && _chartBotToggleBtnRect.Contains(pt)) ||
+                           (ShowHudPanel && _hudBotToggleBtnRect.Contains(pt));
+            bool hMode = ShowChartBotToggleButton && _chartBotModeBtnRect.Contains(pt);
+            bool hReset = ShowChartBotToggleButton && _chartBotResetBtnRect.Contains(pt);
+
+            if (hToggle != _hoverBotToggleBtn || hMode != _hoverBotModeBtn || hReset != _hoverBotResetBtn)
+            {
+                _hoverBotToggleBtn = hToggle;
+                _hoverBotModeBtn = hMode;
+                _hoverBotResetBtn = hReset;
+                RedrawChart();
+            }
+
+            return base.ProcessMouseMove(e);
         }
 
         // =====================================================================
@@ -2373,6 +2444,22 @@ namespace ATAS.Indicators.Custom
                     latestTradeSignal, latestBarOptMetrics,
                     botPerf);
             }
+            else
+            {
+                _hudBotToggleBtnRect = Rectangle.Empty;
+            }
+
+            // 9. Rendu du Bouton Interactif d'Activation du Bot directement sur la Charte (ON/OFF + Mode + Reset)
+            if (ShowChartBotToggleButton)
+            {
+                RenderOnChartBotControlButton(context, chartRegion, botPerf);
+            }
+            else
+            {
+                _chartBotToggleBtnRect = Rectangle.Empty;
+                _chartBotModeBtnRect = Rectangle.Empty;
+                _chartBotResetBtnRect = Rectangle.Empty;
+            }
         }
 
         // =====================================================================
@@ -2415,6 +2502,10 @@ namespace ATAS.Indicators.Custom
                 while (sessionStart > lookbackStart && !IsNewSession(sessionStart))
                     sessionStart--;
                 lookbackStart = sessionStart;
+            }
+            if (_manualResetBarIndex > lookbackStart && _manualResetBarIndex <= upToBar)
+            {
+                lookbackStart = _manualResetBarIndex;
             }
 
             int activeDir = 0;
@@ -2993,7 +3084,7 @@ namespace ATAS.Indicators.Custom
             if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
                 x = Math.Max(x, chartRegion.Left + 380);
 
-            int y = chartRegion.Top + 10;
+            int y = ShowChartBotToggleButton ? chartRegion.Top + 44 : chartRegion.Top + 10;
 
             Rectangle bannerRect = new Rectangle(x, y, w, h);
             context.FillRectangle(bg, bannerRect);
@@ -3334,6 +3425,10 @@ namespace ATAS.Indicators.Custom
                 lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
                 lines.Add(($"STATS QUANT BOT     : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
             }
+            else
+            {
+                lines.Add(("BOT STATUS          : DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte pour activer)", Color.FromArgb(255, 148, 163, 184), true));
+            }
 
             if (latestSignal.HasValue)
             {
@@ -3373,7 +3468,7 @@ namespace ATAS.Indicators.Custom
             }
 
             int gaugeAreaH = _enableTradingBot ? 34 : 0;
-            int boxW = Math.Max(420, maxW + pad * 2);
+            int boxW = Math.Max(460, maxW + pad * 2);
             int boxH = lines.Count * lineH + pad * 2 + gaugeAreaH;
 
             int x = HudPosition switch
@@ -3391,6 +3486,24 @@ namespace ATAS.Indicators.Custom
             Rectangle boxRect = new Rectangle(x, y, boxW, boxH);
             context.FillRectangle(Color.FromArgb(228, 9, 14, 26), boxRect);
             context.DrawRectangle(new RenderPen(Color.FromArgb(230, 56, 189, 248), 1.6f), boxRect);
+
+            // Bouton cliquable ON/OFF intégré dans l'en-tête supérieur droit du HUD
+            string hudBtnTxt = _enableTradingBot ? "● BOT : ON" : "○ BOT : OFF";
+            Size hudBtnSz = context.MeasureString(hudBtnTxt, bodyFont);
+            int hudBtnW = hudBtnSz.Width + 16;
+            int hudBtnH = 20;
+            _hudBotToggleBtnRect = new Rectangle(x + boxW - hudBtnW - 8, y + 6, hudBtnW, hudBtnH);
+
+            Color hudBtnBg = _enableTradingBot
+                ? (_hoverBotToggleBtn ? Color.FromArgb(245, 16, 185, 129) : Color.FromArgb(225, 6, 95, 70))
+                : (_hoverBotToggleBtn ? Color.FromArgb(245, 71, 85, 105) : Color.FromArgb(225, 30, 41, 59));
+            Color hudBtnBorder = _enableTradingBot
+                ? Color.FromArgb(255, 0, 255, 136)
+                : Color.FromArgb(220, 148, 163, 184);
+
+            context.FillRectangle(hudBtnBg, _hudBotToggleBtnRect);
+            context.DrawRectangle(new RenderPen(hudBtnBorder, _hoverBotToggleBtn ? 2f : 1.3f), _hudBotToggleBtnRect);
+            context.DrawString(hudBtnTxt, bodyFont, Color.White, _hudBotToggleBtnRect.Left + 8, _hudBotToggleBtnRect.Top + 2);
 
             int curY = y + pad;
             for (int i = 0; i < lines.Count; i++)
@@ -3441,6 +3554,108 @@ namespace ATAS.Indicators.Custom
                 string ddLbl = $"DD Max: {(ddRatio * 100m):0}% (-{botPerf.MaxObservedDrawdownUsd:0}$/-{_botMaxDrawdownUsd:0}$)";
                 context.DrawString(ddLbl, bodyFont, Color.White, ddBg.Left + 5, ddBg.Top - 1);
             }
+        }
+
+        // =====================================================================
+        // Bouton Interactif d'Activation du Bot directement sur la Charte ATAS X
+        // =====================================================================
+        private void RenderOnChartBotControlButton(
+            RenderContext context,
+            Rectangle chartRegion,
+            BotPerformanceState botPerf)
+        {
+            var btnFont = new RenderFont("Consolas", 10, FontStyle.Bold);
+            var subFont = new RenderFont("Consolas", 9);
+
+            string mainTxt = _enableTradingBot
+                ? (botPerf.IsHaltedByMaxDrawdown
+                    ? "BOT QUANT : STOP DD MAX"
+                    : (botPerf.IsHaltedByMaxProfit ? "BOT QUANT : LOCK PNL MAX" : "BOT QUANT : ON (ACTIF)"))
+                : "BOT QUANT : OFF (CLIQUEZ)";
+
+            string modeTxt = _botMode == BotExecutionMode.LiveAutoTradingManager
+                ? "MODE: LIVE ATAS"
+                : "MODE: SIM/PAPER";
+
+            string resetTxt = "RESET";
+
+            Size sMain = context.MeasureString(mainTxt, btnFont);
+            Size sMode = context.MeasureString(modeTxt, subFont);
+            Size sReset = context.MeasureString(resetTxt, subFont);
+
+            int h = 28;
+            int wMain = sMain.Width + 28;
+            int wMode = sMode.Width + 16;
+            int wReset = sReset.Width + 16;
+
+            int startX = chartRegion.Left + 14;
+            int startY = chartRegion.Top + 10;
+
+            if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
+            {
+                startX = chartRegion.Right - (wMain + wMode + wReset + 28);
+            }
+
+            _chartBotToggleBtnRect = new Rectangle(startX, startY, wMain, h);
+            _chartBotModeBtnRect = new Rectangle(_chartBotToggleBtnRect.Right + 6, startY, wMode, h);
+            _chartBotResetBtnRect = new Rectangle(_chartBotModeBtnRect.Right + 6, startY, wReset, h);
+
+            // 1. Bouton Principal ON / OFF du Bot
+            Color mainBg;
+            Color mainBorder;
+            Color ledCol;
+
+            if (!_enableTradingBot)
+            {
+                mainBg = _hoverBotToggleBtn ? Color.FromArgb(245, 51, 65, 85) : Color.FromArgb(235, 17, 24, 39);
+                mainBorder = _hoverBotToggleBtn ? Color.FromArgb(255, 56, 189, 248) : Color.FromArgb(220, 100, 116, 139);
+                ledCol = Color.FromArgb(255, 239, 68, 68);
+            }
+            else if (botPerf.IsHaltedByMaxDrawdown)
+            {
+                mainBg = _hoverBotToggleBtn ? Color.FromArgb(245, 127, 29, 29) : Color.FromArgb(235, 69, 10, 10);
+                mainBorder = Color.FromArgb(255, 255, 65, 85);
+                ledCol = Color.FromArgb(255, 255, 65, 85);
+            }
+            else
+            {
+                mainBg = _hoverBotToggleBtn ? Color.FromArgb(245, 5, 122, 85) : Color.FromArgb(235, 6, 78, 59);
+                mainBorder = Color.FromArgb(255, 0, 255, 136);
+                ledCol = Color.FromArgb(255, 0, 255, 136);
+            }
+
+            context.FillRectangle(mainBg, _chartBotToggleBtnRect);
+            context.DrawRectangle(new RenderPen(mainBorder, _hoverBotToggleBtn ? 2.2f : 1.6f), _chartBotToggleBtnRect);
+
+            // Voyant lumineux LED (ON = Vert Néon, OFF = Rouge)
+            Rectangle ledRect = new Rectangle(_chartBotToggleBtnRect.Left + 9, _chartBotToggleBtnRect.Top + (h - 10) / 2, 10, 10);
+            context.FillEllipse(ledCol, ledRect);
+            context.DrawString(mainTxt, btnFont, Color.White, _chartBotToggleBtnRect.Left + 23, _chartBotToggleBtnRect.Top + 6);
+
+            // 2. Bouton Mode d'exécution (SIM / LIVE)
+            bool isLive = _botMode == BotExecutionMode.LiveAutoTradingManager;
+            Color modeBg = _hoverBotModeBtn
+                ? Color.FromArgb(245, 30, 58, 138)
+                : (isLive ? Color.FromArgb(235, 88, 28, 135) : Color.FromArgb(235, 15, 23, 42));
+            Color modeBorder = isLive
+                ? Color.FromArgb(255, 245, 158, 11)
+                : Color.FromArgb(220, 56, 189, 248);
+
+            context.FillRectangle(modeBg, _chartBotModeBtnRect);
+            context.DrawRectangle(new RenderPen(modeBorder, _hoverBotModeBtn ? 2f : 1.4f), _chartBotModeBtnRect);
+            context.DrawString(modeTxt, subFont, isLive ? Color.FromArgb(255, 253, 224, 71) : Color.FromArgb(255, 186, 230, 253), _chartBotModeBtnRect.Left + 8, _chartBotModeBtnRect.Top + 7);
+
+            // 3. Bouton Reset Session / Kill-Switch
+            Color rstBg = _hoverBotResetBtn
+                ? Color.FromArgb(245, 71, 85, 105)
+                : Color.FromArgb(235, 15, 23, 42);
+            Color rstBorder = _hoverBotResetBtn
+                ? Color.FromArgb(255, 251, 191, 36)
+                : Color.FromArgb(200, 100, 116, 139);
+
+            context.FillRectangle(rstBg, _chartBotResetBtnRect);
+            context.DrawRectangle(new RenderPen(rstBorder, _hoverBotResetBtn ? 2f : 1.3f), _chartBotResetBtnRect);
+            context.DrawString(resetTxt, subFont, Color.FromArgb(255, 226, 232, 240), _chartBotResetBtnRect.Left + 8, _chartBotResetBtnRect.Top + 7);
         }
     }
 }
