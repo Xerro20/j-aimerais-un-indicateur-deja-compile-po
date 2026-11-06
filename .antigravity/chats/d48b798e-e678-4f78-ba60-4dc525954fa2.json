@@ -172,6 +172,18 @@
       "created_at": "2026-11-06T08:47:46.960Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "8c36fc5a-9772-471c-9f69-ebddfdf2c075",
+      "role": "user",
+      "content": "- ajoute moi un bouton d'activation du bot sur la charte directement.",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-06T09:18:21.369Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
