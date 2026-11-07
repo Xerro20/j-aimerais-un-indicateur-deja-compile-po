@@ -3102,6 +3102,13 @@ namespace ATAS.Indicators.Custom
             // Synchronise le PnL Réel (Réalisé + Latent), la Position ouverte, le Solde et le Drawdown avec le Compte Actif ATAS
             SynchronizeWithActiveAccount(lastBar, tickSize, ref botPerf);
 
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && lastBar >= 0)
+            {
+                decimal renderPx = TradingManager?.Security?.LastTradePrice ?? GetCandle(lastBar).Close;
+                if (renderPx > 0m)
+                    CheckLivePositionTargetsOnTick(renderPx);
+            }
+
             if (_enableTradingBot && ShowBotExecutionOnChart && botTrades.Count > 0)
             {
                 RenderBotTradesOnChart(context, botTrades, firstBar, lastBar, boldFont, cellFont);
@@ -3786,8 +3793,18 @@ namespace ATAS.Indicators.Custom
 
                 state.ActiveDirection = realDir;
                 state.ActiveContracts = realQty;
-                if (realDir != 0 && avgPrice > 0m)
-                    state.ActiveEntryPrice = avgPrice;
+                if (realDir != 0)
+                {
+                    if (avgPrice > 0m)
+                        state.ActiveEntryPrice = avgPrice;
+                    if (_liveTrackedDir == realDir && _liveTrackedStopPrice > 0m)
+                    {
+                        state.ActiveStopPrice = _liveTrackedStopPrice;
+                        state.ActiveTp1Price = _liveTrackedTp1Price;
+                        state.ActiveTp2Price = _liveTrackedTp2Price;
+                        state.ActiveTp1Hit = _liveTrackedTp1Hit;
+                    }
+                }
 
                 if (realTotalTrades > 0)
                 {
@@ -4121,24 +4138,35 @@ namespace ATAS.Indicators.Custom
                 if (absQty <= 0)
                     return;
 
+                int curBarIdx = Math.Max(0, CurrentBar - 1);
+                decimal checkFavPrice = livePrice;
+                if (CurrentBar > 0 && curBarIdx > _liveTrackedSignalBar)
+                {
+                    var curC = GetCandle(curBarIdx);
+                    checkFavPrice = _liveTrackedDir > 0
+                        ? Math.Max(livePrice, curC.High)
+                        : Math.Min(livePrice, curC.Low);
+                }
+
                 if (_liveMaxFavorablePrice <= 0m)
-                    _liveMaxFavorablePrice = livePrice;
-                else if (_liveTrackedDir > 0 && livePrice > _liveMaxFavorablePrice)
-                    _liveMaxFavorablePrice = livePrice;
-                else if (_liveTrackedDir < 0 && livePrice < _liveMaxFavorablePrice)
-                    _liveMaxFavorablePrice = livePrice;
+                    _liveMaxFavorablePrice = checkFavPrice;
+                else if (_liveTrackedDir > 0 && checkFavPrice > _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = checkFavPrice;
+                else if (_liveTrackedDir < 0 && checkFavPrice < _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = checkFavPrice;
 
                 decimal tp1DistPts = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
                 decimal tp2DistPts = Math.Max(tp1DistPts + step, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
                 decimal tp1TargetUsd = tp1DistPts * pointVal * absQty;
                 decimal tp2TargetUsd = tp2DistPts * pointVal * absQty;
-                decimal openUnrealizedUsd = pos.UnrealizedPnL ?? (_liveTrackedDir * (livePrice - _liveTrackedEntryPrice) * pointVal * absQty);
+                decimal markToMarketUsd = _liveTrackedDir * (livePrice - _liveTrackedEntryPrice) * pointVal * absQty;
+                decimal openUnrealizedUsd = (pos.UnrealizedPnL != 0m) ? pos.UnrealizedPnL : markToMarketUsd;
 
-                bool tp2Hit = (_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp2Price) : (livePrice <= _liveTrackedTp2Price)) ||
+                bool tp2Hit = (_liveTrackedDir > 0 ? (checkFavPrice >= _liveTrackedTp2Price) : (checkFavPrice <= _liveTrackedTp2Price)) ||
                               (tp2TargetUsd > 0m && openUnrealizedUsd >= tp2TargetUsd);
 
                 bool tp1Hit = !_liveTrackedTp1Hit &&
-                              ((_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp1Price) : (livePrice <= _liveTrackedTp1Price)) ||
+                              ((_liveTrackedDir > 0 ? (checkFavPrice >= _liveTrackedTp1Price) : (checkFavPrice <= _liveTrackedTp1Price)) ||
                                (tp1TargetUsd > 0m && openUnrealizedUsd >= tp1TargetUsd));
 
                 // 1. Prise de profit finale TP2
@@ -4339,7 +4367,7 @@ namespace ATAS.Indicators.Custom
             int xE = ChartInfo!.GetXByBar(barIndex + 1, true);
             int span = xE - xS;
             if (span <= 4)
-                span = Math.Max(8, (int)(ChartInfo.PriceChartContainer?.BarsWidth ?? 12));
+                span = Math.Max(8, (int)(ChartInfo!.PriceChartContainer?.BarsWidth ?? 12));
             return xS + span / 2;
         }
 
