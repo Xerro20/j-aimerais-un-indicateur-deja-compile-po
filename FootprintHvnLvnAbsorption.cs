@@ -1394,6 +1394,12 @@ namespace ATAS.Indicators.Custom
         private void OnTradingManagerPositionChanged(Position position)
         {
             CheckRealtimeAccountKillSwitch();
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
+            {
+                decimal lastPx = TradingManager?.Security?.LastTradePrice ?? (CurrentBar > 0 ? GetCandle(CurrentBar - 1).Close : 0m);
+                if (lastPx > 0m)
+                    CheckLivePositionTargetsOnTick(lastPx);
+            }
             RedrawChart();
         }
 
@@ -1414,6 +1420,12 @@ namespace ATAS.Indicators.Custom
         {
             base.OnPositionChanged(position);
             CheckRealtimeAccountKillSwitch();
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
+            {
+                decimal lastPx = TradingManager?.Security?.LastTradePrice ?? (CurrentBar > 0 ? GetCandle(CurrentBar - 1).Close : 0m);
+                if (lastPx > 0m)
+                    CheckLivePositionTargetsOnTick(lastPx);
+            }
             RedrawChart();
         }
 
@@ -1449,7 +1461,7 @@ namespace ATAS.Indicators.Custom
                     if (tm != null && pos != null && pos.Volume != 0m)
                     {
                         _liveKillSwitchExecuted = true;
-                        _ = tm.ClosePositionAsync(pos, false, false);
+                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(pos.Volume)), "QUANT_BOT_KILL_SWITCH");
                     }
                 }
             }
@@ -1465,7 +1477,16 @@ namespace ATAS.Indicators.Custom
         protected override void OnNewTrade(MarketDataArg trade)
         {
             base.OnNewTrade(trade);
-            if (!_enableAtasOptionsFlow || trade == null || CurrentBar <= 0)
+            if (trade == null || CurrentBar <= 0)
+                return;
+
+            // Surveillance tick-par-tick temps réel des prises de profits (TP1 / TP2 / Trailing / SL) sur le compte actif ATAS X
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && trade.Price > 0m)
+            {
+                CheckLivePositionTargetsOnTick(trade.Price);
+            }
+
+            if (!_enableAtasOptionsFlow)
                 return;
 
             int curBar = CurrentBar - 1;
@@ -1717,6 +1738,9 @@ namespace ATAS.Indicators.Custom
                             break;
                         }
                     }
+                    if (!openedOnThisBar)
+                        signal = default;
+
                     _buyAlertSeries[bar] = (_enableVisualBuySellAlerts && openedOnThisBar && signal.Direction > 0) ? signal.EntryPrice : 0m;
                     _sellAlertSeries[bar] = (_enableVisualBuySellAlerts && openedOnThisBar && signal.Direction < 0) ? signal.EntryPrice : 0m;
                 }
@@ -1725,7 +1749,18 @@ namespace ATAS.Indicators.Custom
 
                 if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
                 {
-                    ProcessLiveTradingManagerBot(bar, candle, tickSize, signal, botState);
+                    VisualTradeSignal liveSignal = signal;
+                    if (liveSignal.Direction == 0 && simTrades.Count > 0)
+                    {
+                        var lastSim = simTrades[simTrades.Count - 1];
+                        if ((lastSim.EntryBar == bar || lastSim.EntryBar == bar - 1) &&
+                            lastSim.ExitBar >= bar &&
+                            lastSim.EntrySignal.Direction != 0)
+                        {
+                            liveSignal = lastSim.EntrySignal;
+                        }
+                    }
+                    ProcessLiveTradingManagerBot(bar, candle, tickSize, liveSignal, botState);
                 }
 
                 _botCumPnlSeries[bar] = botState.TotalPnlUsd;
