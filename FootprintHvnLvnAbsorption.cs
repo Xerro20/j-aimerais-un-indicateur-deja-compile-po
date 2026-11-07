@@ -3439,29 +3439,22 @@ namespace ATAS.Indicators.Custom
 
                 if (sig.Direction != 0)
                 {
-                    // Si position opposée ouverte, retournement filtré (évite les whipsaws sur bruit faible)
-                    if (activeDir != 0 && activeDir != sig.Direction)
+                    // Si une position opposée est ouverte et qu'un signal inverse validé par la stratégie apparaît, retournement immédiat
+                    if (activeDir != 0 && activeDir != sig.Direction && b > entryBar)
                     {
                         decimal curOpenPnl = bankedPartialUsd + activeDir * (c.Close - entryPrice) * pointVal * activeQty;
-                        bool allowReversal = tp1Hit
-                                             || curOpenPnl > 0m
-                                             || (b - entryBar >= 2 && sig.ConfluenceScore >= _quantMinConfluenceScore + 4);
+                        decimal revPnl = curOpenPnl - (_botCommissionPerSideUsd * 2m * activeQty);
 
-                        if (allowReversal)
-                        {
-                            decimal revPnl = curOpenPnl - (_botCommissionPerSideUsd * 2m * activeQty);
+                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                            c.Close, Math.Round(revPnl, 2), "REVERSAL SIGNAL", tp1Hit, activeSignal);
 
-                            FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
-                                entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                                c.Close, Math.Round(revPnl, 2), "REVERSAL SIGNAL", tp1Hit, activeSignal);
+                        activeDir = 0;
+                        activeQty = 0;
+                        bankedPartialUsd = 0m;
 
-                            activeDir = 0;
-                            activeQty = 0;
-                            bankedPartialUsd = 0m;
-
-                            if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
-                                continue;
-                        }
+                        if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
+                            continue;
                     }
 
                     // Ouverture d'une nouvelle position Quant au prix exact du signal affiché
