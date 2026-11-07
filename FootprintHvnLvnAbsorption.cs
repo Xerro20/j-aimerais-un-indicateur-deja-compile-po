@@ -3236,13 +3236,15 @@ namespace ATAS.Indicators.Custom
                 // 1. Gestion dynamique de la position ouverte du Bot sur la bougie b
                 if (activeDir != 0 && b > entryBar)
                 {
+                    decimal tp1DistPts = Math.Max(step * 2m, Math.Abs(tp1Price - entryPrice));
                     bool stopTriggered = activeDir > 0 ? (c.Low <= stopPrice) : (c.High >= stopPrice);
                     bool tp2Triggered = activeDir > 0 ? (c.High >= tp2Price) : (c.Low <= tp2Price);
                     bool tp1Triggered = !tp1Hit && (activeDir > 0 ? (c.High >= tp1Price) : (c.Low <= tp1Price));
                     bool favorableClose = activeDir > 0 ? (c.Close >= c.Open) : (c.Close <= c.Open);
+                    bool tp1CloserToOpen = Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice);
 
-                    // Si TP1 et Stop sont touchés sur la même bougie mais que la bougie clôture dans le sens du trade, TP1 a été touché en premier
-                    if (tp1Triggered && stopTriggered && favorableClose)
+                    // Si TP1 et Stop sont touchés sur la même bougie et que TP1 était plus proche de l'ouverture (ou clôture favorable), TP1 est exécuté en premier
+                    if (tp1Triggered && stopTriggered && (favorableClose || tp1CloserToOpen))
                     {
                         stopTriggered = false;
                     }
@@ -3273,19 +3275,51 @@ namespace ATAS.Indicators.Custom
                     else if (tp1Triggered && !stopTriggered)
                     {
                         tp1Hit = true;
-                        if (_botAutoBreakevenOnTp1)
+
+                        // Si 1 seul contrat (ou sortie complète sur TP1), encaisse 100% du profit immédiatement sur TP1
+                        if (activeQty == 1 || !_botAutoBreakevenOnTp1)
                         {
-                            // Profit-Lock Breakeven (+0.25R ou +0.50R si 1 seul lot) pour garantir un gain net après commissions
-                            decimal lockRatio = initialQty >= 2 ? 0.25m : 0.50m;
-                            decimal lockOffset = Math.Max(step * 2m, RoundToTick(initialRiskPts * lockRatio, tickSize));
+                            decimal fullTp1Pnl = activeDir * (tp1Price - entryPrice) * pointVal * activeQty
+                                - (_botCommissionPerSideUsd * 2m * activeQty);
+                            decimal totalTradePnl = Math.Round(bankedPartialUsd + fullTp1Pnl, 2);
+
+                            FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                tp1Price, totalTradePnl, "TP1 PROFIT", true, activeSignal);
+
+                            activeDir = 0;
+                            activeQty = 0;
+                            bankedPartialUsd = 0m;
+                        }
+                        else
+                        {
+                            // Multi-contrats : encaisse 50% immédiatement sur TP1 et verrouille le Stop du solde en gain (+45% de TP1)
+                            int half = activeQty / 2;
+                            bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
+                                - (_botCommissionPerSideUsd * 2m * half);
+                            activeQty -= half;
+
+                            decimal lockOffset = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                             stopPrice = RoundToTick(entryPrice + activeDir * lockOffset, tickSize);
 
-                            if (activeQty >= 2)
+                            // Si la bougie s'est retournée après avoir touché TP1 et a touché le Profit-Lock Stop sur la même bougie
+                            bool hitProfitLockAfterTp1 = activeDir > 0
+                                ? (c.Close <= stopPrice && c.Low <= stopPrice)
+                                : (c.Close >= stopPrice && c.High >= stopPrice);
+
+                            if (hitProfitLockAfterTp1)
                             {
-                                int half = activeQty / 2;
-                                bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
-                                    - (_botCommissionPerSideUsd * 2m * half);
-                                activeQty -= half;
+                                decimal remPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
+                                    - (_botCommissionPerSideUsd * 2m * activeQty);
+                                decimal totalTradePnl = Math.Round(bankedPartialUsd + remPnl, 2);
+
+                                FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                    entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                    stopPrice, totalTradePnl, "TP1 + PROFIT LOCK", true, activeSignal);
+
+                                activeDir = 0;
+                                activeQty = 0;
+                                bankedPartialUsd = 0m;
                             }
                         }
                     }
@@ -3304,11 +3338,11 @@ namespace ATAS.Indicators.Custom
                         bankedPartialUsd = 0m;
                     }
 
-                    // Protection dynamique : Early Breakeven à 0.80R & Ratchet Trailing Stop après TP1
+                    // Protection dynamique : Early Profit-Lock dès +0.45R & Trailing Stop serré après TP1
                     if (activeDir != 0)
                     {
                         decimal maxFavExcursion = activeDir > 0 ? (c.High - entryPrice) : (entryPrice - c.Low);
-                        if (!tp1Hit && maxFavExcursion >= initialRiskPts * 0.80m)
+                        if (!tp1Hit && maxFavExcursion >= Math.Max(step * 2m, initialRiskPts * 0.45m))
                         {
                             decimal softBe = RoundToTick(entryPrice + activeDir * step, tickSize);
                             if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
@@ -3316,25 +3350,14 @@ namespace ATAS.Indicators.Custom
                         }
                         else if (tp1Hit)
                         {
-                            // Si l'excursion atteint 1.65R, verrouille le Stop sur TP1 (+1.2R)
-                            if (maxFavExcursion >= initialRiskPts * 1.65m)
-                            {
-                                if ((activeDir > 0 && tp1Price > stopPrice) || (activeDir < 0 && tp1Price < stopPrice))
-                                    stopPrice = tp1Price;
-                            }
-                            // Trailing structurel sous le Low (Long) ou sur le High (Short) dès que le cours clôture au-delà de TP1
-                            if (activeDir > 0 && c.Close > tp1Price)
-                            {
-                                decimal trailStop = RoundToTick(c.Low - step, tickSize);
-                                if (trailStop > stopPrice && trailStop < c.Close)
-                                    stopPrice = trailStop;
-                            }
-                            else if (activeDir < 0 && c.Close < tp1Price)
-                            {
-                                decimal trailStop = RoundToTick(c.High + step, tickSize);
-                                if (trailStop < stopPrice && trailStop > c.Close)
-                                    stopPrice = trailStop;
-                            }
+                            decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                            decimal favPeak = activeDir > 0 ? c.High : c.Low;
+                            decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
+
+                            if (activeDir > 0 && candidateTrail > stopPrice)
+                                stopPrice = candidateTrail;
+                            else if (activeDir < 0 && candidateTrail < stopPrice)
+                                stopPrice = candidateTrail;
                         }
                     }
 
