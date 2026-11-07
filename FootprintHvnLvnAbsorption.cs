@@ -613,7 +613,7 @@ namespace ATAS.Indicators.Custom
             set { _enableQuantFilter = value; RecalculateValues(); }
         }
 
-        private decimal _quantMinClusterZScore = 1.05m;
+        private decimal _quantMinClusterZScore = 0.85m;
         [Display(Name = "Z-Score Minimum du Cluster (σ Volume/Delta)", GroupName = GrpQuantEngine, Order = 20,
             Description = "Nombre d'écarts-types (σ) minimum au-dessus de la moyenne de la bougie pour valider statistiquement le cluster d'absorption/piégeage.")]
         [Range(0.0, 5.0)]
@@ -623,9 +623,9 @@ namespace ATAS.Indicators.Custom
             set { _quantMinClusterZScore = value; RecalculateValues(); }
         }
 
-        private int _quantMinConfluenceScore = 65;
+        private int _quantMinConfluenceScore = 62;
         [Display(Name = "Score Quant Composite Minimum (0-100%)", GroupName = GrpQuantEngine, Order = 30,
-            Description = "Seuil de probabilité multi-facteurs (Order Flow + Contrôle POC + Options/GEX + Z-Score/CVD + Régime EMA/VWAP) requis pour valider un signal.")]
+            Description = "Seuil de probabilité multi-facteurs (HVN/LVN + Absorption + Traders Piégés + Flux d'Options ATAS X + Z-Score/CVD) requis pour valider un signal.")]
         [Range(50, 95)]
         public int QuantMinConfluenceScore
         {
@@ -642,9 +642,9 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrPeriod = value; RecalculateValues(); }
         }
 
-        private decimal _quantAtrStopMultiplier = 1.05m;
+        private decimal _quantAtrStopMultiplier = 0.85m;
         [Display(Name = "Multiplicateur ATR pour Stop-Loss (SL)", GroupName = GrpQuantEngine, Order = 50,
-            Description = "Calcule le Stop-Loss structurel sous/sur le niveau d'absorption ajusté par X * ATR(14).")]
+            Description = "Calcule le Stop-Loss structurel sous/sur le niveau d'absorption/piégeage ajusté par X * ATR(14).")]
         [Range(0.2, 5.0)]
         public decimal QuantAtrStopMultiplier
         {
@@ -652,18 +652,20 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrStopMultiplier = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp1RiskReward = 1.2m;
-        [Display(Name = "Ratio Risk/Reward TP1 (Sortie 50% + Profit-Lock Breakeven)", GroupName = GrpQuantEngine, Order = 60)]
-        [Range(0.5, 10.0)]
+        private decimal _quantTp1RiskReward = 0.75m;
+        [Display(Name = "Ratio Risk/Reward TP1 (Prise de Profit Rapide + Profit-Lock)", GroupName = GrpQuantEngine, Order = 60,
+            Description = "Distance de prise de profit TP1 haute probabilité (0.75R) : encaisse 50% (ou 100% si 1 lot) immédiatement et verrouille le Stop en gain.")]
+        [Range(0.3, 10.0)]
         public decimal QuantTp1RiskReward
         {
             get => _quantTp1RiskReward;
             set { _quantTp1RiskReward = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp2RiskReward = 2.2m;
-        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final + Trailing Stop)", GroupName = GrpQuantEngine, Order = 70)]
-        [Range(1.0, 15.0)]
+        private decimal _quantTp2RiskReward = 1.50m;
+        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final + Trailing Stop)", GroupName = GrpQuantEngine, Order = 70,
+            Description = "Objectif de prise de profit final TP2 (1.50R) accompagné d'un Trailing Stop dynamique verrouillant les gains tick par tick.")]
+        [Range(0.6, 15.0)]
         public decimal QuantTp2RiskReward
         {
             get => _quantTp2RiskReward;
