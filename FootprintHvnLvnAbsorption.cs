@@ -1076,13 +1076,19 @@ namespace ATAS.Indicators.Custom
         private bool _liveKillSwitchExecuted;
 
         // Suivi temps réel des niveaux SL / TP1 / TP2 / Trailing pour l'exécution Live ATAS (TradingManager)
+        private readonly Dictionary<int, VisualTradeSignal> _lockedExecutedSignalsByBar = new Dictionary<int, VisualTradeSignal>();
         private int _liveTrackedDir = 0;
         private int _liveTrackedSignalBar = -1;
         private decimal _liveTrackedEntryPrice = 0m;
+        private decimal _liveTrackedInitialRiskPts = 0m;
         private decimal _liveTrackedStopPrice = 0m;
         private decimal _liveTrackedTp1Price = 0m;
         private decimal _liveTrackedTp2Price = 0m;
+        private decimal _liveMaxFavorablePrice = 0m;
         private bool _liveTrackedTp1Hit = false;
+        private bool _liveTp1PartialOrderSent = false;
+        private DateTime _lastLiveOrderSentUtc = DateTime.MinValue;
+        private DateTime _lastLiveExitSentUtc = DateTime.MinValue;
 
         // État temps réel de synchronisation avec le Compte Actif ATAS X (Portfolio / Position / MyTrades)
         private ITradingManager? _subscribedTradingManager;
