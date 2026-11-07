@@ -4008,8 +4008,220 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Routage Live vers ATAS ITradingManager (Exécution SL / TP1 / TP2 / Reversal & Kill-Switch Max DD / Max PnL)
+        // Routage Live vers ATAS ITradingManager (Exécution SL / TP1 / TP2 / Trailing / Reversal & Kill-Switch Max DD / Max PnL)
         // =====================================================================
+        private void SendLiveMarketCloseOrReduce(ITradingManager tm, Position pos, int qtyToClose, string comment)
+        {
+            if (tm?.Security == null || pos == null || pos.Volume == 0m || qtyToClose <= 0)
+                return;
+
+            int absPos = (int)Math.Round(Math.Abs(pos.Volume));
+            int finalQty = Math.Min(absPos, qtyToClose);
+            if (finalQty <= 0)
+                return;
+
+            var exitOrder = new Order
+            {
+                Security = tm.Security,
+                Portfolio = tm.Portfolio,
+                Type = OrderTypes.Market,
+                Direction = pos.Volume > 0m ? OrderDirections.Sell : OrderDirections.Buy,
+                QuantityToFill = finalQty,
+                Comment = comment
+            };
+            _ = tm.OpenOrderAsync(exitOrder, false, false, false);
+        }
+
+        private void EnsureLivePositionTrackingInitialized(Position pos, decimal curPrice, decimal tickSize)
+        {
+            if (pos == null || pos.Volume == 0m)
+                return;
+
+            int realDir = pos.Volume > 0m ? 1 : -1;
+            decimal step = tickSize * Math.Max(1, _ticksPerRow);
+            decimal fillPx = (pos.AveragePrice > 0m) ? RoundToTick(pos.AveragePrice, tickSize) : RoundToTick(curPrice, tickSize);
+
+            if (_liveTrackedDir != realDir || _liveTrackedEntryPrice <= 0m || _liveTrackedStopPrice <= 0m || _liveTrackedTp1Price <= 0m || _liveTrackedTp2Price <= 0m)
+            {
+                int refBar = Math.Max(0, CurrentBar - 1);
+                decimal atr = ComputeQuantAtr(refBar, tickSize);
+                decimal riskPts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize)));
+                decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize)));
+
+                _liveTrackedDir = realDir;
+                _liveTrackedEntryPrice = fillPx;
+                _liveTrackedInitialRiskPts = riskPts;
+                _liveTrackedStopPrice = RoundToTick(fillPx - realDir * riskPts, tickSize);
+                _liveTrackedTp1Price = RoundToTick(fillPx + realDir * tp1Dist, tickSize);
+                _liveTrackedTp2Price = RoundToTick(fillPx + realDir * tp2Dist, tickSize);
+                _liveMaxFavorablePrice = curPrice > 0m ? curPrice : fillPx;
+                _liveTrackedTp1Hit = false;
+                _liveTp1PartialOrderSent = false;
+                return;
+            }
+
+            // Recalage automatique des cibles TP1 / TP2 / SL sur le prix moyen d'exécution réel (pos.AveragePrice) dès réception du fill
+            if (pos.AveragePrice > 0m && !_liveTrackedTp1Hit && Math.Abs(_liveTrackedEntryPrice - fillPx) >= tickSize)
+            {
+                decimal riskPts = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
+                decimal tp1Dist = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
+                decimal tp2Dist = Math.Max(tp1Dist + step * 2m, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
+
+                _liveTrackedEntryPrice = fillPx;
+                _liveTrackedInitialRiskPts = riskPts;
+                _liveTrackedStopPrice = RoundToTick(fillPx - realDir * riskPts, tickSize);
+                _liveTrackedTp1Price = RoundToTick(fillPx + realDir * tp1Dist, tickSize);
+                _liveTrackedTp2Price = RoundToTick(fillPx + realDir * tp2Dist, tickSize);
+            }
+        }
+
+        private void CheckLivePositionTargetsOnTick(decimal livePrice)
+        {
+            if (!_enableTradingBot || _botMode != BotExecutionMode.LiveAutoTradingManager || livePrice <= 0m)
+                return;
+
+            try
+            {
+                var tm = TradingManager;
+                if (tm?.Security == null)
+                    return;
+
+                var pos = tm.Position;
+                decimal posVol = pos?.Volume ?? 0m;
+
+                if (pos == null || posVol == 0m)
+                {
+                    // Garde asynchrone : ne jamais réinitialiser _liveTrackedDir pendant qu'un ordre d'ouverture est en transit (< 4.0s)
+                    if ((DateTime.UtcNow - _lastLiveOrderSentUtc).TotalSeconds > 4.0)
+                    {
+                        _liveTrackedDir = 0;
+                        _liveTrackedTp1Hit = false;
+                        _liveTp1PartialOrderSent = false;
+                    }
+                    return;
+                }
+
+                // Anti-rebond pendant l'exécution d'un ordre d'entrée ou de sortie
+                if ((DateTime.UtcNow - _lastLiveOrderSentUtc).TotalMilliseconds < 350 ||
+                    (DateTime.UtcNow - _lastLiveExitSentUtc).TotalMilliseconds < 1100)
+                {
+                    return;
+                }
+
+                decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+                decimal step = tickSize * Math.Max(1, _ticksPerRow);
+                decimal pointVal = GetPointDollarValue(tickSize);
+
+                EnsureLivePositionTrackingInitialized(pos, livePrice, tickSize);
+                if (_liveTrackedDir == 0)
+                    return;
+
+                int absQty = (int)Math.Round(Math.Abs(posVol));
+                if (absQty <= 0)
+                    return;
+
+                if (_liveMaxFavorablePrice <= 0m)
+                    _liveMaxFavorablePrice = livePrice;
+                else if (_liveTrackedDir > 0 && livePrice > _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = livePrice;
+                else if (_liveTrackedDir < 0 && livePrice < _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = livePrice;
+
+                decimal tp1DistPts = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
+                decimal tp2DistPts = Math.Max(tp1DistPts + step, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
+                decimal tp1TargetUsd = tp1DistPts * pointVal * absQty;
+                decimal tp2TargetUsd = tp2DistPts * pointVal * absQty;
+                decimal openUnrealizedUsd = pos.UnrealizedPnL ?? (_liveTrackedDir * (livePrice - _liveTrackedEntryPrice) * pointVal * absQty);
+
+                bool tp2Hit = (_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp2Price) : (livePrice <= _liveTrackedTp2Price)) ||
+                              (tp2TargetUsd > 0m && openUnrealizedUsd >= tp2TargetUsd);
+
+                bool tp1Hit = !_liveTrackedTp1Hit &&
+                              ((_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp1Price) : (livePrice <= _liveTrackedTp1Price)) ||
+                               (tp1TargetUsd > 0m && openUnrealizedUsd >= tp1TargetUsd));
+
+                // 1. Prise de profit finale TP2
+                if (tp2Hit)
+                {
+                    _lastLiveExitSentUtc = DateTime.UtcNow;
+                    _liveTrackedDir = 0;
+                    _liveTrackedTp1Hit = false;
+                    _liveTp1PartialOrderSent = false;
+                    SendLiveMarketCloseOrReduce(tm, pos, absQty, "QUANT_BOT_TP2_PROFIT");
+                    return;
+                }
+
+                // 2. Prise de profit TP1 (Sortie 100% si 1 contrat, ou Sortie 50% + Profit-Lock Stop si >= 2 contrats)
+                if (tp1Hit)
+                {
+                    _liveTrackedTp1Hit = true;
+                    decimal lockOffset = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                    _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
+
+                    if (absQty == 1 || !_botAutoBreakevenOnTp1)
+                    {
+                        _lastLiveExitSentUtc = DateTime.UtcNow;
+                        _liveTrackedDir = 0;
+                        _liveTrackedTp1Hit = false;
+                        _liveTp1PartialOrderSent = false;
+                        SendLiveMarketCloseOrReduce(tm, pos, 1, "QUANT_BOT_TP1_FULL_PROFIT");
+                        return;
+                    }
+                    else if (!_liveTp1PartialOrderSent)
+                    {
+                        _liveTp1PartialOrderSent = true;
+                        _lastLiveExitSentUtc = DateTime.UtcNow;
+                        int halfQty = Math.Max(1, absQty / 2);
+                        SendLiveMarketCloseOrReduce(tm, pos, halfQty, "QUANT_BOT_TP1_50PCT_PROFIT");
+                        return;
+                    }
+                }
+
+                // 3. Mise à jour Early Profit-Lock (dès +0.45R) et Trailing Stop dynamique après TP1
+                decimal favExcursion = _liveTrackedDir > 0
+                    ? (_liveMaxFavorablePrice - _liveTrackedEntryPrice)
+                    : (_liveTrackedEntryPrice - _liveMaxFavorablePrice);
+
+                if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * 2m, _liveTrackedInitialRiskPts * 0.45m))
+                {
+                    decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * step, tickSize);
+                    if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
+                        (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
+                    {
+                        _liveTrackedStopPrice = softBe;
+                    }
+                }
+                else if (_liveTrackedTp1Hit)
+                {
+                    decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                    decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
+                    if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
+                        (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
+                    {
+                        _liveTrackedStopPrice = candidateTrail;
+                    }
+                }
+
+                // 4. Exécution du Stop-Loss ou du Trailing Stop en gain
+                bool stopHit = _liveTrackedDir > 0 ? (livePrice <= _liveTrackedStopPrice) : (livePrice >= _liveTrackedStopPrice);
+                if (stopHit)
+                {
+                    bool isTrailingProfit = _liveTrackedTp1Hit ||
+                        (_liveTrackedDir > 0 ? _liveTrackedStopPrice > _liveTrackedEntryPrice : _liveTrackedStopPrice < _liveTrackedEntryPrice);
+                    _lastLiveExitSentUtc = DateTime.UtcNow;
+                    _liveTrackedDir = 0;
+                    _liveTrackedTp1Hit = false;
+                    _liveTp1PartialOrderSent = false;
+                    SendLiveMarketCloseOrReduce(tm, pos, absQty, isTrailingProfit ? "QUANT_BOT_TRAIL_PROFIT" : "QUANT_BOT_STOP_LOSS");
+                }
+            }
+            catch
+            {
+                // Protection temps réel
+            }
+        }
+
         private void ProcessLiveTradingManagerBot(
             int bar,
             IndicatorCandle candle,
@@ -4040,7 +4252,7 @@ namespace ATAS.Indicators.Custom
                     {
                         _liveKillSwitchExecuted = true;
                         _liveTrackedDir = 0;
-                        _ = tm.ClosePositionAsync(pos, false, false);
+                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), "QUANT_BOT_KILL_SWITCH");
                     }
                     return;
                 }
@@ -4051,7 +4263,7 @@ namespace ATAS.Indicators.Custom
                     if (_botFlattenAtEndTime && pos != null && posVol != 0m)
                     {
                         _liveTrackedDir = 0;
-                        _ = tm.ClosePositionAsync(pos, false, false);
+                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), "QUANT_BOT_END_SCHEDULE");
                     }
                     return;
                 }
@@ -4060,58 +4272,25 @@ namespace ATAS.Indicators.Custom
                 decimal step = tickSize * Math.Max(1, _ticksPerRow);
                 decimal curPrice = (tm.Security.LastTradePrice > 0m) ? tm.Security.LastTradePrice.Value : candle.Close;
 
-                // 1. Gestion Temps Réel de la Position Live Ouverte (SL, TP1 50% + Profit-Lock Breakeven, TP2 & Trailing)
-                if (pos != null && posVol != 0m && _liveTrackedDir != 0 && bar > _liveTrackedSignalBar)
+                // 1. Surveillance et exécution temps réel de TP1 / TP2 / Trailing Stop / SL sur la position active
+                CheckLivePositionTargetsOnTick(curPrice);
+
+                // 2. Ouverture ou Retournement Atomique de Position aux endroits exacts des signaux de la stratégie
+                int sigBar = signal.Bar > 0 ? signal.Bar : bar;
+                if (signal.Direction != 0 && (_lastLiveBotOrderBar != sigBar || _lastLiveBotOrderDir != signal.Direction))
                 {
-                    bool stopHit = _liveTrackedDir > 0 ? (curPrice <= _liveTrackedStopPrice) : (curPrice >= _liveTrackedStopPrice);
-                    bool tp2Hit = _liveTrackedDir > 0 ? (curPrice >= _liveTrackedTp2Price) : (curPrice <= _liveTrackedTp2Price);
-                    bool tp1Hit = !_liveTrackedTp1Hit && (_liveTrackedDir > 0 ? (curPrice >= _liveTrackedTp1Price) : (curPrice <= _liveTrackedTp1Price));
-
-                    if (stopHit || tp2Hit)
-                    {
-                        _liveTrackedDir = 0;
-                        _ = tm.ClosePositionAsync(pos, false, false);
-                        return;
-                    }
-
-                    if (tp1Hit)
-                    {
-                        _liveTrackedTp1Hit = true;
-                        decimal initRisk = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
-                        decimal lockOffset = Math.Max(step * 2m, RoundToTick(initRisk * 0.25m, tickSize));
-                        _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
-
-                        int absQty = (int)Math.Round(Math.Abs(posVol));
-                        if (_botAutoBreakevenOnTp1 && absQty >= 2)
-                        {
-                            int halfQty = absQty / 2;
-                            var partialOrder = new Order
-                            {
-                                Security = tm.Security,
-                                Portfolio = tm.Portfolio,
-                                Type = OrderTypes.Market,
-                                Direction = _liveTrackedDir > 0 ? OrderDirections.Sell : OrderDirections.Buy,
-                                QuantityToFill = halfQty,
-                                Comment = "QUANT_BOT_TP1_PARTIAL"
-                            };
-                            _ = tm.OpenOrderAsync(partialOrder, false, false, false);
-                        }
-                    }
-                }
-                else if (pos == null || posVol == 0m)
-                {
-                    _liveTrackedDir = 0;
-                }
-
-                // 2. Ouverture ou Retournement Atomique de Position aux endroits exacts des signaux affichés
-                if (signal.Direction != 0 && (_lastLiveBotOrderBar != bar || _lastLiveBotOrderDir != signal.Direction))
-                {
+                    pos = tm.Position;
+                    posVol = pos?.Volume ?? 0m;
                     int currentSign = posVol > 0m ? 1 : (posVol < 0m ? -1 : 0);
                     if (currentSign == signal.Direction)
+                    {
+                        _lockedExecutedSignalsByBar[sigBar] = signal;
                         return; // Déjà en position dans la même direction
+                    }
 
-                    _lastLiveBotOrderBar = bar;
+                    _lastLiveBotOrderBar = sigBar;
                     _lastLiveBotOrderDir = signal.Direction;
+                    _lockedExecutedSignalsByBar[sigBar] = signal;
 
                     int targetQty = Math.Max(1, _botTradeQuantity);
                     int existingOppositeQty = (currentSign != 0 && currentSign != signal.Direction)
@@ -4122,12 +4301,16 @@ namespace ATAS.Indicators.Custom
                     int orderQty = existingOppositeQty + targetQty;
 
                     _liveTrackedDir = signal.Direction;
-                    _liveTrackedSignalBar = bar;
+                    _liveTrackedSignalBar = sigBar;
                     _liveTrackedEntryPrice = signal.EntryPrice;
+                    _liveTrackedInitialRiskPts = Math.Max(step * 2m, Math.Abs(signal.EntryPrice - signal.StopPrice));
                     _liveTrackedStopPrice = signal.StopPrice;
                     _liveTrackedTp1Price = signal.Tp1Price;
                     _liveTrackedTp2Price = signal.Tp2Price;
+                    _liveMaxFavorablePrice = curPrice > 0m ? curPrice : signal.EntryPrice;
                     _liveTrackedTp1Hit = false;
+                    _liveTp1PartialOrderSent = false;
+                    _lastLiveOrderSentUtc = DateTime.UtcNow;
 
                     var mktOrder = new Order
                     {
