@@ -2116,7 +2116,8 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Évaluation du Signal Visuel & Quant Achat / Vente (Confluence Footprint + Flux d'Options + Modèle Quant)
+        // Évaluation du Signal Visuel & Quant Achat / Vente
+        // (Stratégie Complète : HVN/LVN + Heavy Absorption + Traders Piégés + Flux d'Options ATAS X + Modèle Quant)
         // =====================================================================
         private VisualTradeSignal EvaluateBuySellSignal(
             int bar,
@@ -2133,75 +2134,115 @@ namespace ATAS.Indicators.Custom
             if (!_enableVisualBuySellAlerts || rows.Length == 0)
                 return sig;
 
+            // Si un ordre Live a déjà été exécuté sur cette bougie, verrouiller son signal exact pour éviter tout repainting
+            if (_lockedExecutedSignalsByBar.TryGetValue(bar, out var lockedSig) && lockedSig.Direction != 0)
+                return lockedSig;
+
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
             decimal atr = Math.Max(step * 2m, opt.AtrPoints);
             decimal barRange = candle.High - candle.Low;
 
-            // Filtre anti-essoufflement : évite d'entrer au sommet/creux d'une bougie parabolique déjà épuisée (> 2.65x ATR)
-            if (_enableQuantFilter && barRange > atr * 2.65m)
-                return sig;
+            // Garde de maturité sur la bougie en cours de formation (CurrentBar - 1) :
+            // Évite de déclencher un ordre sur les 2 premiers ticks d'une nouvelle bougie avant formation des clusters Footprint
+            if (bar == CurrentBar - 1 && bar > 2)
+            {
+                if (rows.Length < 3)
+                    return sig;
+
+                int lb = Math.Min(10, bar);
+                decimal sumVol = 0m;
+                for (int k = 1; k <= lb; k++)
+                    sumVol += GetCandle(bar - k).Volume;
+                decimal avgBarVol = lb > 0 ? sumVol / lb : candle.Volume;
+                if (avgBarVol > 0m && candle.Volume < avgBarVol * 0.32m)
+                    return sig;
+            }
 
             bool hasBullAbs = _enableAbsorption && bestBullAbsIdx >= 0;
             bool hasBearAbs = _enableAbsorption && bestBearAbsIdx >= 0;
             bool hasTrapSellers = _enableTrappedTraders && bestTrappedSellersIdx >= 0;
             bool hasTrapBuyers = _enableTrappedTraders && bestTrappedBuyersIdx >= 0;
 
-            decimal pocPrice = opt.BarPocPrice > 0m ? opt.BarPocPrice : (candle.High + candle.Low) * 0.5m;
+            decimal midPrice = (candle.High + candle.Low) * 0.5m;
+            decimal pocPrice = opt.BarPocPrice > 0m ? opt.BarPocPrice : midPrice;
 
-            // --- 1. Vérification Signal Quant ACHAT (BUY ▲) ---
-            if ((hasBullAbs || hasTrapSellers) && !hasBearAbs)
+            // Détection de la structure HVN / LVN de la bougie (Piliers 1 & 2 de la stratégie)
+            bool hasBarHvn = false;
+            bool hasLowerLvnRejection = false;
+            bool hasUpperLvnRejection = false;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                if (rows[i].IsHvn || rows[i].IsPoc)
+                    hasBarHvn = true;
+                if (rows[i].IsLvn)
+                {
+                    if (rows[i].Price <= midPrice && candle.Close > rows[i].Price)
+                        hasLowerLvnRejection = true;
+                    if (rows[i].Price >= midPrice && candle.Close < rows[i].Price)
+                        hasUpperLvnRejection = true;
+                }
+            }
+
+            // Résolution de conflit si la même bougie présente des signaux opposés aux deux extrêmes
+            bool bullWinsBar = !hasBearAbs || (candle.Close > candle.Open) || (candle.Close >= midPrice);
+            bool bearWinsBar = !hasBullAbs || (candle.Close < candle.Open) || (candle.Close <= midPrice);
+
+            // --- 1. Vérification Signal Quant ACHAT (BUY ▲) :
+            //        Heavy Absorption Bid (ABS▲) et/ou Vendeurs Piégés (V.PIÉGÉS▲) + Structure HVN/LVN + Flux Options Calls ---
+            if ((hasBullAbs || hasTrapSellers) && bullWinsBar)
             {
                 ClusterRow keyRow = hasBullAbs ? rows[bestBullAbsIdx] : rows[bestTrappedSellersIdx];
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
+                bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
-                // Règle Order Flow Institutionnelle #1 : Les acheteurs doivent gagner l'enchère de la bougie
-                // (Clôture dans la moitié supérieure ou bougie verte ET reprise/maintien du POC de la bougie)
-                bool bullCandleControl = (candle.Close >= candle.Open || candle.Close >= candle.Low + barRange * 0.45m)
-                                         && (candle.Close >= pocPrice - step);
+                // Rejet haussier au-dessus du cluster d'absorption / vendeurs piégés
+                bool bullRejectionOk = candle.Close >= keyRow.Price + step * 0.5m &&
+                                       (candle.Close >= candle.Open ||
+                                        candle.Close >= candle.Low + barRange * 0.35m ||
+                                        candle.Close >= pocPrice - step);
 
-                // Règle #2 : Alignement Tendance (EMA8/21 + VWAP) OU Retournement Haute Conviction sur excès / divergence CVD
-                bool bullRegimeOk = !_enableQuantFilter
-                                    || opt.TrendBias >= 0
-                                    || (hasBullAbs && hasTrapSellers)
-                                    || opt.BullishCvdDivergence
-                                    || opt.VwapZScore <= -0.70m;
+                bool quantZOk = !_enableQuantFilter
+                                || clusterZ >= _quantMinClusterZScore
+                                || (hasBullAbs && hasTrapSellers)
+                                || (hvnAnchored && hasLowerLvnRejection);
 
-                bool quantZOk = !_enableQuantFilter || clusterZ >= _quantMinClusterZScore || (hasBullAbs && hasTrapSellers);
                 bool optionsOk = !_enableAtasOptionsFlow
-                    || !_requireOptionsFlowConfirmation
-                    || opt.OptionsBias > 0
-                    || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 50m)
-                    || (bullCandleControl && opt.BullishCvdDivergence && opt.CallFlowPct >= 49m);
+                                 || !_requireOptionsFlowConfirmation
+                                 || opt.OptionsBias > 0
+                                 || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 48m)
+                                 || (opt.BullishCvdDivergence && opt.CallFlowPct >= 48m)
+                                 || (opt.OiDelta > 0m && opt.CallFlowPct >= 49m)
+                                 || (opt.SweepCount > 0 && opt.CallFlowPct >= 50m);
 
-                if (bullCandleControl && bullRegimeOk && quantZOk && optionsOk)
+                if (bullRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = 54;
-                    if (hasBullAbs && hasTrapSellers) score += 18;
-                    else if (hasBullAbs) score += 12;
+                    int score = 58;
+                    if (hasBullAbs && hasTrapSellers) score += 16;
+                    else if (hasBullAbs) score += 11;
                     else score += 10;
 
-                    if (candle.Close > pocPrice) score += 5;
-                    if (opt.TrendBias > 0) score += 5;
-                    if (opt.BullStackedImbalances >= 2) score += 4;
+                    if (hvnAnchored) score += 5;
+                    if (hasLowerLvnRejection) score += 4;
+                    if (candle.Close >= pocPrice) score += 4;
+                    if (opt.TrendBias > 0) score += 4;
+                    if (opt.BullStackedImbalances >= 1) score += 3;
                     if (opt.CallFlowPct >= _optionsMinDominancePct)
-                        score += (int)Math.Min(15m, (opt.CallFlowPct - 50m) * 0.65m);
-                    if (clusterZ >= 1.4m)
-                        score += (int)Math.Min(8m, clusterZ * 3m);
+                        score += (int)Math.Min(12m, (opt.CallFlowPct - 50m) * 0.60m);
+                    if (clusterZ >= 1.1m)
+                        score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BullishCvdDivergence)
-                        score += 6;
+                        score += 5;
                     if (opt.SweepCount > 0)
-                        score += Math.Min(5, opt.SweepCount * 2);
-                    if (opt.OiDelta > 0m || candle.Close > candle.Open)
-                        score += 4;
+                        score += Math.Min(4, opt.SweepCount * 2);
 
                     score = Math.Clamp(score, 50, 99);
 
                     if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
                     {
                         decimal entryPrice = RoundToTick(candle.Close, tickSize);
-                        decimal triggerPrice = entryPrice; // 100% aligné avec le prix exact d'ouverture du trade
+                        decimal triggerPrice = entryPrice;
 
-                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.45m, tickSize));
+                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
                         decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
                         decimal structuralLow = Math.Min(candle.Low - step, keyRow.Price - step * 2m);
                         decimal rawStopDist = Math.Max(step * 2m, entryPrice - structuralLow);
@@ -2209,12 +2250,20 @@ namespace ATAS.Indicators.Custom
 
                         decimal stopPrice = RoundToTick(entryPrice - clampedStopDist, tickSize);
                         decimal riskPts = Math.Max(step * 2m, entryPrice - stopPrice);
-                        decimal tp1Price = RoundToTick(entryPrice + riskPts * _quantTp1RiskReward, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice + riskPts * _quantTp2RiskReward, tickSize);
 
+                        // Cibles de profit calibrées pour encaisser rapidement sur l'impulsion Order Flow
+                        decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                        decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
+                        decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
+                        decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+
+                        decimal tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
+                        decimal tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
+
+                        string structTag = hasLowerLvnRejection ? "HVN+LVN▲" : "HVN/POC▲";
                         string reason = (hasBullAbs && hasTrapSellers)
-                            ? $"ABS+V.PIÉGÉS + POC▲ + Z:{clusterZ:0.0}σ"
-                            : (hasBullAbs ? $"ABS BID + POC▲ + Z:{clusterZ:0.0}σ" : $"V.PIÉGÉS + POC▲ + Z:{clusterZ:0.0}σ");
+                            ? $"ABS▲+V.PIÉGÉS▲ + {structTag} + Z:{clusterZ:0.0}σ"
+                            : (hasBullAbs ? $"ABS BID▲ + {structTag} + Z:{clusterZ:0.0}σ" : $"V.PIÉGÉS▲ + {structTag} + Z:{clusterZ:0.0}σ");
 
                         return new VisualTradeSignal
                         {
@@ -2240,60 +2289,62 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // --- 2. Vérification Signal Quant VENTE (SELL ▼) ---
-            if ((hasBearAbs || hasTrapBuyers) && !hasBullAbs)
+            // --- 2. Vérification Signal Quant VENTE (SELL ▼) :
+            //        Heavy Absorption Ask (ABS▼) et/ou Acheteurs Piégés (A.PIÉGÉS▼) + Structure HVN/LVN + Flux Options Puts ---
+            if ((hasBearAbs || hasTrapBuyers) && bearWinsBar)
             {
                 ClusterRow keyRow = hasBearAbs ? rows[bestBearAbsIdx] : rows[bestTrappedBuyersIdx];
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
+                bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
-                // Règle Order Flow Institutionnelle #1 : Les vendeurs doivent gagner l'enchère de la bougie
-                // (Clôture dans la moitié inférieure ou bougie rouge ET cassure/maintien sous le POC de la bougie)
-                bool bearCandleControl = (candle.Close <= candle.Open || candle.Close <= candle.High - barRange * 0.45m)
-                                         && (candle.Close <= pocPrice + step);
+                // Rejet baissier en dessous du cluster d'absorption / acheteurs piégés
+                bool bearRejectionOk = candle.Close <= keyRow.Price - step * 0.5m &&
+                                       (candle.Close <= candle.Open ||
+                                        candle.Close <= candle.High - barRange * 0.35m ||
+                                        candle.Close <= pocPrice + step);
 
-                // Règle #2 : Alignement Tendance (EMA8/21 + VWAP) OU Retournement Haute Conviction sur excès / divergence CVD
-                bool bearRegimeOk = !_enableQuantFilter
-                                    || opt.TrendBias <= 0
-                                    || (hasBearAbs && hasTrapBuyers)
-                                    || opt.BearishCvdDivergence
-                                    || opt.VwapZScore >= 0.70m;
+                bool quantZOk = !_enableQuantFilter
+                                || clusterZ >= _quantMinClusterZScore
+                                || (hasBearAbs && hasTrapBuyers)
+                                || (hvnAnchored && hasUpperLvnRejection);
 
-                bool quantZOk = !_enableQuantFilter || clusterZ >= _quantMinClusterZScore || (hasBearAbs && hasTrapBuyers);
                 bool optionsOk = !_enableAtasOptionsFlow
-                    || !_requireOptionsFlowConfirmation
-                    || opt.OptionsBias < 0
-                    || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 50m)
-                    || (bearCandleControl && opt.BearishCvdDivergence && opt.PutFlowPct >= 49m);
+                                 || !_requireOptionsFlowConfirmation
+                                 || opt.OptionsBias < 0
+                                 || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 48m)
+                                 || (opt.BearishCvdDivergence && opt.PutFlowPct >= 48m)
+                                 || (opt.OiDelta < 0m && opt.PutFlowPct >= 49m)
+                                 || (opt.SweepCount > 0 && opt.PutFlowPct >= 50m);
 
-                if (bearCandleControl && bearRegimeOk && quantZOk && optionsOk)
+                if (bearRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = 54;
-                    if (hasBearAbs && hasTrapBuyers) score += 18;
-                    else if (hasBearAbs) score += 12;
+                    int score = 58;
+                    if (hasBearAbs && hasTrapBuyers) score += 16;
+                    else if (hasBearAbs) score += 11;
                     else score += 10;
 
-                    if (candle.Close < pocPrice) score += 5;
-                    if (opt.TrendBias < 0) score += 5;
-                    if (opt.BearStackedImbalances >= 2) score += 4;
+                    if (hvnAnchored) score += 5;
+                    if (hasUpperLvnRejection) score += 4;
+                    if (candle.Close <= pocPrice) score += 4;
+                    if (opt.TrendBias < 0) score += 4;
+                    if (opt.BearStackedImbalances >= 1) score += 3;
                     if (opt.PutFlowPct >= _optionsMinDominancePct)
-                        score += (int)Math.Min(15m, (opt.PutFlowPct - 50m) * 0.65m);
-                    if (clusterZ >= 1.4m)
-                        score += (int)Math.Min(8m, clusterZ * 3m);
+                        score += (int)Math.Min(12m, (opt.PutFlowPct - 50m) * 0.60m);
+                    if (clusterZ >= 1.1m)
+                        score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BearishCvdDivergence)
-                        score += 6;
+                        score += 5;
                     if (opt.SweepCount > 0)
-                        score += Math.Min(5, opt.SweepCount * 2);
-                    if (opt.OiDelta != 0m || candle.Close < candle.Open)
-                        score += 4;
+                        score += Math.Min(4, opt.SweepCount * 2);
 
                     score = Math.Clamp(score, 50, 99);
 
                     if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
                     {
                         decimal entryPrice = RoundToTick(candle.Close, tickSize);
-                        decimal triggerPrice = entryPrice; // 100% aligné avec le prix exact d'ouverture du trade
+                        decimal triggerPrice = entryPrice;
 
-                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.45m, tickSize));
+                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
                         decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
                         decimal structuralHigh = Math.Max(candle.High + step, keyRow.Price + step * 2m);
                         decimal rawStopDist = Math.Max(step * 2m, structuralHigh - entryPrice);
@@ -2301,12 +2352,20 @@ namespace ATAS.Indicators.Custom
 
                         decimal stopPrice = RoundToTick(entryPrice + clampedStopDist, tickSize);
                         decimal riskPts = Math.Max(step * 2m, stopPrice - entryPrice);
-                        decimal tp1Price = RoundToTick(entryPrice - riskPts * _quantTp1RiskReward, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice - riskPts * _quantTp2RiskReward, tickSize);
 
+                        // Cibles de profit calibrées pour encaisser rapidement sur l'impulsion Order Flow
+                        decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                        decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
+                        decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
+                        decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+
+                        decimal tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
+                        decimal tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
+
+                        string structTag = hasUpperLvnRejection ? "HVN+LVN▼" : "HVN/POC▼";
                         string reason = (hasBearAbs && hasTrapBuyers)
-                            ? $"ABS+A.PIÉGÉS + POC▼ + Z:{clusterZ:0.0}σ"
-                            : (hasBearAbs ? $"ABS ASK + POC▼ + Z:{clusterZ:0.0}σ" : $"A.PIÉGÉS + POC▼ + Z:{clusterZ:0.0}σ");
+                            ? $"ABS▼+A.PIÉGÉS▼ + {structTag} + Z:{clusterZ:0.0}σ"
+                            : (hasBearAbs ? $"ABS ASK▼ + {structTag} + Z:{clusterZ:0.0}σ" : $"A.PIÉGÉS▼ + {structTag} + Z:{clusterZ:0.0}σ");
 
                         return new VisualTradeSignal
                         {
