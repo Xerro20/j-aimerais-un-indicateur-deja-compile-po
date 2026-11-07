@@ -316,6 +316,18 @@
       "created_at": "2026-11-06T14:35:04.215Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "7226950e-78f7-422c-8f01-ba6ef3e95731",
+      "role": "user",
+      "content": "cela ne va toujours pas il ne semble pas suivre la stratégie qu'on a coder ensemble et la stratégie ne prend pas de profits",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-07T19:16:45.899Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
