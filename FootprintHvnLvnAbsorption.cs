@@ -2513,36 +2513,37 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC, CL) ---
-                    // Sur le CME, les gros ordres limites passifs (Put Wall en bas / Call Wall en haut) absorbent les market orders :
-                    // Un Bid massif sous le prix de clôture qui est rejeté vers le haut est une absorption institutionnelle HAUSSIÈRE (Call/Put-Write Flow).
+                    // --- Calibration Institutionnelle Hors BTC Binance (CME ES/MES, NQ/MNQ, GC, CL, Indices & Alts) ---
                     if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
                     {
-                        callFlow += r.Volume * 1.35m;
+                        callFlow += r.Volume * 1.05m;
                     }
                     else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
                     {
-                        putFlow += r.Volume * 1.35m;
+                        putFlow += r.Volume * 1.05m;
                     }
 
-                    if (r.Price < candle.Close - tickSize * 0.5m)
+                    if (r.Price >= vwap)
                     {
-                        // Niveaux situés sous la clôture (mèche basse rejetée / défense acheteuse CME)
-                        bool isBullLevel = r.AbsorptionSide > 0 || r.TrappedSide > 0 || candle.Close >= candle.Open;
-                        callFlow += askAggr * 1.15m + bidAggr * (isBullLevel ? 1.05m : 0.72m);
-                        putFlow += bidAggr * (isBullLevel ? 0.30m : 0.75m);
-                    }
-                    else if (r.Price > candle.Close + tickSize * 0.5m)
-                    {
-                        // Niveaux situés au-dessus de la clôture (mèche haute rejetée / défense vendeuse CME)
-                        bool isBearLevel = r.AbsorptionSide < 0 || r.TrappedSide < 0 || candle.Close <= candle.Open;
-                        putFlow += bidAggr * 1.15m + askAggr * (isBearLevel ? 1.05m : 0.72m);
-                        callFlow += askAggr * (isBearLevel ? 0.30m : 0.75m);
+                        callFlow += askAggr * 1.15m;
+                        putFlow += bidAggr * 0.88m;
                     }
                     else
                     {
-                        callFlow += askAggr * 1.12m;
-                        putFlow += bidAggr * 1.12m;
+                        callFlow += askAggr * 0.88m;
+                        putFlow += bidAggr * 1.15m;
+                    }
+
+                    // Bonus uniquement sur véritable absorption passive dans les mèches rejetées
+                    decimal bodyLow = Math.Min(candle.Open, candle.Close);
+                    decimal bodyHigh = Math.Max(candle.Open, candle.Close);
+                    if (r.Price < bodyLow && candle.Close >= midPrice && bidAggr > askAggr * 1.35m)
+                    {
+                        callFlow += (bidAggr - askAggr) * 0.55m;
+                    }
+                    else if (r.Price > bodyHigh && candle.Close <= midPrice && askAggr > bidAggr * 1.35m)
+                    {
+                        putFlow += (askAggr - bidAggr) * 0.55m;
                     }
                 }
 
