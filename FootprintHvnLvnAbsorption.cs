@@ -4247,6 +4247,7 @@ namespace ATAS.Indicators.Custom
             int activeQty = 0;
             int initialQty = Math.Max(1, _botTradeQuantity);
             int entryBar = -1;
+            int lastLossExitBar = -999;
             decimal entryPrice = 0m;
             decimal stopPrice = 0m;
             decimal initialRiskPts = step * 2m;
@@ -4281,7 +4282,9 @@ namespace ATAS.Indicators.Custom
                     bool tp2Triggered = activeDir > 0 ? (c.High >= tp2Price) : (c.Low <= tp2Price);
                     bool tp1Triggered = !tp1Hit && (activeDir > 0 ? (c.High >= tp1Price) : (c.Low <= tp1Price));
                     bool favorableClose = activeDir > 0 ? (c.Close >= c.Open) : (c.Close <= c.Open);
-                    bool tp1CloserToOpen = Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice);
+                    bool tp1CloserToOpen = isCme
+                        ? (Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice) * 1.25m)
+                        : (Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice));
 
                     // Si TP1 et Stop sont touchés sur la même bougie et que TP1 était plus proche de l'ouverture (ou clôture favorable), TP1 est exécuté en premier
                     if (tp1Triggered && stopTriggered && (favorableClose || tp1CloserToOpen))
@@ -4340,7 +4343,7 @@ namespace ATAS.Indicators.Custom
                             activeQty -= half;
 
                             decimal lockOffset = isCme
-                                ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.35m, tickSize))
+                                ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize))
                                 : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                             stopPrice = RoundToTick(entryPrice + activeDir * lockOffset, tickSize);
 
@@ -4369,10 +4372,13 @@ namespace ATAS.Indicators.Custom
                         decimal legPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
                             - (commPerSide * 2m * activeQty);
                         decimal totalTradePnl = Math.Round(bankedPartialUsd + legPnl, 2);
+                        bool wasProfitStop = tp1Hit || totalTradePnl >= 0m;
+                        if (!wasProfitStop)
+                            lastLossExitBar = b;
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                             entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                            stopPrice, totalTradePnl, tp1Hit ? "TP1 + TRAIL PROFIT" : "STOP LOSS", tp1Hit, activeSignal);
+                            stopPrice, totalTradePnl, wasProfitStop ? "TP1 + TRAIL PROFIT" : "STOP LOSS", tp1Hit, activeSignal);
 
                         activeDir = 0;
                         activeQty = 0;
@@ -4406,10 +4412,14 @@ namespace ATAS.Indicators.Custom
                         }
                         else
                         {
-                            // --- Calibration CME (ES/MES, NQ/MNQ) : évite l'arrêt prématuré sur la respiration normale du carnet CME ---
-                            int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 5;
-                            int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
-                            if (!tp1Hit && maxFavExcursion >= Math.Max(step * minBeTriggerSteps, initialRiskPts * 0.68m))
+                            // --- Calibration Haute Protection Hors BTC Binance (ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
+                            int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
+                            int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 2 : 1;
+                            decimal closeExcursion = activeDir > 0 ? (c.Close - entryPrice) : (entryPrice - c.Close);
+
+                            if (!tp1Hit &&
+                                (maxFavExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, initialRiskPts * 0.40m)) ||
+                                 (b >= entryBar + 2 && closeExcursion >= step * minBeTriggerSteps)))
                             {
                                 decimal softBe = RoundToTick(entryPrice + activeDir * (step * beLockSteps), tickSize);
                                 if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
@@ -4417,8 +4427,8 @@ namespace ATAS.Indicators.Custom
                             }
                             else if (tp1Hit)
                             {
-                                int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 8 : 4;
-                                decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.55m, tickSize));
+                                int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 2;
+                                decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.40m, tickSize));
                                 decimal favPeak = activeDir > 0 ? c.High : c.Low;
                                 decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
 
