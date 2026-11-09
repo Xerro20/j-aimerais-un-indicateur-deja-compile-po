@@ -651,6 +651,12 @@
                 <button type="button" id="btnChartBotReset" class="chart-sub-btn" onclick="resetBotFromChart()">
                   ⟲ RESET DD/PnL
                 </button>
+                <button type="button" id="btnChartProfile" class="chart-sub-btn" style="border-color: #38bdf8; color: #bae6fd;" onclick="cycleMarketProfileFromChart()">
+                  📊 PROFIL : AUTO (CME ES/NQ &amp; BTC)
+                </button>
+                <button type="button" id="btnChartCrossTrade" class="chart-sub-btn" style="border-color: #10f596; color: #a7f3d0; background: rgba(6, 78, 59, 0.75);" onclick="cycleCrossTradingFromChart()">
+                  🔀 CROISÉ : ES ➔ MES (5$/pt)
+                </button>
               </div>
               <div class="chart-schedule-frame" id="boxChartSchedule">
                 <button type="button" id="btnSchedToggle" class="sched-toggle-btn" onclick="toggleScheduleFromChart()">
@@ -700,23 +706,23 @@
 
     <!-- Feature & Installation Guide -->
     <section class="section">
-      <h2 class="section-title" style="margin-bottom: 16px;">Fonctionnement de l'Alerte Visuelle Achat/Vente &amp; du Flux d'Options ATAS X</h2>
+      <h2 class="section-title" style="margin-bottom: 16px;">Adaptation Multi-Marchés (BTC Binance + CME ES/NQ/GC/CL) &amp; Trading Croisé ATAS X</h2>
       <div class="three-col">
         <div class="card feature-card">
-          <h3>⚡ 1. Flux d'Options ATAS X &amp; Alerte Achat/Vente</h3>
+          <h3>🏛 1. Calibrage Automatique CME (S&amp;P 500, NASDAQ, GC, CL) &amp; BTC</h3>
           <ul>
-            <li><strong>Intégration Native ATAS X :</strong> Interroge <code>IOptionsDataFeed</code> &amp; <code>Security</code> (<code>OptionTypes.Call</code> / <code>Put</code>, <code>StrikePrice</code>, <code>OpenInterest</code>), les variations d'Open Interest (<code>ΔOI = Candle.OI</code>) et les Sweeps temps réel (<code>OnNewTrade</code> / <code>OnCumulativeTrade</code>).</li>
-            <li><strong>Signal Visuel ★ ACHAT ▲ :</strong> Déclenché lorsqu'une <em>Bullish Heavy Absorption</em> et/ou des <em>Vendeurs Piégés ▲</em> sont confirmés par un <strong>Flux d'Options Calls Haussier</strong> (<code>Calls % &ge; Seuil</code>, <code>PCR &lt; 1</code>, <code>ΔOI +</code>).</li>
-            <li><strong>Signal Visuel ★ VENTE ▼ :</strong> Déclenché lorsqu'une <em>Bearish Heavy Absorption</em> et/ou des <em>Acheteurs Piégés ▼</em> sont confirmés par un <strong>Flux d'Options Puts Baissier</strong> (<code>Puts % &ge; Seuil</code>, <code>PCR &gt; 1</code>).</li>
+            <li><strong>100 % Intact sur BTC Binance Futures :</strong> Conserve intégralement tous les réglages d'origine lorsque le graphique est sur un contrat Crypto (<code>BTCUSDT</code>, <code>ETHUSDT</code>).</li>
+            <li><strong>Adaptation Native CME :</strong> Détecte automatiquement <strong>S&amp;P 500 (<code>ES</code> / <code>MES</code>)</strong>, <strong>NASDAQ 100 (<code>NQ</code> / <code>MNQ</code>)</strong>, <strong>Gold (<code>GC</code> / <code>MGC</code>)</strong>, <strong>Crude Oil (<code>CL</code> / <code>MCL</code>)</strong>, <strong>Dow (<code>YM</code> / <code>MYM</code>)</strong> et <strong>Russell (<code>RTY</code> / <code>M2K</code>)</strong>.</li>
+            <li><strong>Agrégation Micro-Clusters CME :</strong> Regroupe automatiquement les ticks adjacents sur les contrats volatils à carnet fin (<code>NQ</code>, <code>MNQ</code>, <code>GC</code>, <code>CL</code>) et adapte l'estimation d'OI lorsque <code>Candle.OI == 0</code> en intraday CME.</li>
           </ul>
         </div>
 
         <div class="card feature-card">
-          <h3>🪤 2. Rendu Visuel Complet sur le Graphique</h3>
+          <h3>🔀 2. Trading Croisé ATAS X (Charte Normal ➔ Exécution Micro)</h3>
           <ul>
-            <li><strong>Cartouche sur la Bougie :</strong> Badge lumineux <code>★ ACHAT ▲ [Score %]</code> ou <code>★ VENTE ▼ [Score %]</code> avec le pourcentage de flux Calls/Puts et le Put/Call Ratio (PCR).</li>
-            <li><strong>Bannière Visuelle d'Alerte :</strong> Bandeau en haut du graphique affichant le signal actif, le prix d'entrée, le Stop-Loss, le PCR, le <code>ΔOI</code> et la raison de confluence.</li>
-            <li><strong>Lignes Entrée &amp; Stop-Loss + 8 DataSeries :</strong> Trace automatiquement le niveau d'entrée et le Stop-Loss sous/sur la mèche d'absorption, et expose <code>VisualBuyAlert</code> &amp; <code>VisualSellAlert</code> pour les stratégies ATAS.</li>
+            <li><strong>Intégration <code>ICrossTradingIndicatorContext</code> :</strong> Analyse l'Order Flow institutionnel sur la <strong>charte du contrat normal (<code>ES</code>, <code>NQ</code>, <code>GC</code>, <code>CL</code>)</strong> tout en exécutant les ordres sur le <strong>contrat Micro (<code>MES</code>, <code>MNQ</code>, <code>MGC</code>, <code>MCL</code>)</strong> via le Trading Croisé d'ATAS X.</li>
+            <li><strong>Valeur du Point &amp; PnL Réel Micro :</strong> Ajuste automatiquement le multiplicateur en $/pt (<code>MES = 5$/pt</code>, <code>MNQ = 2$/pt</code>, <code>MGC = 10$/pt</code>, <code>MCL = 100$/pt</code>) et synchronise les positions / trades Micro sur la charte du contrat normal.</li>
+            <li><strong>Gestion Temps Réel TP1 / Trail / TP2 :</strong> Suit les niveaux du graphique normal tick-par-tick et envoie les clôtures partielles (<code>TP1 50 %</code>) et finales (<code>SL</code> / <code>Trailing</code> / <code>TP2</code>) sur la position Micro active.</li>
           </ul>
         </div>
 
@@ -734,7 +740,7 @@
             <button class="copy-btn" onclick="copyText('macPath', this)">Copier</button>
           </div>
           <ul>
-            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint HVN / LVN, Absorption, Trapped &amp; Options Flow Alerts</strong>.</li>
+            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint Quant OrderFlow, Options Flow &amp; Auto-Bot (Max DD / Max PnL)</strong>.</li>
           </ul>
         </div>
       </div>
@@ -742,6 +748,37 @@
   </main>
 
   <script>
+    const marketProfiles = [
+      "📊 PROFIL : AUTO (CME ES/NQ & BTC)",
+      "📊 PROFIL : CME S&P 500 (ES / MES)",
+      "📊 PROFIL : CME NASDAQ 100 (NQ / MNQ)",
+      "📊 PROFIL : CME CLÉS (GC / CL / YM / RTY)",
+      "📊 PROFIL : BTC BINANCE FUTURES"
+    ];
+    let currentMarketProfileIdx = 0;
+
+    const crossModes = [
+      "🔀 CROISÉ : ES ➔ MES (5$/pt)",
+      "🔀 CROISÉ : NQ ➔ MNQ (2$/pt)",
+      "🔀 CROISÉ : FORCER MICRO (MES/MNQ)",
+      "🔀 CROISÉ : DIRECT CONTRAT CHARTE"
+    ];
+    let currentCrossModeIdx = 0;
+
+    function cycleMarketProfileFromChart() {
+      currentMarketProfileIdx = (currentMarketProfileIdx + 1) % marketProfiles.length;
+      const btn = document.getElementById("btnChartProfile");
+      if (btn) btn.textContent = marketProfiles[currentMarketProfileIdx];
+      analyzeAndRender();
+    }
+
+    function cycleCrossTradingFromChart() {
+      currentCrossModeIdx = (currentCrossModeIdx + 1) % crossModes.length;
+      const btn = document.getElementById("btnChartCrossTrade");
+      if (btn) btn.textContent = crossModes[currentCrossModeIdx];
+      analyzeAndRender();
+    }
+
     function copyText(id, btn) {
       const text = document.getElementById(id).textContent;
       navigator.clipboard.writeText(text);

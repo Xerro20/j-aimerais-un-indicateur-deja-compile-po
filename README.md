@@ -17,7 +17,14 @@ Indicateur & Bot Quant Senior Order Flow **déjà compilé** (`FootprintHvnLvnAb
      - Applique le coupe-circuit **Max Drawdown (`$`)** et **Max PnL (`$`)** directement sur le **PnL Réel du Compte Actif**, avec un 3ᵉ encadrement interactif cliquable sur la charte (`[ ● SYNC COMPTE: ... ] | [ PORTÉE: COMPTE GLOBAL / INSTRUMENT ] | PNL RÉEL: ...$`).
    - **Bouton d'Activation Interactif directement sur la Charte (`ShowChartBotToggleButton`)** : Barre de contrôle cliquable à la souris directement sur le graphique ATAS X (`ProcessMouseClick` / `ProcessMouseMove`) avec voyant LED permettant d'activer/désactiver le Bot en un clic (`[ ● BOT QUANT : ON (ACTIF) ]` / `[ ○ BOT QUANT : OFF ]`), de basculer le mode (`[ MODE: SIM/PAPER ]` ↔ `[ MODE: LIVE ATAS ]`), de réinitialiser le coupe-circuit (`[ RESET ]`), ainsi qu'un bouton rapide `[ ● BOT : ON/OFF ]` intégré dans l'en-tête du panneau HUD.
    - **Encadrement Interactif des Horaires sur la Charte (`EnableBotSchedule`, `BotStartTimeText`, `BotEndTimeText`, `BotFlattenAtEndTime`)** : Encadrement dessiné directement sur la charte (`[ 🕒 HORAIRES: ON/OFF ] | DÉBUT: [-] [08:00] [+] → FIN: [-] [22:00] [+]`) permettant d'activer/désactiver le filtre horaire et de régler l'**Heure de Démarrage** et l'**Heure de Fin** directement à la souris sur le graphique (par pas de 15 min ou 1 h) ou en saisissant `HH:mm` dans les paramètres, avec clôture automatique optionnelle à l'heure de fin.
-   - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne par défaut en mode sécurisé `BacktestAndPaperOnly` sur le graphique ou en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`).
+   - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`) ou `BacktestAndPaperOnly`.
+8. **Adaptation Native Multi-Marchés (BTC Binance Futures + Futurs CME Clés `ES`, `NQ`, `GC`, `CL`, `YM`, `RTY`) & Trading Croisé ATAS X (`ICrossTradingIndicatorContext`)** :
+   - **100 % Intact sur BTC Binance Futures (`MarketProfilePreset.CryptoBinanceFutures`)** : Conserve intégralement tous les seuils et comportements d'origine lorsque le graphique est sur un contrat Crypto (`BTCUSDT`, `ETHUSDT`, etc.).
+   - **Calibrage Automatique CME (`MarketProfilePreset.AutoDetect` / `CmeSp500_ES_MES` / `CmeNasdaq_NQ_MNQ` / `CmeKeyFutures_GC_CL_YM_RTY`)** :
+     - Adapte automatiquement les seuils d'Absorption, de Traders Piégés, le Z-Score, le regroupement de micro-clusters (`EnableCmeMicroClusterPooling` pour les carnets fins `NQ` / `MNQ` / `GC` / `CL`), l'estimation synthétique d'`OpenInterest` lorsque `Candle.OI == 0` en intraday CME et les valeurs de point exactes (`ES = 50 $/pt`, `MES = 5 $/pt`, `NQ = 20 $/pt`, `MNQ = 2 $/pt`, `GC = 100 $/pt`, `MGC = 10 $/pt`, `CL = 1000 $/pt`, `MCL = 100 $/pt`, `YM = 5 $/pt`, `MYM = 0,50 $/pt`, `RTY = 50 $/pt`, `M2K = 5 $/pt`).
+   - **Support Natif du Trading Croisé ATAS X (`CrossTradingExecutionMode` + `ICrossTradingIndicatorContext`)** :
+     - Permet d'afficher l'indicateur sur la **charte du contrat normal (`ES`, `NQ`, `GC`, `CL`, `YM`, `RTY`)** pour bénéficier de la profondeur Order Flow institutionnelle, tout en exécutant les ordres (`TradingManager.Security`), en gérant **`TP1` / `Early Profit-Lock` / `Trailing Stop` / `TP2`** tick-par-tick et en synchronisant le **PnL Réel** sur le **contrat Micro (`MES`, `MNQ`, `MGC`, `MCL`, `MYM`, `M2K`)** sélectionné dans le Trading Croisé d'ATAS X.
+     - Deux nouveaux boutons interactifs cliquables directement sur la charte : **`[ PROFIL: AUTO (ES/S&P | NQ/NAS | BTC) ]`** et **`[ CROISÉ: ES➔MES / NQ➔MNQ ]`**.
 
 ---
 
@@ -33,8 +40,8 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 | **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `126 464 octets` (123,5 Ko) |
-| **SHA-256** | `01b06cef73c8833ab8552d0864f2d6fefd34cacb6ed0d2e78731e70c08127541` |
+| **Taille du binaire** | `146 432 octets` (143,0 Ko) |
+| **SHA-256** | `74a989c7f062ea09646d6742a7c723672a1eab70ae57ac23db8ffafbb32eda8e` |
 
 ---
 
