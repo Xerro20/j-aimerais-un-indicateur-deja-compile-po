@@ -6109,6 +6109,9 @@ namespace ATAS.Indicators.Custom
             var btnFont = new RenderFont("Consolas", 10, FontStyle.Bold);
             var subFont = new RenderFont("Consolas", 9);
 
+            decimal ctrlTickSize = InstrumentInfo != null && InstrumentInfo.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            var ctrlContractInfo = ResolveContractAndCrossTradingInfo(ctrlTickSize);
+
             string mainTxt = _enableTradingBot
                 ? (botPerf.IsHaltedByMaxDrawdown
                     ? "BOT QUANT : STOP DD MAX"
@@ -6121,26 +6124,50 @@ namespace ATAS.Indicators.Custom
 
             string resetTxt = "RESET";
 
+            string profileShort = _marketProfile switch
+            {
+                MarketProfilePreset.AutoDetect => $"PROFIL: AUTO ({ctrlContractInfo.EffectiveProfile switch { MarketProfilePreset.CryptoBinanceFutures => "BTC", MarketProfilePreset.CmeSp500_ES_MES => "ES/S&P", MarketProfilePreset.CmeNasdaq_NQ_MNQ => "NQ/NAS", _ => "CME" }})",
+                MarketProfilePreset.CryptoBinanceFutures => "PROFIL: BTC BINANCE",
+                MarketProfilePreset.CmeSp500_ES_MES => "PROFIL: CME S&P (ES)",
+                MarketProfilePreset.CmeNasdaq_NQ_MNQ => "PROFIL: CME NASDAQ (NQ)",
+                _ => "PROFIL: CME CLÉ (GC/CL)"
+            };
+
+            string crossShort = _crossTradingMode switch
+            {
+                CrossTradingExecutionMode.AutoAtasCrossOrMicro => ctrlContractInfo.IsCrossTradingActive
+                    ? $"CROISÉ: {ctrlContractInfo.ChartSymbol}➔{ctrlContractInfo.TradedSymbol}"
+                    : "CROISÉ: AUTO ATAS X",
+                CrossTradingExecutionMode.ForceMicroOnStandardChart => $"CROISÉ: MICRO ({ctrlContractInfo.TradedSymbol})",
+                _ => $"CROISÉ: OFF ({ctrlContractInfo.ChartSymbol})"
+            };
+
             Size sMain = context.MeasureString(mainTxt, btnFont);
             Size sMode = context.MeasureString(modeTxt, subFont);
             Size sReset = context.MeasureString(resetTxt, subFont);
+            Size sProf = context.MeasureString(profileShort, subFont);
+            Size sCross = context.MeasureString(crossShort, subFont);
 
             int h = 28;
             int wMain = sMain.Width + 28;
             int wMode = sMode.Width + 16;
             int wReset = sReset.Width + 16;
+            int wProf = sProf.Width + 16;
+            int wCross = sCross.Width + 16;
 
             int startX = chartRegion.Left + 14;
             int startY = chartRegion.Top + 10;
 
             if (ShowHudPanel && HudPosition == HudCorner.TopLeft)
             {
-                startX = chartRegion.Right - (wMain + wMode + wReset + 28);
+                startX = chartRegion.Right - (wMain + wMode + wReset + wProf + wCross + 40);
             }
 
             _chartBotToggleBtnRect = new Rectangle(startX, startY, wMain, h);
             _chartBotModeBtnRect = new Rectangle(_chartBotToggleBtnRect.Right + 6, startY, wMode, h);
             _chartBotResetBtnRect = new Rectangle(_chartBotModeBtnRect.Right + 6, startY, wReset, h);
+            _chartProfileBtnRect = new Rectangle(_chartBotResetBtnRect.Right + 6, startY, wProf, h);
+            _chartCrossTradeBtnRect = new Rectangle(_chartProfileBtnRect.Right + 6, startY, wCross, h);
 
             // 1. Bouton Principal ON / OFF du Bot
             Color mainBg;
@@ -6199,10 +6226,36 @@ namespace ATAS.Indicators.Custom
             context.DrawRectangle(new RenderPen(rstBorder, _hoverBotResetBtn ? 2f : 1.3f), _chartBotResetBtnRect);
             context.DrawString(resetTxt, subFont, Color.FromArgb(255, 226, 232, 240), _chartBotResetBtnRect.Left + 8, _chartBotResetBtnRect.Top + 7);
 
+            // 3b. Bouton Profil de Marché (Auto / BTC Binance / CME S&P ES / CME NASDAQ NQ / CME Clés)
+            bool isCmeProf = ctrlContractInfo.EffectiveProfile != MarketProfilePreset.CryptoBinanceFutures;
+            Color profBg = _hoverProfileBtn
+                ? Color.FromArgb(245, 30, 64, 175)
+                : (isCmeProf ? Color.FromArgb(235, 12, 45, 92) : Color.FromArgb(235, 15, 23, 42));
+            Color profBorder = isCmeProf
+                ? Color.FromArgb(255, 56, 189, 248)
+                : Color.FromArgb(220, 245, 158, 11);
+
+            context.FillRectangle(profBg, _chartProfileBtnRect);
+            context.DrawRectangle(new RenderPen(profBorder, _hoverProfileBtn ? 2f : 1.4f), _chartProfileBtnRect);
+            context.DrawString(profileShort, subFont, isCmeProf ? Color.FromArgb(255, 186, 230, 253) : Color.FromArgb(255, 253, 224, 71), _chartProfileBtnRect.Left + 8, _chartProfileBtnRect.Top + 7);
+
+            // 3c. Bouton Trading Croisé ATAS X (Charte Contrat Normal ES/NQ -> Exécution Micro MES/MNQ)
+            bool isCrossOn = ctrlContractInfo.IsCrossTradingActive || _crossTradingMode == CrossTradingExecutionMode.ForceMicroOnStandardChart;
+            Color crossBg = _hoverCrossTradeBtn
+                ? Color.FromArgb(245, 6, 95, 70)
+                : (isCrossOn ? Color.FromArgb(235, 6, 78, 59) : Color.FromArgb(235, 15, 23, 42));
+            Color crossBorder = isCrossOn
+                ? Color.FromArgb(255, 16, 245, 150)
+                : Color.FromArgb(200, 100, 116, 139);
+
+            context.FillRectangle(crossBg, _chartCrossTradeBtnRect);
+            context.DrawRectangle(new RenderPen(crossBorder, _hoverCrossTradeBtn ? 2f : 1.4f), _chartCrossTradeBtnRect);
+            context.DrawString(crossShort, subFont, isCrossOn ? Color.FromArgb(255, 167, 243, 208) : Color.FromArgb(255, 203, 213, 225), _chartCrossTradeBtnRect.Left + 8, _chartCrossTradeBtnRect.Top + 7);
+
             // 4. Encadrement Horaire Interactif sur la Charte (Heures de Démarrage & de Fin)
             int schedY = startY + h + 6;
             int schedH = 28;
-            int frameW = Math.Max(428, (_chartBotResetBtnRect.Right - startX));
+            int frameW = Math.Max(428, (_chartCrossTradeBtnRect.Right - startX));
             Rectangle schedFrameRect = new Rectangle(startX, schedY, frameW, schedH);
 
             Color frameBg = Color.FromArgb(236, 11, 17, 30);
