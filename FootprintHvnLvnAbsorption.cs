@@ -1067,6 +1067,9 @@ namespace ATAS.Indicators.Custom
             public bool IsHaltedByMaxDrawdown;
             public bool IsHaltedByMaxProfit;
             public string StatusLabel;
+            public string MarketProfileLabel;
+            public string CrossTradingLabel;
+            public decimal EffectivePointValueUsd;
             public bool IsSyncedWithActiveAccount;
             public string ActiveAccountName;
             public string ActiveAccountCurrency;
@@ -1133,16 +1136,19 @@ namespace ATAS.Indicators.Custom
         private DateTime _lastLiveOrderSentUtc = DateTime.MinValue;
         private DateTime _lastLiveExitSentUtc = DateTime.MinValue;
 
-        // État temps réel de synchronisation avec le Compte Actif ATAS X (Portfolio / Position / MyTrades)
+        // État temps réel de synchronisation avec le Compte Actif ATAS X (Portfolio / Position / MyTrades / CrossTrading)
         private ITradingManager? _subscribedTradingManager;
+        private ICrossTradingIndicatorContext? _subscribedCrossTradingContext;
         private string _lastSyncedAccountId = string.Empty;
         private decimal _liveAccountPeakPnlUsd = decimal.MinValue;
         private decimal _liveAccountMaxDrawdownUsd;
 
-        // Zones cliquables & états de survol du Bouton d'Activation, de l'Encadrement Horaire et de l'Encadrement Compte Actif
+        // Zones cliquables & états de survol du Bouton d'Activation, de l'Encadrement Horaire, du Compte Actif & du Trading Croisé CME
         private Rectangle _chartBotToggleBtnRect = Rectangle.Empty;
         private Rectangle _chartBotModeBtnRect = Rectangle.Empty;
         private Rectangle _chartBotResetBtnRect = Rectangle.Empty;
+        private Rectangle _chartProfileBtnRect = Rectangle.Empty;
+        private Rectangle _chartCrossTradeBtnRect = Rectangle.Empty;
         private Rectangle _hudBotToggleBtnRect = Rectangle.Empty;
 
         private Rectangle _chartSchedToggleRect = Rectangle.Empty;
@@ -1159,6 +1165,8 @@ namespace ATAS.Indicators.Custom
         private bool _hoverBotToggleBtn;
         private bool _hoverBotModeBtn;
         private bool _hoverBotResetBtn;
+        private bool _hoverProfileBtn;
+        private bool _hoverCrossTradeBtn;
         private bool _hoverSchedToggleBtn;
         private bool _hoverStartMinus;
         private bool _hoverStartPlus;
@@ -1211,6 +1219,487 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
+        // Détection Automatique du Profil de Marché (Crypto Binance vs CME ES/NQ/GC/CL)
+        // & Résolveur de Trading Croisé ATAS X (Contrat Normal Chart ➔ Contrat Micro Exécuté)
+        // =====================================================================
+        private struct ContractAndCrossTradingInfo
+        {
+            public MarketProfilePreset EffectiveProfile;
+            public bool IsCmeMarket;
+            public string ChartSymbol;
+            public string TradedSymbol;
+            public string BaseFamily; // "ES", "NQ", "GC", "CL", "YM", "RTY", "6E", "BTC", "CRYPTO"
+            public bool IsCrossTradingMicro;
+            public decimal ChartPointValueUsd;
+            public decimal TradedPointValueUsd;
+            public decimal TradedCommissionPerSideUsd;
+            public string ProfileBadge;
+            public string CrossTradingBadge;
+        }
+
+        private static string NormalizeSymbolUpper(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return string.Empty;
+            return raw.Trim().ToUpperInvariant();
+        }
+
+        private static bool StartsWithContractRoot(string sym, string root)
+        {
+            if (string.IsNullOrEmpty(sym) || string.IsNullOrEmpty(root))
+                return false;
+
+            // Gère les préfixes type @ES, /ES, CME:ES, ESH6, ESH26, ESZ2026, ES-202603, ES_F, etc.
+            int idx = 0;
+            while (idx < sym.Length && (sym[idx] == '@' || sym[idx] == '/' || sym[idx] == '$'))
+                idx++;
+
+            int colonIdx = sym.IndexOf(':');
+            if (colonIdx >= 0 && colonIdx + 1 < sym.Length)
+                idx = colonIdx + 1;
+
+            if (sym.Length - idx < root.Length)
+                return false;
+
+            for (int i = 0; i < root.Length; i++)
+            {
+                if (sym[idx + i] != root[i])
+                    return false;
+            }
+
+            int after = idx + root.Length;
+            if (after == sym.Length)
+                return true;
+
+            char next = sym[after];
+            // Mois à terme CME (F,G,H,J,K,M,N,Q,U,V,X,Z) suivi d'un chiffre, ou séparateur/chiffre/espace/@/#
+            if (char.IsDigit(next) || next == ' ' || next == '-' || next == '_' || next == '.' || next == '#' || next == '@' || next == '!')
+                return true;
+
+            const string cmeMonthCodes = "FGHJKMNQUVXZ";
+            if (cmeMonthCodes.IndexOf(next) >= 0 && after + 1 < sym.Length && char.IsDigit(sym[after + 1]))
+                return true;
+
+            return false;
+        }
+
+        private static bool ClassifyFuturesSymbol(
+            string symRaw,
+            out string family,
+            out bool isMicro,
+            out decimal pointValueUsd,
+            out decimal defaultCommPerSideUsd,
+            out string standardCode,
+            out string microCode)
+        {
+            string s = NormalizeSymbolUpper(symRaw);
+            family = "OTHER";
+            isMicro = false;
+            pointValueUsd = 0m;
+            defaultCommPerSideUsd = 0m;
+            standardCode = s;
+            microCode = s;
+
+            if (string.IsNullOrEmpty(s))
+                return false;
+
+            // 1. Crypto Perpétuels / Spot (Binance, Bybit, OKX, Bitget...)
+            if (s.Contains("USDT") || s.Contains("USDC") || s.Contains("BUSD") || s.Contains("FDUSD") ||
+                s.Contains("PERP") || s.Contains("BINANCE") || s.Contains("BYBIT") ||
+                s.StartsWith("BTCUSD") || s.StartsWith("ETHUSD") || s.StartsWith("SOLUSD"))
+            {
+                family = "CRYPTO";
+                isMicro = false;
+                pointValueUsd = 1m;
+                defaultCommPerSideUsd = 0.50m;
+                standardCode = s;
+                microCode = s;
+                return true;
+            }
+
+            // 2. CME S&P 500 : ES ($50/pt) & Micro MES ($5/pt)
+            if (StartsWithContractRoot(s, "MES") || s.Contains("MICRO E-MINI S&P"))
+            {
+                family = "ES";
+                isMicro = true;
+                pointValueUsd = 5m;
+                defaultCommPerSideUsd = 0.62m;
+                standardCode = "ES";
+                microCode = "MES";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "ES") || s.Contains("E-MINI S&P"))
+            {
+                family = "ES";
+                isMicro = false;
+                pointValueUsd = 50m;
+                defaultCommPerSideUsd = 2.10m;
+                standardCode = "ES";
+                microCode = "MES";
+                return true;
+            }
+
+            // 3. CME NASDAQ 100 : NQ ($20/pt) & Micro MNQ ($2/pt)
+            if (StartsWithContractRoot(s, "MNQ") || s.Contains("MICRO E-MINI NASDAQ"))
+            {
+                family = "NQ";
+                isMicro = true;
+                pointValueUsd = 2m;
+                defaultCommPerSideUsd = 0.62m;
+                standardCode = "NQ";
+                microCode = "MNQ";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "NQ") || s.Contains("E-MINI NASDAQ") || s.Contains("NASDAQ 100"))
+            {
+                family = "NQ";
+                isMicro = false;
+                pointValueUsd = 20m;
+                defaultCommPerSideUsd = 2.10m;
+                standardCode = "NQ";
+                microCode = "MNQ";
+                return true;
+            }
+
+            // 4. CME / COMEX Or (Gold) : GC ($100/pt) & Micro MGC ($10/pt)
+            if (StartsWithContractRoot(s, "MGC") || StartsWithContractRoot(s, "QO"))
+            {
+                family = "GC";
+                isMicro = true;
+                pointValueUsd = 10m;
+                defaultCommPerSideUsd = 0.75m;
+                standardCode = "GC";
+                microCode = "MGC";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "GC"))
+            {
+                family = "GC";
+                isMicro = false;
+                pointValueUsd = 100m;
+                defaultCommPerSideUsd = 2.30m;
+                standardCode = "GC";
+                microCode = "MGC";
+                return true;
+            }
+
+            // 5. CME / NYMEX Crude Oil (WTI) : CL ($1000/pt) & Micro MCL ($100/pt) / QM ($500/pt)
+            if (StartsWithContractRoot(s, "MCL"))
+            {
+                family = "CL";
+                isMicro = true;
+                pointValueUsd = 100m;
+                defaultCommPerSideUsd = 0.75m;
+                standardCode = "CL";
+                microCode = "MCL";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "CL"))
+            {
+                family = "CL";
+                isMicro = false;
+                pointValueUsd = 1000m;
+                defaultCommPerSideUsd = 2.30m;
+                standardCode = "CL";
+                microCode = "MCL";
+                return true;
+            }
+
+            // 6. CME / CBOT Dow Jones : YM ($5/pt) & Micro MYM ($0.50/pt)
+            if (StartsWithContractRoot(s, "MYM"))
+            {
+                family = "YM";
+                isMicro = true;
+                pointValueUsd = 0.50m;
+                defaultCommPerSideUsd = 0.62m;
+                standardCode = "YM";
+                microCode = "MYM";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "YM"))
+            {
+                family = "YM";
+                isMicro = false;
+                pointValueUsd = 5m;
+                defaultCommPerSideUsd = 2.10m;
+                standardCode = "YM";
+                microCode = "MYM";
+                return true;
+            }
+
+            // 7. CME Russell 2000 : RTY ($50/pt) & Micro M2K ($5/pt)
+            if (StartsWithContractRoot(s, "M2K"))
+            {
+                family = "RTY";
+                isMicro = true;
+                pointValueUsd = 5m;
+                defaultCommPerSideUsd = 0.62m;
+                standardCode = "RTY";
+                microCode = "M2K";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "RTY") || StartsWithContractRoot(s, "TF"))
+            {
+                family = "RTY";
+                isMicro = false;
+                pointValueUsd = 50m;
+                defaultCommPerSideUsd = 2.10m;
+                standardCode = "RTY";
+                microCode = "M2K";
+                return true;
+            }
+
+            // 8. CME Euro FX : 6E ($125,000/pt) & Micro M6E ($12,500/pt)
+            if (StartsWithContractRoot(s, "M6E"))
+            {
+                family = "6E";
+                isMicro = true;
+                pointValueUsd = 12500m;
+                defaultCommPerSideUsd = 0.55m;
+                standardCode = "6E";
+                microCode = "M6E";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "6E"))
+            {
+                family = "6E";
+                isMicro = false;
+                pointValueUsd = 125000m;
+                defaultCommPerSideUsd = 2.10m;
+                standardCode = "6E";
+                microCode = "M6E";
+                return true;
+            }
+
+            // 9. CME Bitcoin Futures : BTC ($5/pt) & Micro MBT ($0.10/pt)
+            if (StartsWithContractRoot(s, "MBT"))
+            {
+                family = "BTC_CME";
+                isMicro = true;
+                pointValueUsd = 0.10m;
+                defaultCommPerSideUsd = 0.85m;
+                standardCode = "BTC";
+                microCode = "MBT";
+                return true;
+            }
+            if (StartsWithContractRoot(s, "BTC") && !s.Contains("USD"))
+            {
+                family = "BTC_CME";
+                isMicro = false;
+                pointValueUsd = 5m;
+                defaultCommPerSideUsd = 2.50m;
+                standardCode = "BTC";
+                microCode = "MBT";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool AreInstrumentsInSameCrossFamily(string? symA, string? symB)
+        {
+            if (string.IsNullOrWhiteSpace(symA) || string.IsNullOrWhiteSpace(symB))
+                return false;
+            if (string.Equals(symA.Trim(), symB.Trim(), StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (ClassifyFuturesSymbol(symA, out string famA, out _, out _, out _, out _, out _) &&
+                ClassifyFuturesSymbol(symB, out string famB, out _, out _, out _, out _, out _))
+            {
+                return string.Equals(famA, famB, StringComparison.OrdinalIgnoreCase);
+            }
+            return false;
+        }
+
+        private ContractAndCrossTradingInfo ResolveContractAndCrossTradingInfo(decimal tickSize)
+        {
+            string chartSym = InstrumentInfo?.Instrument ?? string.Empty;
+            string tmSecCode = TradingManager?.Security?.Code ?? TradingManager?.Security?.SecurityId ?? string.Empty;
+            string posSecCode = TradingManager?.Position?.SecurityId ?? string.Empty;
+
+            var crossCtx = (DataProvider as IndicatorDataProvider)?.CrossTradingContext;
+            bool atasCrossActive = crossCtx?.IsCrossTradingActive ?? false;
+            string atasCrossDisplay = crossCtx?.CurrentCrossTradingDisplayName ?? string.Empty;
+
+            string tradedSym = !string.IsNullOrWhiteSpace(atasCrossDisplay)
+                ? atasCrossDisplay
+                : (!string.IsNullOrWhiteSpace(tmSecCode) ? tmSecCode : (!string.IsNullOrWhiteSpace(posSecCode) ? posSecCode : chartSym));
+
+            bool chartClassified = ClassifyFuturesSymbol(
+                chartSym,
+                out string chartFamily,
+                out bool chartIsMicro,
+                out decimal chartKnownPtVal,
+                out decimal chartDefaultComm,
+                out string stdCode,
+                out string microCode);
+
+            bool tradedClassified = ClassifyFuturesSymbol(
+                tradedSym,
+                out string tradedFamily,
+                out bool tradedIsMicro,
+                out decimal tradedKnownPtVal,
+                out decimal tradedDefaultComm,
+                out _,
+                out _);
+
+            // Détermination du Profil de Marché effectif
+            MarketProfilePreset effectiveProfile = _marketProfile;
+            if (effectiveProfile == MarketProfilePreset.AutoDetect)
+            {
+                if (chartClassified)
+                {
+                    effectiveProfile = chartFamily switch
+                    {
+                        "CRYPTO" => MarketProfilePreset.CryptoBinanceFutures,
+                        "ES" => MarketProfilePreset.CmeSp500_ES_MES,
+                        "NQ" => MarketProfilePreset.CmeNasdaq_NQ_MNQ,
+                        _ => MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY
+                    };
+                }
+                else
+                {
+                    // Heuristique par TickSize : ES/NQ/YM/RTY ont TickSize = 0.25 ou 1.0 ou 0.10 sans suffixe USDT
+                    effectiveProfile = (tickSize == 0.25m)
+                        ? MarketProfilePreset.CmeSp500_ES_MES
+                        : MarketProfilePreset.CryptoBinanceFutures;
+                }
+            }
+
+            bool isCme = effectiveProfile != MarketProfilePreset.CryptoBinanceFutures;
+
+            // Valeur d'un point sur le graphique (Contrat Normal ou courant)
+            decimal chartPtVal = chartKnownPtVal > 0m ? chartKnownPtVal : (_botPointValueUsd > 0m ? _botPointValueUsd : 50m);
+            decimal connectorPtVal = 0m;
+            try
+            {
+                var sec = TradingManager?.Security;
+                if (sec != null && sec.TickCost > 0m && sec.TickSize > 0m)
+                    connectorPtVal = sec.TickCost / sec.TickSize;
+            }
+            catch
+            {
+                // Ignorer si non fourni
+            }
+
+            // Détection du Trading Croisé (Chart Normal ES/NQ/GC/CL ➔ Exécution Micro MES/MNQ/MGC/MCL)
+            bool isCrossMicro = false;
+            decimal tradedPtVal = chartPtVal;
+            decimal tradedComm = _botCommissionPerSideUsd;
+            string effectiveTradedSymbol = string.IsNullOrWhiteSpace(tradedSym) ? chartSym : tradedSym;
+
+            if (_crossTradingMode == CrossTradingExecutionMode.ForceMicroOnNormalChart && isCme)
+            {
+                isCrossMicro = !chartIsMicro;
+                if (chartClassified && !string.IsNullOrEmpty(microCode))
+                {
+                    effectiveTradedSymbol = tradedIsMicro && !string.IsNullOrWhiteSpace(tradedSym) ? tradedSym : microCode;
+                    if (ClassifyFuturesSymbol(microCode, out _, out _, out decimal mPt, out decimal mComm, out _, out _))
+                    {
+                        tradedPtVal = mPt;
+                        tradedComm = Math.Min(_botCommissionPerSideUsd, mComm);
+                    }
+                    else
+                    {
+                        tradedPtVal = Math.Max(0.1m, chartPtVal * 0.1m);
+                        tradedComm = Math.Min(_botCommissionPerSideUsd, 0.65m);
+                    }
+                }
+                else
+                {
+                    tradedPtVal = effectiveProfile == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 2m : 5m;
+                    tradedComm = Math.Min(_botCommissionPerSideUsd, 0.62m);
+                    effectiveTradedSymbol = effectiveProfile == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? "MNQ" : "MES";
+                }
+            }
+            else if (_crossTradingMode == CrossTradingExecutionMode.AutoAtasCrossTrading)
+            {
+                bool diffInstrument = !string.IsNullOrWhiteSpace(tradedSym) &&
+                                      !string.IsNullOrWhiteSpace(chartSym) &&
+                                      !string.Equals(tradedSym.Trim(), chartSym.Trim(), StringComparison.OrdinalIgnoreCase);
+
+                if (atasCrossActive || (diffInstrument && tradedIsMicro) || (!chartIsMicro && connectorPtVal > 0m && chartKnownPtVal > 0m && connectorPtVal <= chartKnownPtVal * 0.25m))
+                {
+                    isCrossMicro = true;
+                    if (tradedKnownPtVal > 0m)
+                    {
+                        tradedPtVal = tradedKnownPtVal;
+                        tradedComm = Math.Min(_botCommissionPerSideUsd, tradedDefaultComm > 0m ? tradedDefaultComm : 0.62m);
+                    }
+                    else if (connectorPtVal > 0m)
+                    {
+                        tradedPtVal = connectorPtVal;
+                        tradedComm = Math.Min(_botCommissionPerSideUsd, 0.62m);
+                    }
+                    else if (chartKnownPtVal > 0m)
+                    {
+                        tradedPtVal = chartKnownPtVal * 0.1m;
+                        tradedComm = Math.Min(_botCommissionPerSideUsd, 0.62m);
+                    }
+
+                    if (!diffInstrument && !string.IsNullOrEmpty(microCode))
+                        effectiveTradedSymbol = microCode;
+                }
+                else
+                {
+                    if (connectorPtVal > 0m)
+                        tradedPtVal = connectorPtVal;
+                    else if (tradedKnownPtVal > 0m)
+                        tradedPtVal = tradedKnownPtVal;
+                    else if (chartKnownPtVal > 0m)
+                        tradedPtVal = chartKnownPtVal;
+                }
+            }
+            else // StandardChartContractOnly
+            {
+                if (chartKnownPtVal > 0m)
+                    tradedPtVal = chartKnownPtVal;
+                else if (connectorPtVal > 0m)
+                    tradedPtVal = connectorPtVal;
+            }
+
+            string profileBadge = effectiveProfile switch
+            {
+                MarketProfilePreset.CmeSp500_ES_MES => "CME S&P 500 (ES/MES)",
+                MarketProfilePreset.CmeNasdaq_NQ_MNQ => "CME NASDAQ (NQ/MNQ)",
+                MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY => $"CME FUTURES ({(string.IsNullOrEmpty(stdCode) ? chartSym : stdCode)})",
+                _ => "CRYPTO BINANCE FUTURES"
+            };
+
+            string crossBadge;
+            if (isCrossMicro)
+            {
+                string src = !string.IsNullOrEmpty(stdCode) ? stdCode : (string.IsNullOrEmpty(chartSym) ? "CHART" : chartSym);
+                string dst = !string.IsNullOrEmpty(effectiveTradedSymbol) ? effectiveTradedSymbol : microCode;
+                crossBadge = $"CROISÉ ACTIF : Chart {src} ➔ Trade {dst} ({tradedPtVal:0.##}$/pt)";
+            }
+            else if (chartIsMicro)
+            {
+                crossBadge = $"DIRECT MICRO : {chartSym} ({tradedPtVal:0.##}$/pt)";
+            }
+            else
+            {
+                string symLbl = string.IsNullOrWhiteSpace(effectiveTradedSymbol) ? "STD" : effectiveTradedSymbol;
+                crossBadge = $"CONTRAT DIRECT : {symLbl} ({tradedPtVal:0.##}$/pt)";
+            }
+
+            return new ContractAndCrossTradingInfo
+            {
+                EffectiveProfile = effectiveProfile,
+                IsCmeMarket = isCme,
+                ChartSymbol = chartSym,
+                TradedSymbol = effectiveTradedSymbol,
+                BaseFamily = chartClassified ? chartFamily : (tradedClassified ? tradedFamily : "OTHER"),
+                IsCrossTradingMicro = isCrossMicro,
+                ChartPointValueUsd = chartPtVal,
+                TradedPointValueUsd = tradedPtVal > 0m ? tradedPtVal : 50m,
+                TradedCommissionPerSideUsd = tradedComm,
+                ProfileBadge = profileBadge,
+                CrossTradingBadge = crossBadge
+            };
+        }
+
+        // =====================================================================
         // Constructeur
         // =====================================================================
         public FootprintHvnLvnAbsorption() : base(true)
@@ -1232,7 +1721,7 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Gestion des clics souris directement sur la Charte ATAS X (Bouton Bot ON/OFF & Encadrement Horaire)
+        // Gestion des clics souris directement sur la Charte ATAS X (Bouton Bot ON/OFF, Profil CME & Trading Croisé)
         // =====================================================================
         public override bool ProcessMouseClick(RenderControlMouseEventArgs e)
         {
@@ -1266,6 +1755,34 @@ namespace ATAS.Indicators.Custom
                     _liveAccountPeakPnlUsd = decimal.MinValue;
                     _liveAccountMaxDrawdownUsd = 0m;
                     _liveKillSwitchExecuted = false;
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartProfileBtnRect.Contains(pt))
+                {
+                    _marketProfile = _marketProfile switch
+                    {
+                        MarketProfilePreset.AutoDetect => MarketProfilePreset.CmeSp500_ES_MES,
+                        MarketProfilePreset.CmeSp500_ES_MES => MarketProfilePreset.CmeNasdaq_NQ_MNQ,
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY,
+                        MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY => MarketProfilePreset.CryptoBinanceFutures,
+                        _ => MarketProfilePreset.AutoDetect
+                    };
+                    RecalculateValues();
+                    RedrawChart();
+                    return true;
+                }
+
+                if (ShowChartBotToggleButton && _chartCrossTradeBtnRect.Contains(pt))
+                {
+                    _crossTradingMode = _crossTradingMode switch
+                    {
+                        CrossTradingExecutionMode.AutoAtasCrossTrading => CrossTradingExecutionMode.ForceMicroOnNormalChart,
+                        CrossTradingExecutionMode.ForceMicroOnNormalChart => CrossTradingExecutionMode.StandardChartContractOnly,
+                        _ => CrossTradingExecutionMode.AutoAtasCrossTrading
+                    };
                     RecalculateValues();
                     RedrawChart();
                     return true;
@@ -1356,6 +1873,8 @@ namespace ATAS.Indicators.Custom
                            (ShowHudPanel && _hudBotToggleBtnRect.Contains(pt));
             bool hMode = ShowChartBotToggleButton && _chartBotModeBtnRect.Contains(pt);
             bool hReset = ShowChartBotToggleButton && _chartBotResetBtnRect.Contains(pt);
+            bool hProf = ShowChartBotToggleButton && _chartProfileBtnRect.Contains(pt);
+            bool hCross = ShowChartBotToggleButton && _chartCrossTradeBtnRect.Contains(pt);
             bool hSched = ShowChartBotToggleButton && _chartSchedToggleRect.Contains(pt);
             bool hSMin = ShowChartBotToggleButton && _chartStartMinusRect.Contains(pt);
             bool hSPls = ShowChartBotToggleButton && _chartStartPlusRect.Contains(pt);
@@ -1365,6 +1884,7 @@ namespace ATAS.Indicators.Custom
             bool hAcctScope = ShowChartBotToggleButton && _chartAcctScopeToggleRect.Contains(pt);
 
             if (hToggle != _hoverBotToggleBtn || hMode != _hoverBotModeBtn || hReset != _hoverBotResetBtn ||
+                hProf != _hoverProfileBtn || hCross != _hoverCrossTradeBtn ||
                 hSched != _hoverSchedToggleBtn || hSMin != _hoverStartMinus || hSPls != _hoverStartPlus ||
                 hEMin != _hoverEndMinus || hEPls != _hoverEndPlus ||
                 hAcctSync != _hoverAcctSyncBtn || hAcctScope != _hoverAcctScopeBtn)
@@ -1372,6 +1892,8 @@ namespace ATAS.Indicators.Custom
                 _hoverBotToggleBtn = hToggle;
                 _hoverBotModeBtn = hMode;
                 _hoverBotResetBtn = hReset;
+                _hoverProfileBtn = hProf;
+                _hoverCrossTradeBtn = hCross;
                 _hoverSchedToggleBtn = hSched;
                 _hoverStartMinus = hSMin;
                 _hoverStartPlus = hSPls;
@@ -1386,38 +1908,62 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Synchronisation Temps Réel avec le Compte Actif ATAS X (Portfolio / Position / MyTrades)
+        // Synchronisation Temps Réel avec le Compte Actif ATAS X & le Trading Croisé (CrossTradingContext / SecuritySelected)
         // =====================================================================
         private void EnsureTradingManagerSubscriptions()
         {
             try
             {
                 var tm = TradingManager;
-                if (ReferenceEquals(tm, _subscribedTradingManager))
-                    return;
-
-                if (_subscribedTradingManager != null)
+                if (!ReferenceEquals(tm, _subscribedTradingManager))
                 {
-                    _subscribedTradingManager.PortfolioSelected -= OnTradingManagerPortfolioSelected;
-                    _subscribedTradingManager.PortfolioChanged -= OnTradingManagerPortfolioChanged;
-                    _subscribedTradingManager.PositionChanged -= OnTradingManagerPositionChanged;
-                    _subscribedTradingManager.NewMyTrade -= OnTradingManagerNewMyTrade;
+                    if (_subscribedTradingManager != null)
+                    {
+                        _subscribedTradingManager.PortfolioSelected -= OnTradingManagerPortfolioSelected;
+                        _subscribedTradingManager.PortfolioChanged -= OnTradingManagerPortfolioChanged;
+                        _subscribedTradingManager.PositionChanged -= OnTradingManagerPositionChanged;
+                        _subscribedTradingManager.NewMyTrade -= OnTradingManagerNewMyTrade;
+                        _subscribedTradingManager.SecuritySelected -= OnTradingManagerSecuritySelected;
+                    }
+
+                    _subscribedTradingManager = tm;
+
+                    if (_subscribedTradingManager != null)
+                    {
+                        _subscribedTradingManager.PortfolioSelected += OnTradingManagerPortfolioSelected;
+                        _subscribedTradingManager.PortfolioChanged += OnTradingManagerPortfolioChanged;
+                        _subscribedTradingManager.PositionChanged += OnTradingManagerPositionChanged;
+                        _subscribedTradingManager.NewMyTrade += OnTradingManagerNewMyTrade;
+                        _subscribedTradingManager.SecuritySelected += OnTradingManagerSecuritySelected;
+                    }
                 }
 
-                _subscribedTradingManager = tm;
-
-                if (_subscribedTradingManager != null)
+                var crossCtx = (DataProvider as IndicatorDataProvider)?.CrossTradingContext;
+                if (!ReferenceEquals(crossCtx, _subscribedCrossTradingContext))
                 {
-                    _subscribedTradingManager.PortfolioSelected += OnTradingManagerPortfolioSelected;
-                    _subscribedTradingManager.PortfolioChanged += OnTradingManagerPortfolioChanged;
-                    _subscribedTradingManager.PositionChanged += OnTradingManagerPositionChanged;
-                    _subscribedTradingManager.NewMyTrade += OnTradingManagerNewMyTrade;
+                    if (_subscribedCrossTradingContext != null)
+                        _subscribedCrossTradingContext.CrossTradingInstrumentChanged -= OnCrossTradingInstrumentChanged;
+
+                    _subscribedCrossTradingContext = crossCtx;
+
+                    if (_subscribedCrossTradingContext != null)
+                        _subscribedCrossTradingContext.CrossTradingInstrumentChanged += OnCrossTradingInstrumentChanged;
                 }
             }
             catch
             {
-                // Ignorer si le connecteur ne supporte pas les événements TradingManager
+                // Ignorer si le connecteur ne supporte pas les événements TradingManager / CrossTradingContext
             }
+        }
+
+        private void OnTradingManagerSecuritySelected(Security security)
+        {
+            RedrawChart();
+        }
+
+        private void OnCrossTradingInstrumentChanged(object? sender, EventArgs e)
+        {
+            RedrawChart();
         }
 
         private void OnTradingManagerPortfolioSelected(Portfolio portfolio)
@@ -1439,7 +1985,9 @@ namespace ATAS.Indicators.Custom
             CheckRealtimeAccountKillSwitch();
             if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
             {
-                decimal lastPx = TradingManager?.Security?.LastTradePrice ?? (CurrentBar > 0 ? GetCandle(CurrentBar - 1).Close : 0m);
+                decimal lastPx = CurrentBar > 0
+                    ? GetCandle(CurrentBar - 1).Close
+                    : (TradingManager?.Security?.LastTradePrice ?? 0m);
                 if (lastPx > 0m)
                     CheckLivePositionTargetsOnTick(lastPx);
             }
@@ -1465,7 +2013,9 @@ namespace ATAS.Indicators.Custom
             CheckRealtimeAccountKillSwitch();
             if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
             {
-                decimal lastPx = TradingManager?.Security?.LastTradePrice ?? (CurrentBar > 0 ? GetCandle(CurrentBar - 1).Close : 0m);
+                decimal lastPx = CurrentBar > 0
+                    ? GetCandle(CurrentBar - 1).Close
+                    : (TradingManager?.Security?.LastTradePrice ?? 0m);
                 if (lastPx > 0m)
                     CheckLivePositionTargetsOnTick(lastPx);
             }
