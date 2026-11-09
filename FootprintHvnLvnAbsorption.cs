@@ -2413,7 +2413,7 @@ namespace ATAS.Indicators.Custom
 
         // =====================================================================
         // Analyse du Flux d'Options ATAS X (IOptionsDataFeed, OpenInterest ΔOI,
-        // Sweeps & Asymétrie Call Flow vs Put Flow par bougie)
+        // Sweeps & Asymétrie Call Flow vs Put Flow par bougie — Calibré Crypto & CME)
         // =====================================================================
         private BarOptionsFlowMetrics AnalyzeBarOptionsFlow(
             int bar,
@@ -2425,20 +2425,34 @@ namespace ATAS.Indicators.Custom
             if (rows.Length == 0)
                 return metrics;
 
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            bool isCme = contractInfo.IsCmeMarket;
+
             // 1. Variation d'Open Interest fournie par ATAS X (Candle.OI, MaxOI, MinOI)
+            //    + Compensation native CME (MinDelta / MaxDelta intra-bar lorsque le flux CME ne diffuse pas d'OI tick-par-tick)
             decimal prevOi = bar > 0 ? GetCandle(bar - 1).OI : candle.OI;
             decimal oiDelta = candle.OI - prevOi;
             if (oiDelta == 0m && (candle.MaxOI > candle.MinOI))
             {
-                // Si la variation intra-bar d'Open Interest est présente
                 decimal intraOiRange = candle.MaxOI - candle.MinOI;
                 oiDelta = candle.Close >= candle.Open ? intraOiRange : -intraOiRange;
             }
-            metrics.OiDelta = oiDelta;
+
+            decimal cmeBullDeltaRecovery = Math.Max(0m, candle.Delta - candle.MinDelta);
+            decimal cmeBearDeltaRejection = Math.Max(0m, candle.MaxDelta - candle.Delta);
+            if (isCme && oiDelta == 0m && (cmeBullDeltaRecovery > 0m || cmeBearDeltaRejection > 0m))
+            {
+                metrics.OiDelta = Math.Round(cmeBullDeltaRecovery - cmeBearDeltaRejection, 0);
+            }
+            else
+            {
+                metrics.OiDelta = oiDelta;
+            }
 
             // 2. Calcul du flux agressif Calls Synthétiques / Réels vs Puts sur les clusters Footprint
             decimal avgVol = candle.Volume / Math.Max(1, rows.Length);
-            decimal sweepThreshold = avgVol * _optionsSweepMultiplier;
+            decimal effSweepMult = isCme ? Math.Min(_optionsSweepMultiplier, 1.55m) : _optionsSweepMultiplier;
+            decimal sweepThreshold = avgVol * effSweepMult;
 
             decimal callFlow = 0m;
             decimal putFlow = 0m;
@@ -2453,68 +2467,108 @@ namespace ATAS.Indicators.Custom
                 if (r.Volume <= 0m)
                     continue;
 
-                // Agressivité acheteuse (Ask) + défense passive du Bid en bas (Put Selling / Call Buying)
                 decimal askAggr = r.Ask;
                 decimal bidAggr = r.Bid;
 
-                if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
+                if (!isCme)
                 {
-                    // Absorption acheteuse / Vendeurs piégés = couverture gamma haussière / Put Wall
-                    callFlow += r.Volume * 0.85m;
-                }
-                else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
-                {
-                    // Absorption vendeuse / Acheteurs piégés = résistance Call Wall / achat de Puts
-                    putFlow += r.Volume * 0.85m;
-                }
+                    // --- Comportement 100% original préservé pour BTC Binance Futures / Crypto ---
+                    if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
+                    {
+                        callFlow += r.Volume * 0.85m;
+                    }
+                    else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
+                    {
+                        putFlow += r.Volume * 0.85m;
+                    }
 
-                // Pondération par rapport au VWAP & Asymétrie Bid/Ask
-                if (r.Price >= vwap)
-                {
-                    callFlow += askAggr * 1.15m;
-                    putFlow += bidAggr * 0.85m;
+                    if (r.Price >= vwap)
+                    {
+                        callFlow += askAggr * 1.15m;
+                        putFlow += bidAggr * 0.85m;
+                    }
+                    else
+                    {
+                        callFlow += askAggr * 0.90m;
+                        putFlow += bidAggr * 1.15m;
+                    }
                 }
                 else
                 {
-                    callFlow += askAggr * 0.90m;
-                    putFlow += bidAggr * 1.15m;
+                    // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC, CL) ---
+                    // Sur le CME, les gros ordres limites passifs (Put Wall en bas / Call Wall en haut) absorbent les market orders :
+                    // Un Bid massif sous le prix de clôture qui est rejeté vers le haut est une absorption institutionnelle HAUSSIÈRE (Call/Put-Write Flow).
+                    if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
+                    {
+                        callFlow += r.Volume * 1.35m;
+                    }
+                    else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
+                    {
+                        putFlow += r.Volume * 1.35m;
+                    }
+
+                    if (r.Price < candle.Close - tickSize * 0.5m)
+                    {
+                        // Niveaux situés sous la clôture (mèche basse rejetée / défense acheteuse CME)
+                        bool isBullLevel = r.AbsorptionSide > 0 || r.TrappedSide > 0 || candle.Close >= candle.Open;
+                        callFlow += askAggr * 1.15m + bidAggr * (isBullLevel ? 1.05m : 0.72m);
+                        putFlow += bidAggr * (isBullLevel ? 0.30m : 0.75m);
+                    }
+                    else if (r.Price > candle.Close + tickSize * 0.5m)
+                    {
+                        // Niveaux situés au-dessus de la clôture (mèche haute rejetée / défense vendeuse CME)
+                        bool isBearLevel = r.AbsorptionSide < 0 || r.TrappedSide < 0 || candle.Close <= candle.Open;
+                        putFlow += bidAggr * 1.15m + askAggr * (isBearLevel ? 1.05m : 0.72m);
+                        callFlow += askAggr * (isBearLevel ? 0.30m : 0.75m);
+                    }
+                    else
+                    {
+                        callFlow += askAggr * 1.12m;
+                        putFlow += bidAggr * 1.12m;
+                    }
                 }
 
                 // Détection des Sweeps / Block Prints sur les niveaux
-                if (r.Volume >= sweepThreshold && (r.Ask >= r.Volume * 0.64m || r.Bid >= r.Volume * 0.64m))
+                decimal sweepDomRatio = isCme ? 0.58m : 0.64m;
+                if (r.Volume >= sweepThreshold && (r.Ask >= r.Volume * sweepDomRatio || r.Bid >= r.Volume * sweepDomRatio))
                 {
                     sweeps++;
                     if (r.Ask > r.Bid)
                     {
-                        // Si le sweep acheteur en haut est rejeté (acheteurs piégés), c'est un bull trap (Put flow)
-                        if (r.TrappedSide < 0 || r.AbsorptionSide < 0)
-                            putFlow += r.Ask * 0.9m;
+                        if (r.TrappedSide < 0 || r.AbsorptionSide < 0 || (isCme && r.Price > candle.Close + tickSize))
+                            putFlow += r.Ask * 0.95m;
                         else
-                            callFlow += r.Ask * 0.9m;
+                            callFlow += r.Ask * 0.95m;
                     }
                     else
                     {
-                        // Si le sweep vendeur en bas est absorbé/piégé, c'est un rachat/support gamma (Call flow)
-                        if (r.TrappedSide > 0 || r.AbsorptionSide > 0)
-                            callFlow += r.Bid * 0.9m;
+                        if (r.TrappedSide > 0 || r.AbsorptionSide > 0 || (isCme && r.Price < candle.Close - tickSize))
+                            callFlow += r.Bid * 0.95m;
                         else
-                            putFlow += r.Bid * 0.9m;
+                            putFlow += r.Bid * 0.95m;
                     }
                 }
             }
 
-            // 3. Intégration de l'Open Interest (ΔOI) et du positionnement Clôture vs VWAP
+            // 3. Intégration de l'Open Interest (ΔOI) ou du Delta Tail Shift CME (MinDelta / MaxDelta)
             if (oiDelta != 0m)
             {
                 decimal oiWeight = Math.Min(candle.Volume * 0.35m, Math.Abs(oiDelta) * 2m);
                 if (candle.Close > candle.Open && oiDelta > 0m)
-                    callFlow += oiWeight; // Nouvelles positions longues / Calls ouverts
+                    callFlow += oiWeight;
                 else if (candle.Close < candle.Open && oiDelta > 0m)
-                    putFlow += oiWeight;  // Nouvelles positions shorts / Puts ouverts
+                    putFlow += oiWeight;
                 else if (candle.Close > candle.Open && oiDelta < 0m)
-                    callFlow += oiWeight * 0.6m; // Short covering
+                    callFlow += oiWeight * 0.6m;
                 else if (candle.Close < candle.Open && oiDelta < 0m)
-                    putFlow += oiWeight * 0.6m;  // Long liquidation
+                    putFlow += oiWeight * 0.6m;
+            }
+            else if (isCme)
+            {
+                if (cmeBullDeltaRecovery > 0m && (candle.Close >= candle.Open || candle.Close >= midPrice))
+                    callFlow += Math.Min(candle.Volume * 0.32m, cmeBullDeltaRecovery * 0.65m);
+                if (cmeBearDeltaRejection > 0m && (candle.Close <= candle.Open || candle.Close <= midPrice))
+                    putFlow += Math.Min(candle.Volume * 0.32m, cmeBearDeltaRejection * 0.65m);
             }
 
             // 4. Intégration des données temps réel ATAS X (IOptionsDataFeed + OnNewTrade + DOM) sur la bougie active
@@ -2581,6 +2635,7 @@ namespace ATAS.Indicators.Custom
             decimal maxVZ = 0m, maxDZ = 0m;
             decimal pocPrice = midPrice;
             int bullStacks = 0, bearStacks = 0;
+            decimal stackRatioThreshold = isCme ? 1.38m : 1.60m;
 
             for (int i = 0; i < rows.Length; i++)
             {
@@ -2588,10 +2643,18 @@ namespace ATAS.Indicators.Custom
                 if (rows[i].VolumeZScore > maxVZ) maxVZ = rows[i].VolumeZScore;
                 if (rows[i].DeltaZScore > maxDZ) maxDZ = rows[i].DeltaZScore;
 
-                if (i > 0 && rows[i - 1].Bid > 0m && (rows[i].Ask / rows[i - 1].Bid) >= 1.6m)
-                    bullStacks++;
-                if (i + 1 < rows.Length && rows[i + 1].Ask > 0m && (rows[i].Bid / rows[i + 1].Ask) >= 1.6m)
-                    bearStacks++;
+                if (i > 0)
+                {
+                    decimal prevBidDenom = isCme ? Math.Max(1m, rows[i - 1].Bid) : rows[i - 1].Bid;
+                    if (prevBidDenom > 0m && rows[i].Ask >= (isCme ? avgVol * 0.45m : 0m) && (rows[i].Ask / prevBidDenom) >= stackRatioThreshold)
+                        bullStacks++;
+                }
+                if (i + 1 < rows.Length)
+                {
+                    decimal nextAskDenom = isCme ? Math.Max(1m, rows[i + 1].Ask) : rows[i + 1].Ask;
+                    if (nextAskDenom > 0m && rows[i].Bid >= (isCme ? avgVol * 0.45m : 0m) && (rows[i].Bid / nextAskDenom) >= stackRatioThreshold)
+                        bearStacks++;
+                }
             }
             metrics.MaxVolumeZScore = maxVZ;
             metrics.MaxDeltaZScore = maxDZ;
@@ -2617,22 +2680,22 @@ namespace ATAS.Indicators.Custom
             else
                 metrics.TrendBias = 0;
 
-            // Divergence CVD d'Absorption + Shift de Delta Multi-Bougies
-            bool passiveBullAbsCvd = candle.Close >= candle.Open && candle.Delta < 0m;
-            bool passiveBearAbsCvd = candle.Close <= candle.Open && candle.Delta > 0m;
+            // Divergence CVD d'Absorption + Shift de Delta Multi-Bougies (+ Tail Delta Recovery CME)
+            bool passiveBullAbsCvd = (candle.Close >= candle.Open && candle.Delta < 0m) ||
+                                     (isCme && candle.Close >= midPrice && candle.MinDelta < 0m && (candle.Delta - candle.MinDelta) >= Math.Abs(candle.MinDelta) * 0.45m);
+            bool passiveBearAbsCvd = (candle.Close <= candle.Open && candle.Delta > 0m) ||
+                                     (isCme && candle.Close <= midPrice && candle.MaxDelta > 0m && (candle.MaxDelta - candle.Delta) >= candle.MaxDelta * 0.45m);
             bool multiBarBullCvd = false;
             bool multiBarBearCvd = false;
 
             if (bar > 0)
             {
                 var prevC = GetCandle(bar - 1);
-                // Divergence CVD Haussière : plus bas ou test support avec Delta en hausse / retournement Delta positif
                 if ((candle.Low <= prevC.Low && candle.Delta > prevC.Delta && candle.Close >= candle.Open) ||
                     (prevC.Delta < 0m && candle.Delta > 0m && candle.Close > prevC.Close))
                 {
                     multiBarBullCvd = true;
                 }
-                // Divergence CVD Baissière : plus haut ou test résistance avec Delta en baisse / retournement Delta négatif
                 if ((candle.High >= prevC.High && candle.Delta < prevC.Delta && candle.Close <= candle.Open) ||
                     (prevC.Delta > 0m && candle.Delta < 0m && candle.Close < prevC.Close))
                 {
@@ -2647,9 +2710,10 @@ namespace ATAS.Indicators.Custom
             decimal atrSafe = Math.Max(tickSize * 2m, metrics.AtrPoints);
             metrics.VwapZScore = Math.Round((candle.Close - vwap) / atrSafe, 2);
 
-            if (metrics.CallFlowPct >= _optionsMinDominancePct)
+            decimal effOptDom = isCme ? Math.Min(_optionsMinDominancePct, 52.5m) : _optionsMinDominancePct;
+            if (metrics.CallFlowPct >= effOptDom)
                 metrics.OptionsBias = 1;
-            else if (metrics.PutFlowPct >= _optionsMinDominancePct)
+            else if (metrics.PutFlowPct >= effOptDom)
                 metrics.OptionsBias = -1;
             else
                 metrics.OptionsBias = 0;
@@ -2710,7 +2774,7 @@ namespace ATAS.Indicators.Custom
 
         // =====================================================================
         // Évaluation du Signal Visuel & Quant Achat / Vente
-        // (Stratégie Complète : HVN/LVN + Heavy Absorption + Traders Piégés + Flux d'Options ATAS X + Modèle Quant)
+        // (Stratégie Complète : HVN/LVN + Heavy Absorption + Traders Piégés + Flux d'Options ATAS X + Calibration CME & Micro Croisé)
         // =====================================================================
         private VisualTradeSignal EvaluateBuySellSignal(
             int bar,
@@ -2731,12 +2795,15 @@ namespace ATAS.Indicators.Custom
             if (_lockedExecutedSignalsByBar.TryGetValue(bar, out var lockedSig) && lockedSig.Direction != 0)
                 return lockedSig;
 
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            bool isCme = contractInfo.IsCmeMarket;
+            MarketProfilePreset prof = contractInfo.EffectiveProfile;
+
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
             decimal atr = Math.Max(step * 2m, opt.AtrPoints);
             decimal barRange = candle.High - candle.Low;
 
-            // Garde de maturité sur la bougie en cours de formation (CurrentBar - 1) :
-            // Évite de déclencher un ordre sur les 2 premiers ticks d'une nouvelle bougie avant formation des clusters Footprint
+            // Garde de maturité sur la bougie en cours de formation (CurrentBar - 1)
             if (bar == CurrentBar - 1 && bar > 2)
             {
                 if (rows.Length < 3)
@@ -2747,7 +2814,8 @@ namespace ATAS.Indicators.Custom
                 for (int k = 1; k <= lb; k++)
                     sumVol += GetCandle(bar - k).Volume;
                 decimal avgBarVol = lb > 0 ? sumVol / lb : candle.Volume;
-                if (avgBarVol > 0m && candle.Volume < avgBarVol * 0.32m)
+                decimal minLiveVolFactor = isCme ? 0.20m : 0.32m;
+                if (avgBarVol > 0m && candle.Volume < avgBarVol * minLiveVolFactor)
                     return sig;
             }
 
@@ -2780,6 +2848,17 @@ namespace ATAS.Indicators.Custom
             bool bullWinsBar = !hasBearAbs || (candle.Close > candle.Open) || (candle.Close >= midPrice);
             bool bearWinsBar = !hasBullAbs || (candle.Close < candle.Open) || (candle.Close <= midPrice);
 
+            decimal effMinClusterZ = isCme
+                ? Math.Min(_quantMinClusterZScore, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 0.55m : 0.65m)
+                : _quantMinClusterZScore;
+            int effMinConfScore = isCme
+                ? Math.Min(_quantMinConfluenceScore, 64)
+                : _quantMinConfluenceScore;
+
+            string crossSuffix = contractInfo.IsCrossTradingMicro
+                ? $" [CROISÉ➔{contractInfo.TradedSymbol}]"
+                : string.Empty;
+
             // --- 1. Vérification Signal Quant ACHAT (BUY ▲) :
             //        Heavy Absorption Bid (ABS▲) et/ou Vendeurs Piégés (V.PIÉGÉS▲) + Structure HVN/LVN + Flux Options Calls ---
             if ((hasBullAbs || hasTrapSellers) && bullWinsBar)
@@ -2789,27 +2868,28 @@ namespace ATAS.Indicators.Custom
                 bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
                 // Rejet haussier au-dessus du cluster d'absorption / vendeurs piégés
-                bool bullRejectionOk = candle.Close >= keyRow.Price + step * 0.5m &&
+                bool bullRejectionOk = (candle.Close >= keyRow.Price + step * 0.5m || (isCme && candle.Close > candle.Low && candle.Close >= keyRow.Price)) &&
                                        (candle.Close >= candle.Open ||
-                                        candle.Close >= candle.Low + barRange * 0.35m ||
+                                        candle.Close >= candle.Low + barRange * (isCme ? 0.30m : 0.35m) ||
                                         candle.Close >= pocPrice - step);
 
                 bool quantZOk = !_enableQuantFilter
-                                || clusterZ >= _quantMinClusterZScore
+                                || clusterZ >= effMinClusterZ
                                 || (hasBullAbs && hasTrapSellers)
                                 || (hvnAnchored && hasLowerLvnRejection);
 
                 bool optionsOk = !_enableAtasOptionsFlow
                                  || !_requireOptionsFlowConfirmation
                                  || opt.OptionsBias > 0
-                                 || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 48m)
-                                 || (opt.BullishCvdDivergence && opt.CallFlowPct >= 48m)
-                                 || (opt.OiDelta > 0m && opt.CallFlowPct >= 49m)
-                                 || (opt.SweepCount > 0 && opt.CallFlowPct >= 50m);
+                                 || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= (isCme ? 45m : 48m))
+                                 || (opt.BullishCvdDivergence && opt.CallFlowPct >= (isCme ? 45m : 48m))
+                                 || (opt.OiDelta > 0m && opt.CallFlowPct >= (isCme ? 46m : 49m))
+                                 || (opt.SweepCount > 0 && opt.CallFlowPct >= (isCme ? 47m : 50m))
+                                 || (isCme && hasBullAbs && candle.Close >= pocPrice && opt.CallFlowPct >= 46m);
 
                 if (bullRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = 58;
+                    int score = isCme ? 60 : 58;
                     if (hasBullAbs && hasTrapSellers) score += 16;
                     else if (hasBullAbs) score += 11;
                     else score += 10;
@@ -2819,9 +2899,9 @@ namespace ATAS.Indicators.Custom
                     if (candle.Close >= pocPrice) score += 4;
                     if (opt.TrendBias > 0) score += 4;
                     if (opt.BullStackedImbalances >= 1) score += 3;
-                    if (opt.CallFlowPct >= _optionsMinDominancePct)
+                    if (opt.CallFlowPct >= (isCme ? 52m : _optionsMinDominancePct))
                         score += (int)Math.Min(12m, (opt.CallFlowPct - 50m) * 0.60m);
-                    if (clusterZ >= 1.1m)
+                    if (clusterZ >= (isCme ? 0.9m : 1.1m))
                         score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BullishCvdDivergence)
                         score += 5;
@@ -2830,33 +2910,71 @@ namespace ATAS.Indicators.Custom
 
                     score = Math.Clamp(score, 50, 99);
 
-                    if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
+                    if (!_enableQuantFilter || score >= effMinConfScore)
                     {
                         decimal entryPrice = RoundToTick(candle.Close, tickSize);
                         decimal triggerPrice = entryPrice;
 
-                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
-                        decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
-                        decimal structuralLow = Math.Min(candle.Low - step, keyRow.Price - step * 2m);
-                        decimal rawStopDist = Math.Max(step * 2m, entryPrice - structuralLow);
-                        decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
+                        decimal stopPrice;
+                        decimal tp1Price;
+                        decimal tp2Price;
 
-                        decimal stopPrice = RoundToTick(entryPrice - clampedStopDist, tickSize);
-                        decimal riskPts = Math.Max(step * 2m, entryPrice - stopPrice);
+                        if (!isCme)
+                        {
+                            // --- Calibration originale 100% préservée pour BTC Binance Futures ---
+                            decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
+                            decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
+                            decimal structuralLow = Math.Min(candle.Low - step, keyRow.Price - step * 2m);
+                            decimal rawStopDist = Math.Max(step * 2m, entryPrice - structuralLow);
+                            decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
 
-                        // Cibles de profit calibrées pour encaisser rapidement sur l'impulsion Order Flow
-                        decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
-                        decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
-                        decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
-                        decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+                            stopPrice = RoundToTick(entryPrice - clampedStopDist, tickSize);
+                            decimal riskPts = Math.Max(step * 2m, entryPrice - stopPrice);
 
-                        decimal tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
+                            decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+
+                            tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
+                            tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
+                        }
+                        else
+                        {
+                            // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC/MGC, CL/MCL) ---
+                            // Respiration adaptée au bruit de carnet CME (évite de se faire sortir par 2 ticks de bruit sur ES ou 4 ticks sur NQ)
+                            int minStopSteps = prof switch
+                            {
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14, // min 3.50 pts (14 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 6,   // min 1.50 pts (6 ticks) sur ES/MES
+                                _ => 8                                      // min 8 ticks sur GC/CL/YM/RTY
+                            };
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.45m, tickSize));
+                            decimal cmeAtrStopMult = Math.Max(_quantAtrStopMultiplier, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 1.45m : 1.35m);
+                            decimal maxStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * cmeAtrStopMult, tickSize));
+                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 3m : step * 2m;
+                            decimal structuralLow = Math.Min(candle.Low - structuralPad, keyRow.Price - structuralPad);
+                            decimal rawStopDist = Math.Max(minStopDist, entryPrice - structuralLow);
+                            decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
+
+                            stopPrice = RoundToTick(entryPrice - clampedStopDist, tickSize);
+                            decimal riskPts = Math.Max(minStopDist, entryPrice - stopPrice);
+
+                            decimal cmeTp1Rr = Math.Max(0.95m, _quantTp1RiskReward);
+                            decimal cmeTp2Rr = Math.Max(1.65m, _quantTp2RiskReward);
+                            decimal maxTp1Pts = Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * 4m, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 4m, maxTp2Pts);
+
+                            tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
+                            tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
+                        }
 
                         string structTag = hasLowerLvnRejection ? "HVN+LVN▲" : "HVN/POC▲";
-                        string reason = (hasBullAbs && hasTrapSellers)
+                        string reason = ((hasBullAbs && hasTrapSellers)
                             ? $"ABS▲+V.PIÉGÉS▲ + {structTag} + Z:{clusterZ:0.0}σ"
-                            : (hasBullAbs ? $"ABS BID▲ + {structTag} + Z:{clusterZ:0.0}σ" : $"V.PIÉGÉS▲ + {structTag} + Z:{clusterZ:0.0}σ");
+                            : (hasBullAbs ? $"ABS BID▲ + {structTag} + Z:{clusterZ:0.0}σ" : $"V.PIÉGÉS▲ + {structTag} + Z:{clusterZ:0.0}σ")) + crossSuffix;
 
                         return new VisualTradeSignal
                         {
@@ -2891,27 +3009,28 @@ namespace ATAS.Indicators.Custom
                 bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
                 // Rejet baissier en dessous du cluster d'absorption / acheteurs piégés
-                bool bearRejectionOk = candle.Close <= keyRow.Price - step * 0.5m &&
+                bool bearRejectionOk = (candle.Close <= keyRow.Price - step * 0.5m || (isCme && candle.Close < candle.High && candle.Close <= keyRow.Price)) &&
                                        (candle.Close <= candle.Open ||
-                                        candle.Close <= candle.High - barRange * 0.35m ||
+                                        candle.Close <= candle.High - barRange * (isCme ? 0.30m : 0.35m) ||
                                         candle.Close <= pocPrice + step);
 
                 bool quantZOk = !_enableQuantFilter
-                                || clusterZ >= _quantMinClusterZScore
+                                || clusterZ >= effMinClusterZ
                                 || (hasBearAbs && hasTrapBuyers)
                                 || (hvnAnchored && hasUpperLvnRejection);
 
                 bool optionsOk = !_enableAtasOptionsFlow
                                  || !_requireOptionsFlowConfirmation
                                  || opt.OptionsBias < 0
-                                 || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 48m)
-                                 || (opt.BearishCvdDivergence && opt.PutFlowPct >= 48m)
-                                 || (opt.OiDelta < 0m && opt.PutFlowPct >= 49m)
-                                 || (opt.SweepCount > 0 && opt.PutFlowPct >= 50m);
+                                 || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= (isCme ? 45m : 48m))
+                                 || (opt.BearishCvdDivergence && opt.PutFlowPct >= (isCme ? 45m : 48m))
+                                 || (opt.OiDelta < 0m && opt.PutFlowPct >= (isCme ? 46m : 49m))
+                                 || (opt.SweepCount > 0 && opt.PutFlowPct >= (isCme ? 47m : 50m))
+                                 || (isCme && hasBearAbs && candle.Close <= pocPrice && opt.PutFlowPct >= 46m);
 
                 if (bearRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = 58;
+                    int score = isCme ? 60 : 58;
                     if (hasBearAbs && hasTrapBuyers) score += 16;
                     else if (hasBearAbs) score += 11;
                     else score += 10;
@@ -2921,9 +3040,9 @@ namespace ATAS.Indicators.Custom
                     if (candle.Close <= pocPrice) score += 4;
                     if (opt.TrendBias < 0) score += 4;
                     if (opt.BearStackedImbalances >= 1) score += 3;
-                    if (opt.PutFlowPct >= _optionsMinDominancePct)
+                    if (opt.PutFlowPct >= (isCme ? 52m : _optionsMinDominancePct))
                         score += (int)Math.Min(12m, (opt.PutFlowPct - 50m) * 0.60m);
-                    if (clusterZ >= 1.1m)
+                    if (clusterZ >= (isCme ? 0.9m : 1.1m))
                         score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BearishCvdDivergence)
                         score += 5;
@@ -2932,33 +3051,70 @@ namespace ATAS.Indicators.Custom
 
                     score = Math.Clamp(score, 50, 99);
 
-                    if (!_enableQuantFilter || score >= _quantMinConfluenceScore)
+                    if (!_enableQuantFilter || score >= effMinConfScore)
                     {
                         decimal entryPrice = RoundToTick(candle.Close, tickSize);
                         decimal triggerPrice = entryPrice;
 
-                        decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
-                        decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
-                        decimal structuralHigh = Math.Max(candle.High + step, keyRow.Price + step * 2m);
-                        decimal rawStopDist = Math.Max(step * 2m, structuralHigh - entryPrice);
-                        decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
+                        decimal stopPrice;
+                        decimal tp1Price;
+                        decimal tp2Price;
 
-                        decimal stopPrice = RoundToTick(entryPrice + clampedStopDist, tickSize);
-                        decimal riskPts = Math.Max(step * 2m, stopPrice - entryPrice);
+                        if (!isCme)
+                        {
+                            // --- Calibration originale 100% préservée pour BTC Binance Futures ---
+                            decimal minStopDist = Math.Max(step * 3m, RoundToTick(atr * 0.35m, tickSize));
+                            decimal maxStopDist = Math.Max(minStopDist + step, RoundToTick(atr * _quantAtrStopMultiplier, tickSize));
+                            decimal structuralHigh = Math.Max(candle.High + step, keyRow.Price + step * 2m);
+                            decimal rawStopDist = Math.Max(step * 2m, structuralHigh - entryPrice);
+                            decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
 
-                        // Cibles de profit calibrées pour encaisser rapidement sur l'impulsion Order Flow
-                        decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
-                        decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
-                        decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
-                        decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+                            stopPrice = RoundToTick(entryPrice + clampedStopDist, tickSize);
+                            decimal riskPts = Math.Max(step * 2m, stopPrice - entryPrice);
 
-                        decimal tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
+                            decimal maxTp1Pts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, maxTp2Pts);
+
+                            tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
+                            tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
+                        }
+                        else
+                        {
+                            // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC/MGC, CL/MCL) ---
+                            int minStopSteps = prof switch
+                            {
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14, // min 3.50 pts (14 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 6,   // min 1.50 pts (6 ticks) sur ES/MES
+                                _ => 8
+                            };
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.45m, tickSize));
+                            decimal cmeAtrStopMult = Math.Max(_quantAtrStopMultiplier, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 1.45m : 1.35m);
+                            decimal maxStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * cmeAtrStopMult, tickSize));
+                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 3m : step * 2m;
+                            decimal structuralHigh = Math.Max(candle.High + structuralPad, keyRow.Price + structuralPad);
+                            decimal rawStopDist = Math.Max(minStopDist, structuralHigh - entryPrice);
+                            decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
+
+                            stopPrice = RoundToTick(entryPrice + clampedStopDist, tickSize);
+                            decimal riskPts = Math.Max(minStopDist, stopPrice - entryPrice);
+
+                            decimal cmeTp1Rr = Math.Max(0.95m, _quantTp1RiskReward);
+                            decimal cmeTp2Rr = Math.Max(1.65m, _quantTp2RiskReward);
+                            decimal maxTp1Pts = Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * 4m, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 4m, maxTp2Pts);
+
+                            tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
+                            tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
+                        }
 
                         string structTag = hasUpperLvnRejection ? "HVN+LVN▼" : "HVN/POC▼";
-                        string reason = (hasBearAbs && hasTrapBuyers)
+                        string reason = ((hasBearAbs && hasTrapBuyers)
                             ? $"ABS▼+A.PIÉGÉS▼ + {structTag} + Z:{clusterZ:0.0}σ"
-                            : (hasBearAbs ? $"ABS ASK▼ + {structTag} + Z:{clusterZ:0.0}σ" : $"A.PIÉGÉS▼ + {structTag} + Z:{clusterZ:0.0}σ");
+                            : (hasBearAbs ? $"ABS ASK▼ + {structTag} + Z:{clusterZ:0.0}σ" : $"A.PIÉGÉS▼ + {structTag} + Z:{clusterZ:0.0}σ")) + crossSuffix;
 
                         return new VisualTradeSignal
                         {
@@ -2990,6 +3146,7 @@ namespace ATAS.Indicators.Custom
         // =====================================================================
         // Analyse complète des niveaux Footprint d'une bougie :
         // HVN, LVN, Heavy Absorption & Acheteurs/Vendeurs Piégés
+        // (Avec support GetAllPriceLevels() & Micro-Cluster Pooling CME ES/NQ)
         // =====================================================================
         private ClusterRow[] AnalyzeBarClusters(
             IndicatorCandle candle,
@@ -3013,47 +3170,88 @@ namespace ATAS.Indicators.Custom
             if (step <= 0m || candle.High < candle.Low)
                 return Array.Empty<ClusterRow>();
 
-            int count = (int)Math.Floor((candle.High - candle.Low) / step) + 1;
-            if (count <= 0 || count > 2000)
+            decimal baseLow = RoundToTick(candle.Low, tickSize);
+            decimal baseHigh = RoundToTick(candle.High, tickSize);
+            int count = (int)Math.Floor((baseHigh - baseLow) / step) + 1;
+            if (count <= 0 || count > 2500)
                 return Array.Empty<ClusterRow>();
 
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            bool isCme = contractInfo.IsCmeMarket;
+            MarketProfilePreset prof = contractInfo.EffectiveProfile;
+
             var rows = new ClusterRow[count];
+            for (int i = 0; i < count; i++)
+            {
+                rows[i].Price = RoundToTick(baseLow + i * step, tickSize);
+            }
+
+            // 0. Extraction rapide & exacte via GetAllPriceLevels() (évite les erreurs d'arrondi de tick sur CME Rithmic/CQG/dxFeed)
+            bool populatedFromAllLevels = false;
+            try
+            {
+                var allLevels = candle.GetAllPriceLevels();
+                if (allLevels != null)
+                {
+                    foreach (var pv in allLevels)
+                    {
+                        if (pv == null)
+                            continue;
+                        decimal b = pv.Bid;
+                        decimal a = pv.Ask;
+                        if (b + a <= 0m)
+                            continue;
+
+                        int idx = (int)Math.Floor(((RoundToTick(pv.Price, tickSize) - baseLow) + tickSize * 0.1m) / step);
+                        if (idx >= 0 && idx < count)
+                        {
+                            rows[idx].Bid += b;
+                            rows[idx].Ask += a;
+                            rows[idx].Volume += (b + a);
+                            rows[idx].Delta += (a - b);
+                            populatedFromAllLevels = true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                populatedFromAllLevels = false;
+            }
+
             decimal maxVol = 0m;
             decimal totalBarVol = 0m;
             int activeLevels = 0;
 
             for (int i = 0; i < count; i++)
             {
-                decimal basePrice = candle.Low + i * step;
-                decimal bidSum = 0m;
-                decimal askSum = 0m;
-
-                for (int t = 0; t < ticksPerLevel; t++)
+                if (!populatedFromAllLevels)
                 {
-                    decimal p = basePrice + t * tickSize;
-                    if (p > candle.High + tickSize * 0.1m)
-                        break;
+                    decimal basePrice = rows[i].Price;
+                    decimal bidSum = 0m;
+                    decimal askSum = 0m;
 
-                    var info = candle.GetPriceVolumeInfo(p);
-                    if (info != null)
+                    for (int t = 0; t < ticksPerLevel; t++)
                     {
-                        bidSum += info.Bid;
-                        askSum += info.Ask;
+                        decimal p = RoundToTick(basePrice + t * tickSize, tickSize);
+                        if (p > baseHigh + tickSize * 0.1m)
+                            break;
+
+                        var info = candle.GetPriceVolumeInfo(p);
+                        if (info != null)
+                        {
+                            bidSum += info.Bid;
+                            askSum += info.Ask;
+                        }
                     }
+
+                    rows[i].Bid = bidSum;
+                    rows[i].Ask = askSum;
+                    rows[i].Volume = bidSum + askSum;
+                    rows[i].Delta = askSum - bidSum;
                 }
 
-                decimal vol = bidSum + askSum;
-                decimal delta = askSum - bidSum;
-
-                rows[i] = new ClusterRow
-                {
-                    Price = basePrice,
-                    Bid = bidSum,
-                    Ask = askSum,
-                    Volume = vol,
-                    Delta = delta
-                };
-
+                decimal vol = rows[i].Volume;
                 if (vol > 0m)
                 {
                     activeLevels++;
@@ -3110,14 +3308,37 @@ namespace ATAS.Indicators.Custom
                 rows[i].DeltaZScore = Math.Round((Math.Abs(rows[i].Delta) - (decimal)Math.Abs(meanDeltaD)) / stdDelta, 2);
             }
 
+            // Agrégation Micro-Cluster CME (2-3 ticks contigus sur NQ/MNQ et ES/MES lorsque le flux répartit un mur d'absorption sur plusieurs ticks)
+            bool useCmePooling = isCme && _enableCmeMicroClusterPooling && _ticksPerRow == 1 && count >= 5;
+            int poolSpan = (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ && count >= 16) ? 2 : 1;
+
+            decimal GetPooledBid(int idx)
+            {
+                if (!useCmePooling) return rows[idx].Bid;
+                decimal s = rows[idx].Bid;
+                if (idx + 1 < count) s += rows[idx + 1].Bid * 0.65m;
+                if (poolSpan >= 2 && idx + 2 < count) s += rows[idx + 2].Bid * 0.35m;
+                return s;
+            }
+
+            decimal GetPooledAsk(int idx)
+            {
+                if (!useCmePooling) return rows[idx].Ask;
+                decimal s = rows[idx].Ask;
+                if (idx - 1 >= 0) s += rows[idx - 1].Ask * 0.65m;
+                if (poolSpan >= 2 && idx - 2 >= 0) s += rows[idx - 2].Ask * 0.35m;
+                return s;
+            }
+
             // 1. Détection HVN Intra-Bougie
             if (_enableBarHvn)
             {
+                decimal effHvnMinVol = isCme ? Math.Min(_hvnMinBarVolume, 5m) : _hvnMinBarVolume;
                 decimal hvnCutoff = maxVol * (_hvnBarPctOfPoc / 100m);
                 for (int i = 0; i < count; i++)
                 {
                     decimal v = rows[i].Volume;
-                    if (v <= 0m || v < _hvnMinBarVolume || v < hvnCutoff)
+                    if (v <= 0m || v < effHvnMinVol || v < hvnCutoff)
                         continue;
 
                     bool isLocalPeak = true;
@@ -3164,25 +3385,48 @@ namespace ATAS.Indicators.Custom
 
             decimal barRange = candle.High - candle.Low;
 
+            // Paramètres effectifs (Crypto 100% original vs Calibration CME ES / NQ / GC / CL)
+            decimal effAbsZonePct = isCme ? Math.Max(_absZonePct, 40m) : _absZonePct;
+            int effAbsLocTicks = isCme
+                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? Math.Max(_absLocationTicks, 8) : Math.Max(_absLocationTicks, 5))
+                : _absLocationTicks;
+            decimal effAbsMinVol = isCme
+                ? Math.Min(_absMinVolume, prof == MarketProfilePreset.CmeSp500_ES_MES ? 12m : 6m)
+                : _absMinVolume;
+            decimal effAbsVolMult = isCme ? Math.Min(_absVolumeMultiplier, 1.32m) : _absVolumeMultiplier;
+            decimal effAbsMinDelta = isCme
+                ? Math.Min(_absMinAbsDelta, prof == MarketProfilePreset.CmeSp500_ES_MES ? 5m : 3m)
+                : _absMinAbsDelta;
+            decimal effAbsDomPct = isCme
+                ? Math.Min(_absMinDominantPct, prof == MarketProfilePreset.CmeSp500_ES_MES ? 54m : 55m)
+                : _absMinDominantPct;
+            decimal effAbsDiag = isCme
+                ? Math.Min(_absDiagonalRatio, prof == MarketProfilePreset.CmeSp500_ES_MES ? 1.28m : 1.32m)
+                : _absDiagonalRatio;
+
             // 3. Détection Heavy Absorption sur le Footprint
             if (_enableAbsorption)
             {
-                decimal lowerZoneLimit = candle.Low + barRange * (_absZonePct / 100m);
-                decimal upperZoneLimit = candle.High - barRange * (_absZonePct / 100m);
-                decimal minVolRequired = Math.Max(_absMinVolume, avgLevelVol * _absVolumeMultiplier);
-                decimal wallVolRequired = Math.Max(_absMinVolume, avgLevelVol * Math.Max(2.2m, _absVolumeMultiplier * 1.35m));
+                decimal lowerZoneLimit = candle.Low + barRange * (effAbsZonePct / 100m);
+                decimal upperZoneLimit = candle.High - barRange * (effAbsZonePct / 100m);
+                decimal minVolRequired = Math.Max(effAbsMinVol, avgLevelVol * effAbsVolMult);
+                decimal wallVolRequired = Math.Max(effAbsMinVol, avgLevelVol * Math.Max(isCme ? 1.85m : 2.2m, effAbsVolMult * 1.30m));
 
                 decimal bestBullVol = 0m;
                 decimal bestBearVol = 0m;
 
                 for (int i = 0; i < count; i++)
                 {
-                    decimal vol = rows[i].Volume;
-                    if (vol <= 0m || vol < minVolRequired)
+                    decimal rawVol = rows[i].Volume;
+                    decimal evalBid = isCme ? Math.Max(rows[i].Bid, GetPooledBid(i)) : rows[i].Bid;
+                    decimal evalAsk = isCme ? Math.Max(rows[i].Ask, GetPooledAsk(i)) : rows[i].Ask;
+                    decimal evalVol = isCme ? Math.Max(rawVol, evalBid + rows[i].Ask) : rawVol;
+
+                    if (rawVol <= 0m || evalVol < minVolRequired)
                         continue;
 
-                    decimal absDelta = Math.Abs(rows[i].Delta);
-                    if (absDelta < _absMinAbsDelta)
+                    decimal absDelta = Math.Max(Math.Abs(rows[i].Delta), isCme ? Math.Abs(evalBid - rows[i].Ask) : 0m);
+                    if (absDelta < effAbsMinDelta)
                         continue;
 
                     decimal price = rows[i].Price;
@@ -3190,29 +3434,42 @@ namespace ATAS.Indicators.Custom
                     decimal ask = rows[i].Ask;
 
                     // --- Test Bullish Heavy Absorption (Vendeurs agressifs au Bid absorbés) ---
-                    bool inLowerExtreme = price <= lowerZoneLimit || (i <= _absLocationTicks);
-                    bool isMidWallBull = _allowMidBarWallAbsorption && vol >= wallVolRequired && candle.Close > price + step;
+                    bool inLowerExtreme = price <= lowerZoneLimit || (i <= effAbsLocTicks);
+                    bool isMidWallBull = _allowMidBarWallAbsorption && evalVol >= wallVolRequired && candle.Close > price + step;
 
-                    if ((inLowerExtreme || isMidWallBull) && bid > ask)
+                    if ((inLowerExtreme || isMidWallBull) && (bid > ask || (useCmePooling && evalBid > ask * 1.22m)))
                     {
-                        decimal bidPct = (bid / vol) * 100m;
-                        rows[i].DominantPct = bidPct;
+                        decimal bidPct = rawVol > 0m ? (bid / rawVol) * 100m : 0m;
+                        decimal pooledBidPct = (evalBid + ask) > 0m ? (evalBid / (evalBid + ask)) * 100m : bidPct;
+                        decimal domPct = Math.Max(bidPct, pooledBidPct);
+                        rows[i].DominantPct = domPct;
 
-                        bool passesDom = bidPct >= _absMinDominantPct;
+                        bool passesDom = domPct >= effAbsDomPct;
                         bool passesRejection = !_requirePriceRejection || (candle.Close >= price && candle.Close > candle.Low);
                         bool passesDiag = true;
 
-                        if (_absDiagonalRatio > 1.0m && i + 1 < count && rows[i + 1].Ask > 0m)
+                        if (effAbsDiag > 1.0m && i + 1 < count)
                         {
-                            passesDiag = (bid / rows[i + 1].Ask) >= _absDiagonalRatio;
+                            if (!isCme)
+                            {
+                                if (rows[i + 1].Ask > 0m)
+                                    passesDiag = (bid / rows[i + 1].Ask) >= effAbsDiag;
+                            }
+                            else
+                            {
+                                // Sur le CME (notamment NQ), un niveau balayé à 0 sur l'Ask diagonal est un Zero-Print Sweep valide
+                                decimal diagDenom = Math.Max(1m, rows[i + 1].Ask);
+                                passesDiag = (Math.Max(bid, evalBid) / diagDenom) >= effAbsDiag;
+                            }
                         }
 
                         if (passesDom && passesRejection && passesDiag)
                         {
                             rows[i].AbsorptionSide = 1;
-                            if (vol > bestBullVol)
+                            rows[i].VolumeZScore = Math.Max(rows[i].VolumeZScore, Math.Round((evalVol - avgLevelVol) / stdVol, 2));
+                            if (evalVol > bestBullVol)
                             {
-                                bestBullVol = vol;
+                                bestBullVol = evalVol;
                                 bestBullAbsIndex = i;
                             }
                             continue;
@@ -3220,29 +3477,41 @@ namespace ATAS.Indicators.Custom
                     }
 
                     // --- Test Bearish Heavy Absorption (Acheteurs agressifs à l'Ask absorbés) ---
-                    bool inUpperExtreme = price >= upperZoneLimit || ((count - 1 - i) <= _absLocationTicks);
-                    bool isMidWallBear = _allowMidBarWallAbsorption && vol >= wallVolRequired && candle.Close < price - step;
+                    bool inUpperExtreme = price >= upperZoneLimit || ((count - 1 - i) <= effAbsLocTicks);
+                    bool isMidWallBear = _allowMidBarWallAbsorption && evalVol >= wallVolRequired && candle.Close < price - step;
 
-                    if ((inUpperExtreme || isMidWallBear) && ask > bid)
+                    if ((inUpperExtreme || isMidWallBear) && (ask > bid || (useCmePooling && evalAsk > bid * 1.22m)))
                     {
-                        decimal askPct = (ask / vol) * 100m;
-                        rows[i].DominantPct = askPct;
+                        decimal askPct = rawVol > 0m ? (ask / rawVol) * 100m : 0m;
+                        decimal pooledAskPct = (evalAsk + bid) > 0m ? (evalAsk / (evalAsk + bid)) * 100m : askPct;
+                        decimal domPct = Math.Max(askPct, pooledAskPct);
+                        rows[i].DominantPct = domPct;
 
-                        bool passesDom = askPct >= _absMinDominantPct;
+                        bool passesDom = domPct >= effAbsDomPct;
                         bool passesRejection = !_requirePriceRejection || (candle.Close <= price && candle.Close < candle.High);
                         bool passesDiag = true;
 
-                        if (_absDiagonalRatio > 1.0m && i - 1 >= 0 && rows[i - 1].Bid > 0m)
+                        if (effAbsDiag > 1.0m && i - 1 >= 0)
                         {
-                            passesDiag = (ask / rows[i - 1].Bid) >= _absDiagonalRatio;
+                            if (!isCme)
+                            {
+                                if (rows[i - 1].Bid > 0m)
+                                    passesDiag = (ask / rows[i - 1].Bid) >= effAbsDiag;
+                            }
+                            else
+                            {
+                                decimal diagDenom = Math.Max(1m, rows[i - 1].Bid);
+                                passesDiag = (Math.Max(ask, evalAsk) / diagDenom) >= effAbsDiag;
+                            }
                         }
 
                         if (passesDom && passesRejection && passesDiag)
                         {
                             rows[i].AbsorptionSide = -1;
-                            if (vol > bestBearVol)
+                            rows[i].VolumeZScore = Math.Max(rows[i].VolumeZScore, Math.Round((evalVol - avgLevelVol) / stdVol, 2));
+                            if (evalVol > bestBearVol)
                             {
-                                bestBearVol = vol;
+                                bestBearVol = evalVol;
                                 bestBearAbsIndex = i;
                             }
                         }
@@ -3253,9 +3522,21 @@ namespace ATAS.Indicators.Custom
             // 4. Détection des Acheteurs Piégés (Trapped Buyers ▼) & Vendeurs Piégés (Trapped Sellers ▲)
             if (_enableTrappedTraders && count >= 2)
             {
-                decimal trapLowerZone = candle.Low + barRange * (_trappedWickZonePct / 100m);
-                decimal trapUpperZone = candle.High - barRange * (_trappedWickZonePct / 100m);
-                decimal trapMinVol = Math.Max(_trappedMinVolume, avgLevelVol * _trappedVolumeMultiplier);
+                decimal effTrapZonePct = isCme ? Math.Max(_trappedWickZonePct, 42m) : _trappedWickZonePct;
+                decimal effTrapMinVol = isCme
+                    ? Math.Min(_trappedMinVolume, prof == MarketProfilePreset.CmeSp500_ES_MES ? 10m : 5m)
+                    : _trappedMinVolume;
+                decimal effTrapVolMult = isCme ? Math.Min(_trappedVolumeMultiplier, 1.18m) : _trappedVolumeMultiplier;
+                decimal effTrapDomPct = isCme
+                    ? Math.Min(_trappedMinDominantPct, prof == MarketProfilePreset.CmeSp500_ES_MES ? 55m : 56m)
+                    : _trappedMinDominantPct;
+                decimal effTrapDiag = isCme
+                    ? Math.Min(_trappedImbalanceRatio, prof == MarketProfilePreset.CmeSp500_ES_MES ? 1.30m : 1.35m)
+                    : _trappedImbalanceRatio;
+
+                decimal trapLowerZone = candle.Low + barRange * (effTrapZonePct / 100m);
+                decimal trapUpperZone = candle.High - barRange * (effTrapZonePct / 100m);
+                decimal trapMinVol = Math.Max(effTrapMinVol, avgLevelVol * effTrapVolMult);
                 decimal bodyHigh = Math.Max(candle.Open, candle.Close);
                 decimal bodyLow = Math.Min(candle.Open, candle.Close);
                 decimal minRejectDist = Math.Max(1, _trappedMinRejectionLevels) * step;
@@ -3265,8 +3546,12 @@ namespace ATAS.Indicators.Custom
 
                 for (int i = 0; i < count; i++)
                 {
-                    decimal vol = rows[i].Volume;
-                    if (vol <= 0m || vol < trapMinVol)
+                    decimal rawVol = rows[i].Volume;
+                    decimal evalBid = isCme ? Math.Max(rows[i].Bid, GetPooledBid(i)) : rows[i].Bid;
+                    decimal evalAsk = isCme ? Math.Max(rows[i].Ask, GetPooledAsk(i)) : rows[i].Ask;
+                    decimal evalVol = isCme ? Math.Max(rawVol, Math.Max(evalBid + rows[i].Ask, evalAsk + rows[i].Bid)) : rawVol;
+
+                    if (rawVol <= 0m || evalVol < trapMinVol)
                         continue;
 
                     decimal price = rows[i].Price;
@@ -3278,22 +3563,33 @@ namespace ATAS.Indicators.Custom
                     bool closedAboveSellers = candle.Close >= price + minRejectDist;
                     bool inLowerWickOrBullClose = !_requireStrictWickOrOppositeClose || (price <= bodyLow || candle.Close > candle.Open);
 
-                    if (inLowerTrapZone && closedAboveSellers && inLowerWickOrBullClose && bid > ask)
+                    if (inLowerTrapZone && closedAboveSellers && inLowerWickOrBullClose && (bid > ask || (useCmePooling && evalBid > ask * 1.25m)))
                     {
-                        decimal bidPct = (bid / vol) * 100m;
-                        bool passesDom = bidPct >= _trappedMinDominantPct;
+                        decimal bidPct = rawVol > 0m ? (bid / rawVol) * 100m : 0m;
+                        decimal pooledPct = (evalBid + ask) > 0m ? (evalBid / (evalBid + ask)) * 100m : bidPct;
+                        decimal domPct = Math.Max(bidPct, pooledPct);
+                        bool passesDom = domPct >= effTrapDomPct;
                         bool passesDiag = true;
 
-                        if (_trappedImbalanceRatio > 1.0m && i + 1 < count && rows[i + 1].Ask > 0m)
+                        if (effTrapDiag > 1.0m && i + 1 < count)
                         {
-                            passesDiag = (bid / rows[i + 1].Ask) >= _trappedImbalanceRatio;
+                            if (!isCme)
+                            {
+                                if (rows[i + 1].Ask > 0m)
+                                    passesDiag = (bid / rows[i + 1].Ask) >= effTrapDiag;
+                            }
+                            else
+                            {
+                                decimal diagDenom = Math.Max(1m, rows[i + 1].Ask);
+                                passesDiag = (Math.Max(bid, evalBid) / diagDenom) >= effTrapDiag;
+                            }
                         }
 
                         if (passesDom && passesDiag)
                         {
                             rows[i].TrappedSide = 1;
-                            rows[i].TrappedDominantPct = bidPct;
-                            decimal sellDeltaAbs = bid - ask;
+                            rows[i].TrappedDominantPct = domPct;
+                            decimal sellDeltaAbs = Math.Max(bid - ask, evalBid - ask);
                             if (sellDeltaAbs > bestTrapSellersDelta)
                             {
                                 bestTrapSellersDelta = sellDeltaAbs;
@@ -3308,22 +3604,33 @@ namespace ATAS.Indicators.Custom
                     bool closedBelowBuyers = candle.Close <= price - minRejectDist;
                     bool inUpperWickOrBearClose = !_requireStrictWickOrOppositeClose || (price >= bodyHigh || candle.Close < candle.Open);
 
-                    if (inUpperTrapZone && closedBelowBuyers && inUpperWickOrBearClose && ask > bid)
+                    if (inUpperTrapZone && closedBelowBuyers && inUpperWickOrBearClose && (ask > bid || (useCmePooling && evalAsk > bid * 1.25m)))
                     {
-                        decimal askPct = (ask / vol) * 100m;
-                        bool passesDom = askPct >= _trappedMinDominantPct;
+                        decimal askPct = rawVol > 0m ? (ask / rawVol) * 100m : 0m;
+                        decimal pooledPct = (evalAsk + bid) > 0m ? (evalAsk / (evalAsk + bid)) * 100m : askPct;
+                        decimal domPct = Math.Max(askPct, pooledPct);
+                        bool passesDom = domPct >= effTrapDomPct;
                         bool passesDiag = true;
 
-                        if (_trappedImbalanceRatio > 1.0m && i - 1 >= 0 && rows[i - 1].Bid > 0m)
+                        if (effTrapDiag > 1.0m && i - 1 >= 0)
                         {
-                            passesDiag = (ask / rows[i - 1].Bid) >= _trappedImbalanceRatio;
+                            if (!isCme)
+                            {
+                                if (rows[i - 1].Bid > 0m)
+                                    passesDiag = (ask / rows[i - 1].Bid) >= effTrapDiag;
+                            }
+                            else
+                            {
+                                decimal diagDenom = Math.Max(1m, rows[i - 1].Bid);
+                                passesDiag = (Math.Max(ask, evalAsk) / diagDenom) >= effTrapDiag;
+                            }
                         }
 
                         if (passesDom && passesDiag)
                         {
                             rows[i].TrappedSide = -1;
-                            rows[i].TrappedDominantPct = askPct;
-                            decimal buyDeltaAbs = ask - bid;
+                            rows[i].TrappedDominantPct = domPct;
+                            decimal buyDeltaAbs = Math.Max(ask - bid, evalAsk - bid);
                             if (buyDeltaAbs > bestTrapBuyersDelta)
                             {
                                 bestTrapBuyersDelta = buyDeltaAbs;
