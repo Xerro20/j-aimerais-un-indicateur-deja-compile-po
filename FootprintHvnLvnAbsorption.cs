@@ -727,6 +727,15 @@ namespace ATAS.Indicators.Custom
             set { _botMode = value; RecalculateValues(); }
         }
 
+        private CrossTradingExecutionMode _crossTradingMode = CrossTradingExecutionMode.AutoAtasCrossTrading;
+        [Display(Name = "Trading Croisé ATAS X (Chart Normal ES/NQ ➔ Exécution Micro MES/MNQ)", GroupName = GrpQuantBot, Order = 25,
+            Description = "Permet d'afficher l'indicateur sur le contrat majeur CME (ES, NQ, GC, CL, YM, RTY) pour lire le vrai Order Flow institutionnel, tout en exécutant et valorisant les trades sur le contrat Micro (MES, MNQ, MGC, MCL, MYM, M2K) via le Trading Croisé d'ATAS X.")]
+        public CrossTradingExecutionMode CrossTradingMode
+        {
+            get => _crossTradingMode;
+            set { _crossTradingMode = value; RecalculateValues(); RedrawChart(); }
+        }
+
         private int _botTradeQuantity = 2;
         [Display(Name = "Taille de Position (Contrats / Lots)", GroupName = GrpQuantBot, Order = 30)]
         [Range(1, 1000)]
