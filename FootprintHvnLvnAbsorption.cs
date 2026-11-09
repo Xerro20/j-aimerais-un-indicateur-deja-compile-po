@@ -5622,21 +5622,51 @@ namespace ATAS.Indicators.Custom
             for (int b = startBar; b <= lastBar; b++)
             {
                 var c = GetCandle(b);
-                for (decimal p = c.Low; p <= c.High; p += tickSize)
+                bool usedAllLevels = false;
+                try
                 {
-                    var pv = c.GetPriceVolumeInfo(p);
-                    if (pv == null)
-                        continue;
+                    var allLevels = c.GetAllPriceLevels();
+                    if (allLevels != null)
+                    {
+                        foreach (var pv in allLevels)
+                        {
+                            if (pv == null)
+                                continue;
+                            decimal v = pv.Bid + pv.Ask;
+                            if (v <= 0m)
+                                continue;
+                            decimal bucket = Math.Floor(RoundToTick(pv.Price, tickSize) / step) * step;
+                            if (volumeByLevel.TryGetValue(bucket, out decimal existing))
+                                volumeByLevel[bucket] = existing + v;
+                            else
+                                volumeByLevel[bucket] = v;
+                            usedAllLevels = true;
+                        }
+                    }
+                }
+                catch
+                {
+                    usedAllLevels = false;
+                }
 
-                    decimal bucket = Math.Floor(p / step) * step;
-                    decimal v = pv.Bid + pv.Ask;
-                    if (v <= 0m)
-                        continue;
+                if (!usedAllLevels)
+                {
+                    for (decimal p = c.Low; p <= c.High; p += tickSize)
+                    {
+                        var pv = c.GetPriceVolumeInfo(RoundToTick(p, tickSize));
+                        if (pv == null)
+                            continue;
 
-                    if (volumeByLevel.TryGetValue(bucket, out decimal existing))
-                        volumeByLevel[bucket] = existing + v;
-                    else
-                        volumeByLevel[bucket] = v;
+                        decimal bucket = Math.Floor(p / step) * step;
+                        decimal v = pv.Bid + pv.Ask;
+                        if (v <= 0m)
+                            continue;
+
+                        if (volumeByLevel.TryGetValue(bucket, out decimal existing))
+                            volumeByLevel[bucket] = existing + v;
+                        else
+                            volumeByLevel[bucket] = v;
+                    }
                 }
             }
 
