@@ -1517,7 +1517,7 @@ namespace ATAS.Indicators.Custom
             string tmSecCode = TradingManager?.Security?.Code ?? TradingManager?.Security?.SecurityId ?? string.Empty;
             string posSecCode = TradingManager?.Position?.SecurityId ?? string.Empty;
 
-            var crossCtx = (DataProvider as IndicatorDataProvider)?.CrossTradingContext;
+            var crossCtx = DataProvider?.CrossTradingContext;
             bool atasCrossActive = crossCtx?.IsCrossTradingActive ?? false;
             string atasCrossDisplay = crossCtx?.CurrentCrossTradingDisplayName ?? string.Empty;
 
@@ -1938,7 +1938,7 @@ namespace ATAS.Indicators.Custom
                     }
                 }
 
-                var crossCtx = (DataProvider as IndicatorDataProvider)?.CrossTradingContext;
+                var crossCtx = DataProvider?.CrossTradingContext;
                 if (!ReferenceEquals(crossCtx, _subscribedCrossTradingContext))
                 {
                     if (_subscribedCrossTradingContext != null)
