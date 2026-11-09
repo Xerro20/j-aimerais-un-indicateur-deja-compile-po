@@ -1303,12 +1303,26 @@ namespace ATAS.Indicators.Custom
             if (string.IsNullOrEmpty(s))
                 return false;
 
-            // 1. Crypto Perpétuels / Spot (Binance, Bybit, OKX, Bitget...)
+            // 1. BTC Binance / Crypto Perpétuels & Spot (Comportement 100% original préservé uniquement sur BTC Crypto)
+            if (s.Contains("BTC") &&
+                (s.Contains("USDT") || s.Contains("USDC") || s.Contains("BUSD") || s.Contains("FDUSD") ||
+                 s.Contains("PERP") || s.Contains("BINANCE") || s.Contains("BYBIT") || s.StartsWith("BTCUSD")))
+            {
+                family = "CRYPTO_BTC";
+                isMicro = false;
+                pointValueUsd = 1m;
+                defaultCommPerSideUsd = 0.50m;
+                standardCode = s;
+                microCode = s;
+                return true;
+            }
+
+            // 1bis. Autres Crypto Perpétuels / Altcoins (ETH, SOL, BNB, XRP...) -> utilisent la stratégie améliorée hors BTC
             if (s.Contains("USDT") || s.Contains("USDC") || s.Contains("BUSD") || s.Contains("FDUSD") ||
                 s.Contains("PERP") || s.Contains("BINANCE") || s.Contains("BYBIT") ||
-                s.StartsWith("BTCUSD") || s.StartsWith("ETHUSD") || s.StartsWith("SOLUSD"))
+                s.StartsWith("ETHUSD") || s.StartsWith("SOLUSD"))
             {
-                family = "CRYPTO";
+                family = "CRYPTO_ALT";
                 isMicro = false;
                 pointValueUsd = 1m;
                 defaultCommPerSideUsd = 0.50m;
@@ -1551,7 +1565,7 @@ namespace ATAS.Indicators.Custom
                 {
                     effectiveProfile = chartFamily switch
                     {
-                        "CRYPTO" => MarketProfilePreset.CryptoBinanceFutures,
+                        "CRYPTO_BTC" => MarketProfilePreset.CryptoBinanceFutures,
                         "ES" => MarketProfilePreset.CmeSp500_ES_MES,
                         "NQ" => MarketProfilePreset.CmeNasdaq_NQ_MNQ,
                         _ => MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY
@@ -1559,10 +1573,14 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    // Heuristique par TickSize : ES/NQ/YM/RTY ont TickSize = 0.25 ou 1.0 ou 0.10 sans suffixe USDT
-                    effectiveProfile = (tickSize == 0.25m)
-                        ? MarketProfilePreset.CmeSp500_ES_MES
-                        : MarketProfilePreset.CryptoBinanceFutures;
+                    string normSym = NormalizeSymbolUpper(chartSym);
+                    bool looksLikeBtcCrypto = normSym.Contains("BTC") && !normSym.Contains("MBT") && !normSym.Contains("CME");
+                    if (looksLikeBtcCrypto)
+                        effectiveProfile = MarketProfilePreset.CryptoBinanceFutures;
+                    else if (tickSize == 0.25m)
+                        effectiveProfile = MarketProfilePreset.CmeSp500_ES_MES;
+                    else
+                        effectiveProfile = MarketProfilePreset.CmeKeyFutures_GC_CL_YM_RTY;
                 }
             }
 
