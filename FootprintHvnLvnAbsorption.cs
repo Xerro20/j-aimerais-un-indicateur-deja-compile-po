@@ -5921,9 +5921,13 @@ namespace ATAS.Indicators.Custom
                 ? BuySignalColor
                 : (latestOpt.OptionsBias < 0 ? SellSignalColor : Color.FromArgb(255, 200, 210, 225));
 
+            decimal hudTickSize = InstrumentInfo != null && InstrumentInfo.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            var contractInfo = ResolveContractAndCrossTradingInfo(hudTickSize);
+
             var lines = new List<(string text, Color color, bool bold)>
             {
                 ($"QUANT ORDERFLOW • OPTIONS • AUTO-BOT [{sym}]", Color.White, true),
+                ($"MARCHÉ & CROISÉ   : {contractInfo.ProfileBadge}  |  {contractInfo.CrossTradingBadge} ({contractInfo.TradedPointValueUsd:0.##}$/pt)", Color.FromArgb(255, 250, 204, 21), true),
                 ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}  |  VPOC : {(compPocPrice > 0m ? $"{compPocPrice}" : "N/A")}", BarHvnColor, false),
                 ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}  |  ATR({_quantAtrPeriod}) : {latestOpt.AtrPoints:0.00}", BarLvnColor, false),
                 ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)  |  Max Z-Score : {latestOpt.MaxVolumeZScore:0.0}σ", Color.FromArgb(255, 220, 230, 240), false),
