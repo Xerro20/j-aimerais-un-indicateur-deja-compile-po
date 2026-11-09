@@ -5188,13 +5188,19 @@ namespace ATAS.Indicators.Custom
                 {
                     int minStopSteps = prof switch
                     {
-                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14,
-                        MarketProfilePreset.CmeSp500_ES_MES => 6,
-                        _ => 8
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 8,
+                        MarketProfilePreset.CmeSp500_ES_MES => 4,
+                        _ => 5
                     };
-                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.55m, tickSize));
-                    tp1Dist = Math.Clamp(RoundToTick(riskPts * Math.Max(0.95m, _quantTp1RiskReward), tickSize), step * 4m, Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize)));
-                    tp2Dist = Math.Clamp(RoundToTick(riskPts * Math.Max(1.65m, _quantTp2RiskReward), tickSize), tp1Dist + step * 4m, Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize)));
+                    int minTp1Steps = prof switch
+                    {
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 5,
+                        MarketProfilePreset.CmeSp500_ES_MES => 3,
+                        _ => 3
+                    };
+                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.50m, tickSize));
+                    tp1Dist = Math.Clamp(RoundToTick(riskPts * Math.Min(0.62m, _quantTp1RiskReward), tickSize), step * minTp1Steps, Math.Max(step * (minTp1Steps + 1), RoundToTick(atr * 0.50m, tickSize)));
+                    tp2Dist = Math.Clamp(RoundToTick(riskPts * Math.Min(1.30m, _quantTp2RiskReward), tickSize), tp1Dist + step * 2m, Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.10m, tickSize)));
                 }
 
                 _liveTrackedDir = realDir;
@@ -5319,7 +5325,7 @@ namespace ATAS.Indicators.Custom
                 {
                     _liveTrackedTp1Hit = true;
                     decimal lockOffset = isCme
-                        ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.35m, tickSize))
+                        ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize))
                         : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                     _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
 
@@ -5371,9 +5377,9 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 5;
-                    int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
-                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, _liveTrackedInitialRiskPts * 0.68m))
+                    int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
+                    int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 2 : 1;
+                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, _liveTrackedInitialRiskPts * 0.40m)))
                     {
                         decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * (step * beLockSteps), tickSize);
                         if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
@@ -5384,8 +5390,8 @@ namespace ATAS.Indicators.Custom
                     }
                     else if (_liveTrackedTp1Hit)
                     {
-                        int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 8 : 4;
-                        decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.55m, tickSize));
+                        int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 2;
+                        decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.40m, tickSize));
                         decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
                         if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
                             (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
@@ -5484,6 +5490,14 @@ namespace ATAS.Indicators.Custom
                     {
                         _lockedExecutedSignalsByBar[sigBar] = signal;
                         return; // Déjà en position dans la même direction
+                    }
+
+                    if (contractInfo.IsCmeMarket && currentSign != 0 && currentSign != signal.Direction)
+                    {
+                        decimal openUnr = pos?.UnrealizedPnL ?? 0m;
+                        bool canReverseLive = openUnr >= 0m || _liveTrackedTp1Hit || signal.ConfluenceScore >= 78;
+                        if (!canReverseLive)
+                            return;
                     }
 
                     _lastLiveBotOrderBar = sigBar;
