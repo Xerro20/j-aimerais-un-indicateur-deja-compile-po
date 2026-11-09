@@ -93,6 +93,22 @@ namespace ATAS.Indicators.Custom
             ChartInstrumentOnly
         }
 
+        public enum MarketProfilePreset
+        {
+            AutoDetect,
+            CmeSp500_ES_MES,
+            CmeNasdaq_NQ_MNQ,
+            CmeKeyFutures_GC_CL_YM_RTY,
+            CryptoBinanceFutures
+        }
+
+        public enum CrossTradingExecutionMode
+        {
+            AutoAtasCrossTrading,
+            ForceMicroOnNormalChart,
+            NormalChartContractOnly
+        }
+
         // =====================================================================
         // Énumérations
         // =====================================================================
@@ -121,6 +137,15 @@ namespace ATAS.Indicators.Custom
         // =====================================================================
         // 1. GÉNÉRAL & FOOTPRINT
         // =====================================================================
+        private MarketProfilePreset _marketProfile = MarketProfilePreset.AutoDetect;
+        [Display(Name = "Profil de Marché Quant (Auto : CME ES / NQ / Contrats Clés / Crypto BTC)", GroupName = GrpGeneral, Order = 5,
+            Description = "AutoDetect adapte automatiquement le Footprint, le Flux d'Options (compensation ΔOI CME via MinDelta/MaxDelta) et les distances SL/TP1/TP2 aux contrats CME (S&P 500 ES/MES, NASDAQ NQ/MNQ, GC/MGC, CL/MCL, YM/MYM, RTY/M2K) tout en conservant à 100% le comportement original sur BTC Binance Futures.")]
+        public MarketProfilePreset MarketProfile
+        {
+            get => _marketProfile;
+            set { _marketProfile = value; RecalculateValues(); RedrawChart(); }
+        }
+
         private int _ticksPerRow = 1;
         [Display(Name = "Regroupement (Ticks par niveau)", GroupName = GrpGeneral, Order = 10,
             Description = "Nombre de ticks agrégés par ligne de prix sur le footprint (1 = tick par tick).")]
@@ -129,6 +154,15 @@ namespace ATAS.Indicators.Custom
         {
             get => _ticksPerRow;
             set { _ticksPerRow = Math.Max(1, value); RecalculateValues(); }
+        }
+
+        private bool _enableCmeMicroClusterPooling = true;
+        [Display(Name = "Agrégation Intelligente des Clusters Adjacents sur CME (ES / NQ)", GroupName = GrpGeneral, Order = 15,
+            Description = "Sur le CME (NASDAQ NQ/MNQ à carnet rapide et S&P 500 ES/MES à carnet dense), regroupe les murs d'absorption et de traders piégés répartis sur 2 à 3 ticks adjacents tout en gérant les balayages à 0 contrat (Zero-Print Sweeps).")]
+        public bool EnableCmeMicroClusterPooling
+        {
+            get => _enableCmeMicroClusterPooling;
+            set { _enableCmeMicroClusterPooling = value; RecalculateValues(); RedrawChart(); }
         }
 
         [Display(Name = "Afficher texte Bid x Ask intégré", GroupName = GrpGeneral, Order = 20,
