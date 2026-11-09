@@ -2868,10 +2868,10 @@ namespace ATAS.Indicators.Custom
             bool bearWinsBar = !hasBullAbs || (candle.Close < candle.Open) || (candle.Close <= midPrice);
 
             decimal effMinClusterZ = isCme
-                ? Math.Min(_quantMinClusterZScore, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 0.55m : 0.65m)
+                ? Math.Max(0.75m, Math.Min(_quantMinClusterZScore, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 0.80m : 0.85m))
                 : _quantMinClusterZScore;
             int effMinConfScore = isCme
-                ? Math.Min(_quantMinConfluenceScore, 64)
+                ? Math.Max(_quantMinConfluenceScore, 68)
                 : _quantMinConfluenceScore;
 
             string crossSuffix = contractInfo.IsCrossTradingMicro
@@ -2886,29 +2886,73 @@ namespace ATAS.Indicators.Custom
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
                 bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
-                // Rejet haussier au-dessus du cluster d'absorption / vendeurs piégés
-                bool bullRejectionOk = (candle.Close >= keyRow.Price + step * 0.5m || (isCme && candle.Close > candle.Low && candle.Close >= keyRow.Price)) &&
-                                       (candle.Close >= candle.Open ||
-                                        candle.Close >= candle.Low + barRange * (isCme ? 0.30m : 0.35m) ||
-                                        candle.Close >= pocPrice - step);
+                bool bullRejectionOk;
+                bool quantZOk;
+                bool optionsOk;
 
-                bool quantZOk = !_enableQuantFilter
-                                || clusterZ >= effMinClusterZ
-                                || (hasBullAbs && hasTrapSellers)
-                                || (hvnAnchored && hasLowerLvnRejection);
+                if (!isCme)
+                {
+                    // --- Comportement 100% original préservé pour BTC Binance Futures ---
+                    bullRejectionOk = (candle.Close >= keyRow.Price + step * 0.5m) &&
+                                      (candle.Close >= candle.Open ||
+                                       candle.Close >= candle.Low + barRange * 0.35m ||
+                                       candle.Close >= pocPrice - step);
 
-                bool optionsOk = !_enableAtasOptionsFlow
-                                 || !_requireOptionsFlowConfirmation
-                                 || opt.OptionsBias > 0
-                                 || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= (isCme ? 45m : 48m))
-                                 || (opt.BullishCvdDivergence && opt.CallFlowPct >= (isCme ? 45m : 48m))
-                                 || (opt.OiDelta > 0m && opt.CallFlowPct >= (isCme ? 46m : 49m))
-                                 || (opt.SweepCount > 0 && opt.CallFlowPct >= (isCme ? 47m : 50m))
-                                 || (isCme && hasBullAbs && candle.Close >= pocPrice && opt.CallFlowPct >= 46m);
+                    quantZOk = !_enableQuantFilter
+                               || clusterZ >= effMinClusterZ
+                               || (hasBullAbs && hasTrapSellers)
+                               || (hvnAnchored && hasLowerLvnRejection);
+
+                    optionsOk = !_enableAtasOptionsFlow
+                                || !_requireOptionsFlowConfirmation
+                                || opt.OptionsBias > 0
+                                || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 48m)
+                                || (opt.BullishCvdDivergence && opt.CallFlowPct >= 48m)
+                                || (opt.OiDelta > 0m && opt.CallFlowPct >= 49m)
+                                || (opt.SweepCount > 0 && opt.CallFlowPct >= 50m);
+                }
+                else
+                {
+                    // --- Stratégie Haute Précision Hors BTC Binance (CME ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
+                    decimal bodyLow = Math.Min(candle.Open, candle.Close);
+                    decimal lowerWick = bodyLow - candle.Low;
+                    bool strongBullBodyOrPin = (candle.Close > candle.Open && candle.Close >= candle.Low + barRange * 0.52m) ||
+                                               (candle.Close >= candle.Open && candle.Close >= midPrice) ||
+                                               (lowerWick >= barRange * 0.45m && candle.Close >= candle.Low + barRange * 0.58m);
+
+                    // Anti-essoufflement : évite d'acheter le sommet d'une bougie géante déjà épuisée
+                    bool notOverextendedBull = barRange <= atr * 1.90m &&
+                                               (candle.Close - keyRow.Price) <= atr * 1.05m &&
+                                               opt.VwapZScore <= 1.75m;
+
+                    // Alignement Régime / Tendance ou Reversal Institutionnel confirmé par CVD + Double Signal
+                    bool regimeAlignedBull = (opt.TrendBias >= 0 && candle.Close >= opt.EmaFast - atr * 0.20m) ||
+                                             (candle.Close > opt.EmaFast && candle.Close > candle.Open) ||
+                                             ((hasBullAbs && hasTrapSellers) && opt.BullishCvdDivergence && candle.Close > candle.Open && candle.Delta >= 0m);
+
+                    bool notFightingBearMomentum = !(opt.TrendBias < 0 && candle.Close < opt.EmaFast && candle.Delta < 0m && !opt.BullishCvdDivergence);
+
+                    bullRejectionOk = (candle.Close >= keyRow.Price + step) &&
+                                      (candle.Close >= midPrice) &&
+                                      strongBullBodyOrPin &&
+                                      notOverextendedBull &&
+                                      regimeAlignedBull &&
+                                      notFightingBearMomentum;
+
+                    quantZOk = !_enableQuantFilter
+                               || clusterZ >= effMinClusterZ
+                               || (hasBullAbs && hasTrapSellers && clusterZ >= 0.55m);
+
+                    optionsOk = !_enableAtasOptionsFlow
+                                || !_requireOptionsFlowConfirmation
+                                || (opt.CallFlowPct >= 53m)
+                                || (hasBullAbs && hasTrapSellers && opt.CallFlowPct >= 51.5m)
+                                || (opt.BullishCvdDivergence && opt.CallFlowPct >= 52m && candle.Close > candle.Open);
+                }
 
                 if (bullRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = isCme ? 60 : 58;
+                    int score = isCme ? 58 : 58;
                     if (hasBullAbs && hasTrapSellers) score += 16;
                     else if (hasBullAbs) score += 11;
                     else score += 10;
@@ -2916,11 +2960,11 @@ namespace ATAS.Indicators.Custom
                     if (hvnAnchored) score += 5;
                     if (hasLowerLvnRejection) score += 4;
                     if (candle.Close >= pocPrice) score += 4;
-                    if (opt.TrendBias > 0) score += 4;
+                    if (opt.TrendBias > 0) score += (isCme ? 6 : 4);
                     if (opt.BullStackedImbalances >= 1) score += 3;
-                    if (opt.CallFlowPct >= (isCme ? 52m : _optionsMinDominancePct))
+                    if (opt.CallFlowPct >= (isCme ? 53m : _optionsMinDominancePct))
                         score += (int)Math.Min(12m, (opt.CallFlowPct - 50m) * 0.60m);
-                    if (clusterZ >= (isCme ? 0.9m : 1.1m))
+                    if (clusterZ >= (isCme ? 1.0m : 1.1m))
                         score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BullishCvdDivergence)
                         score += 5;
@@ -2960,31 +3004,38 @@ namespace ATAS.Indicators.Custom
                         }
                         else
                         {
-                            // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC/MGC, CL/MCL) ---
-                            // Respiration adaptée au bruit de carnet CME (évite de se faire sortir par 2 ticks de bruit sur ES ou 4 ticks sur NQ)
+                            // --- Calibration Haute Probabilité Hors BTC Binance (ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
+                            // Stop structurel maîtrisé + TP1 rapide (~0.50 ATR / 0.62R) déclenchant l'encaissement + Profit-Lock immédiat
                             int minStopSteps = prof switch
                             {
-                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14, // min 3.50 pts (14 ticks) sur NQ/MNQ
-                                MarketProfilePreset.CmeSp500_ES_MES => 6,   // min 1.50 pts (6 ticks) sur ES/MES
-                                _ => 8                                      // min 8 ticks sur GC/CL/YM/RTY
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 8,  // min 2.00 pts (8 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 4,   // min 1.00 pt (4 ticks) sur ES/MES
+                                _ => 5                                      // min 5 ticks sur GC/CL/YM/RTY/Autres
                             };
-                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.45m, tickSize));
-                            decimal cmeAtrStopMult = Math.Max(_quantAtrStopMultiplier, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 1.45m : 1.35m);
+                            int minTp1Steps = prof switch
+                            {
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 5,  // min 1.25 pts (5 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 3,   // min 0.75 pt (3 ticks) sur ES/MES
+                                _ => 3
+                            };
+
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.36m, tickSize));
+                            decimal cmeAtrStopMult = Math.Min(_quantAtrStopMultiplier, 0.85m);
                             decimal maxStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * cmeAtrStopMult, tickSize));
-                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 3m : step * 2m;
-                            decimal structuralLow = Math.Min(candle.Low - structuralPad, keyRow.Price - structuralPad);
+                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 2m : step;
+                            decimal structuralLow = Math.Min(candle.Low - structuralPad, keyRow.Price - step * 2m);
                             decimal rawStopDist = Math.Max(minStopDist, entryPrice - structuralLow);
                             decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
 
                             stopPrice = RoundToTick(entryPrice - clampedStopDist, tickSize);
                             decimal riskPts = Math.Max(minStopDist, entryPrice - stopPrice);
 
-                            decimal cmeTp1Rr = Math.Max(0.95m, _quantTp1RiskReward);
-                            decimal cmeTp2Rr = Math.Max(1.65m, _quantTp2RiskReward);
-                            decimal maxTp1Pts = Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize));
-                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * 4m, maxTp1Pts);
-                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize));
-                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 4m, maxTp2Pts);
+                            decimal cmeTp1Rr = Math.Min(0.62m, _quantTp1RiskReward);
+                            decimal cmeTp2Rr = Math.Min(1.30m, _quantTp2RiskReward);
+                            decimal maxTp1Pts = Math.Max(step * (minTp1Steps + 1), RoundToTick(atr * 0.50m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * minTp1Steps, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.10m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 2m, maxTp2Pts);
 
                             tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
                             tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
@@ -3027,29 +3078,73 @@ namespace ATAS.Indicators.Custom
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
                 bool hvnAnchored = keyRow.IsHvn || keyRow.IsPoc || (Math.Abs(keyRow.Price - pocPrice) <= step * 2m) || hasBarHvn;
 
-                // Rejet baissier en dessous du cluster d'absorption / acheteurs piégés
-                bool bearRejectionOk = (candle.Close <= keyRow.Price - step * 0.5m || (isCme && candle.Close < candle.High && candle.Close <= keyRow.Price)) &&
-                                       (candle.Close <= candle.Open ||
-                                        candle.Close <= candle.High - barRange * (isCme ? 0.30m : 0.35m) ||
-                                        candle.Close <= pocPrice + step);
+                bool bearRejectionOk;
+                bool quantZOk;
+                bool optionsOk;
 
-                bool quantZOk = !_enableQuantFilter
-                                || clusterZ >= effMinClusterZ
-                                || (hasBearAbs && hasTrapBuyers)
-                                || (hvnAnchored && hasUpperLvnRejection);
+                if (!isCme)
+                {
+                    // --- Comportement 100% original préservé pour BTC Binance Futures ---
+                    bearRejectionOk = (candle.Close <= keyRow.Price - step * 0.5m) &&
+                                      (candle.Close <= candle.Open ||
+                                       candle.Close <= candle.High - barRange * 0.35m ||
+                                       candle.Close <= pocPrice + step);
 
-                bool optionsOk = !_enableAtasOptionsFlow
-                                 || !_requireOptionsFlowConfirmation
-                                 || opt.OptionsBias < 0
-                                 || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= (isCme ? 45m : 48m))
-                                 || (opt.BearishCvdDivergence && opt.PutFlowPct >= (isCme ? 45m : 48m))
-                                 || (opt.OiDelta < 0m && opt.PutFlowPct >= (isCme ? 46m : 49m))
-                                 || (opt.SweepCount > 0 && opt.PutFlowPct >= (isCme ? 47m : 50m))
-                                 || (isCme && hasBearAbs && candle.Close <= pocPrice && opt.PutFlowPct >= 46m);
+                    quantZOk = !_enableQuantFilter
+                               || clusterZ >= effMinClusterZ
+                               || (hasBearAbs && hasTrapBuyers)
+                               || (hvnAnchored && hasUpperLvnRejection);
+
+                    optionsOk = !_enableAtasOptionsFlow
+                                || !_requireOptionsFlowConfirmation
+                                || opt.OptionsBias < 0
+                                || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 48m)
+                                || (opt.BearishCvdDivergence && opt.PutFlowPct >= 48m)
+                                || (opt.OiDelta < 0m && opt.PutFlowPct >= 49m)
+                                || (opt.SweepCount > 0 && opt.PutFlowPct >= 50m);
+                }
+                else
+                {
+                    // --- Stratégie Haute Précision Hors BTC Binance (CME ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
+                    decimal bodyHigh = Math.Max(candle.Open, candle.Close);
+                    decimal upperWick = candle.High - bodyHigh;
+                    bool strongBearBodyOrPin = (candle.Close < candle.Open && candle.Close <= candle.High - barRange * 0.52m) ||
+                                               (candle.Close <= candle.Open && candle.Close <= midPrice) ||
+                                               (upperWick >= barRange * 0.45m && candle.Close <= candle.High - barRange * 0.58m);
+
+                    // Anti-essoufflement : évite de vendre le creux d'une bougie géante déjà épuisée
+                    bool notOverextendedBear = barRange <= atr * 1.90m &&
+                                               (keyRow.Price - candle.Close) <= atr * 1.05m &&
+                                               opt.VwapZScore >= -1.75m;
+
+                    // Alignement Régime / Tendance ou Reversal Institutionnel confirmé par CVD + Double Signal
+                    bool regimeAlignedBear = (opt.TrendBias <= 0 && candle.Close <= opt.EmaFast + atr * 0.20m) ||
+                                             (candle.Close < opt.EmaFast && candle.Close < candle.Open) ||
+                                             ((hasBearAbs && hasTrapBuyers) && opt.BearishCvdDivergence && candle.Close < candle.Open && candle.Delta <= 0m);
+
+                    bool notFightingBullMomentum = !(opt.TrendBias > 0 && candle.Close > opt.EmaFast && candle.Delta > 0m && !opt.BearishCvdDivergence);
+
+                    bearRejectionOk = (candle.Close <= keyRow.Price - step) &&
+                                      (candle.Close <= midPrice) &&
+                                      strongBearBodyOrPin &&
+                                      notOverextendedBear &&
+                                      regimeAlignedBear &&
+                                      notFightingBullMomentum;
+
+                    quantZOk = !_enableQuantFilter
+                               || clusterZ >= effMinClusterZ
+                               || (hasBearAbs && hasTrapBuyers && clusterZ >= 0.55m);
+
+                    optionsOk = !_enableAtasOptionsFlow
+                                || !_requireOptionsFlowConfirmation
+                                || (opt.PutFlowPct >= 53m)
+                                || (hasBearAbs && hasTrapBuyers && opt.PutFlowPct >= 51.5m)
+                                || (opt.BearishCvdDivergence && opt.PutFlowPct >= 52m && candle.Close < candle.Open);
+                }
 
                 if (bearRejectionOk && quantZOk && optionsOk)
                 {
-                    int score = isCme ? 60 : 58;
+                    int score = isCme ? 58 : 58;
                     if (hasBearAbs && hasTrapBuyers) score += 16;
                     else if (hasBearAbs) score += 11;
                     else score += 10;
@@ -3057,11 +3152,11 @@ namespace ATAS.Indicators.Custom
                     if (hvnAnchored) score += 5;
                     if (hasUpperLvnRejection) score += 4;
                     if (candle.Close <= pocPrice) score += 4;
-                    if (opt.TrendBias < 0) score += 4;
+                    if (opt.TrendBias < 0) score += (isCme ? 6 : 4);
                     if (opt.BearStackedImbalances >= 1) score += 3;
-                    if (opt.PutFlowPct >= (isCme ? 52m : _optionsMinDominancePct))
+                    if (opt.PutFlowPct >= (isCme ? 53m : _optionsMinDominancePct))
                         score += (int)Math.Min(12m, (opt.PutFlowPct - 50m) * 0.60m);
-                    if (clusterZ >= (isCme ? 0.9m : 1.1m))
+                    if (clusterZ >= (isCme ? 1.0m : 1.1m))
                         score += (int)Math.Min(7m, clusterZ * 2.5m);
                     if (opt.BearishCvdDivergence)
                         score += 5;
@@ -3101,30 +3196,37 @@ namespace ATAS.Indicators.Custom
                         }
                         else
                         {
-                            // --- Calibration Institutionnelle CME (ES/MES, NQ/MNQ, GC/MGC, CL/MCL) ---
+                            // --- Calibration Haute Probabilité Hors BTC Binance (ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
                             int minStopSteps = prof switch
                             {
-                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14, // min 3.50 pts (14 ticks) sur NQ/MNQ
-                                MarketProfilePreset.CmeSp500_ES_MES => 6,   // min 1.50 pts (6 ticks) sur ES/MES
-                                _ => 8
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 8,  // min 2.00 pts (8 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 4,   // min 1.00 pt (4 ticks) sur ES/MES
+                                _ => 5
                             };
-                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.45m, tickSize));
-                            decimal cmeAtrStopMult = Math.Max(_quantAtrStopMultiplier, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 1.45m : 1.35m);
+                            int minTp1Steps = prof switch
+                            {
+                                MarketProfilePreset.CmeNasdaq_NQ_MNQ => 5,  // min 1.25 pts (5 ticks) sur NQ/MNQ
+                                MarketProfilePreset.CmeSp500_ES_MES => 3,   // min 0.75 pt (3 ticks) sur ES/MES
+                                _ => 3
+                            };
+
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.36m, tickSize));
+                            decimal cmeAtrStopMult = Math.Min(_quantAtrStopMultiplier, 0.85m);
                             decimal maxStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * cmeAtrStopMult, tickSize));
-                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 3m : step * 2m;
-                            decimal structuralHigh = Math.Max(candle.High + structuralPad, keyRow.Price + structuralPad);
+                            decimal structuralPad = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? step * 2m : step;
+                            decimal structuralHigh = Math.Max(candle.High + structuralPad, keyRow.Price + step * 2m);
                             decimal rawStopDist = Math.Max(minStopDist, structuralHigh - entryPrice);
                             decimal clampedStopDist = Math.Clamp(rawStopDist, minStopDist, maxStopDist);
 
                             stopPrice = RoundToTick(entryPrice + clampedStopDist, tickSize);
                             decimal riskPts = Math.Max(minStopDist, stopPrice - entryPrice);
 
-                            decimal cmeTp1Rr = Math.Max(0.95m, _quantTp1RiskReward);
-                            decimal cmeTp2Rr = Math.Max(1.65m, _quantTp2RiskReward);
-                            decimal maxTp1Pts = Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize));
-                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * 4m, maxTp1Pts);
-                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize));
-                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 4m, maxTp2Pts);
+                            decimal cmeTp1Rr = Math.Min(0.62m, _quantTp1RiskReward);
+                            decimal cmeTp2Rr = Math.Min(1.30m, _quantTp2RiskReward);
+                            decimal maxTp1Pts = Math.Max(step * (minTp1Steps + 1), RoundToTick(atr * 0.50m, tickSize));
+                            decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * minTp1Steps, maxTp1Pts);
+                            decimal maxTp2Pts = Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.10m, tickSize));
+                            decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 2m, maxTp2Pts);
 
                             tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
                             tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
