@@ -4004,7 +4004,9 @@ namespace ATAS.Indicators.Custom
 
             if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && lastBar >= 0)
             {
-                decimal renderPx = TradingManager?.Security?.LastTradePrice ?? GetCandle(lastBar).Close;
+                decimal renderPx = GetCandle(lastBar).Close > 0m
+                    ? GetCandle(lastBar).Close
+                    : (TradingManager?.Security?.LastTradePrice ?? 0m);
                 if (renderPx > 0m)
                     CheckLivePositionTargetsOnTick(renderPx);
             }
@@ -4050,6 +4052,8 @@ namespace ATAS.Indicators.Custom
                 _chartBotToggleBtnRect = Rectangle.Empty;
                 _chartBotModeBtnRect = Rectangle.Empty;
                 _chartBotResetBtnRect = Rectangle.Empty;
+                _chartProfileBtnRect = Rectangle.Empty;
+                _chartCrossTradeBtnRect = Rectangle.Empty;
                 _chartSchedToggleRect = Rectangle.Empty;
                 _chartStartMinusRect = Rectangle.Empty;
                 _chartStartValRect = Rectangle.Empty;
@@ -4067,17 +4071,7 @@ namespace ATAS.Indicators.Custom
         // =====================================================================
         private decimal GetPointDollarValue(decimal tickSize)
         {
-            try
-            {
-                var sec = TradingManager?.Security;
-                if (sec != null && sec.TickCost > 0m && sec.TickSize > 0m)
-                    return sec.TickCost / sec.TickSize;
-            }
-            catch
-            {
-                // Ignorer si non supporté par le connecteur
-            }
-            return _botPointValueUsd > 0m ? _botPointValueUsd : 50m;
+            return ResolveContractAndCrossTradingInfo(tickSize).TradedPointValueUsd;
         }
 
         private BotPerformanceState SimulateQuantTradingBot(
@@ -4086,16 +4080,24 @@ namespace ATAS.Indicators.Custom
             out List<BotTradeExecutionRecord> tradeHistory)
         {
             tradeHistory = new List<BotTradeExecutionRecord>();
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            bool isCme = contractInfo.IsCmeMarket;
+            MarketProfilePreset prof = contractInfo.EffectiveProfile;
+
             var state = new BotPerformanceState
             {
-                StatusLabel = _enableTradingBot ? "ACTIF — RECHERCHE SIGNAL QUANT" : "DÉSACTIVÉ"
+                StatusLabel = _enableTradingBot ? "ACTIF — RECHERCHE SIGNAL QUANT" : "DÉSACTIVÉ",
+                MarketProfileLabel = contractInfo.ProfileBadge,
+                CrossTradingLabel = contractInfo.CrossTradingBadge,
+                EffectivePointValueUsd = contractInfo.TradedPointValueUsd
             };
 
             if (!_enableTradingBot || upToBar < 0)
                 return state;
 
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
-            decimal pointVal = GetPointDollarValue(tickSize);
+            decimal pointVal = contractInfo.TradedPointValueUsd;
+            decimal commPerSide = contractInfo.TradedCommissionPerSideUsd;
             int minVisible = FirstVisibleBarNumber >= 0 ? FirstVisibleBarNumber : upToBar;
             int lookbackStart = Math.Max(0, Math.Min(minVisible, upToBar - Math.Max(220, ProfileLookbackBars * 4)));
             if (_botResetLimitsEachSession)
@@ -4162,13 +4164,13 @@ namespace ATAS.Indicators.Custom
                         {
                             int half = activeQty / 2;
                             bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
-                                - (_botCommissionPerSideUsd * 2m * half);
+                                - (commPerSide * 2m * half);
                             activeQty -= half;
                             tp1Hit = true;
                         }
 
                         decimal remPnl = activeDir * (tp2Price - entryPrice) * pointVal * activeQty
-                            - (_botCommissionPerSideUsd * 2m * activeQty);
+                            - (commPerSide * 2m * activeQty);
                         decimal totalTradePnl = Math.Round(bankedPartialUsd + remPnl, 2);
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
@@ -4187,7 +4189,7 @@ namespace ATAS.Indicators.Custom
                         if (activeQty == 1 || !_botAutoBreakevenOnTp1)
                         {
                             decimal fullTp1Pnl = activeDir * (tp1Price - entryPrice) * pointVal * activeQty
-                                - (_botCommissionPerSideUsd * 2m * activeQty);
+                                - (commPerSide * 2m * activeQty);
                             decimal totalTradePnl = Math.Round(bankedPartialUsd + fullTp1Pnl, 2);
 
                             FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
@@ -4200,16 +4202,17 @@ namespace ATAS.Indicators.Custom
                         }
                         else
                         {
-                            // Multi-contrats : encaisse 50% immédiatement sur TP1 et verrouille le Stop du solde en gain (+45% de TP1)
+                            // Multi-contrats : encaisse 50% immédiatement sur TP1 et verrouille le Stop du solde en gain
                             int half = activeQty / 2;
                             bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
-                                - (_botCommissionPerSideUsd * 2m * half);
+                                - (commPerSide * 2m * half);
                             activeQty -= half;
 
-                            decimal lockOffset = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                            decimal lockOffset = isCme
+                                ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.35m, tickSize))
+                                : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                             stopPrice = RoundToTick(entryPrice + activeDir * lockOffset, tickSize);
 
-                            // Si la bougie s'est retournée après avoir touché TP1 et a touché le Profit-Lock Stop sur la même bougie
                             bool hitProfitLockAfterTp1 = activeDir > 0
                                 ? (c.Close <= stopPrice && c.Low <= stopPrice)
                                 : (c.Close >= stopPrice && c.High >= stopPrice);
@@ -4217,7 +4220,7 @@ namespace ATAS.Indicators.Custom
                             if (hitProfitLockAfterTp1)
                             {
                                 decimal remPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
-                                    - (_botCommissionPerSideUsd * 2m * activeQty);
+                                    - (commPerSide * 2m * activeQty);
                                 decimal totalTradePnl = Math.Round(bankedPartialUsd + remPnl, 2);
 
                                 FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
@@ -4233,7 +4236,7 @@ namespace ATAS.Indicators.Custom
                     else if (stopTriggered)
                     {
                         decimal legPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
-                            - (_botCommissionPerSideUsd * 2m * activeQty);
+                            - (commPerSide * 2m * activeQty);
                         decimal totalTradePnl = Math.Round(bankedPartialUsd + legPnl, 2);
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
@@ -4245,26 +4248,54 @@ namespace ATAS.Indicators.Custom
                         bankedPartialUsd = 0m;
                     }
 
-                    // Protection dynamique : Early Profit-Lock dès +0.45R & Trailing Stop serré après TP1
+                    // Protection dynamique : Early Profit-Lock & Trailing Stop après TP1
                     if (activeDir != 0)
                     {
                         decimal maxFavExcursion = activeDir > 0 ? (c.High - entryPrice) : (entryPrice - c.Low);
-                        if (!tp1Hit && maxFavExcursion >= Math.Max(step * 2m, initialRiskPts * 0.45m))
+                        if (!isCme)
                         {
-                            decimal softBe = RoundToTick(entryPrice + activeDir * step, tickSize);
-                            if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
-                                stopPrice = softBe;
-                        }
-                        else if (tp1Hit)
-                        {
-                            decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
-                            decimal favPeak = activeDir > 0 ? c.High : c.Low;
-                            decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
+                            // --- Comportement 100% original pour BTC Binance Futures ---
+                            if (!tp1Hit && maxFavExcursion >= Math.Max(step * 2m, initialRiskPts * 0.45m))
+                            {
+                                decimal softBe = RoundToTick(entryPrice + activeDir * step, tickSize);
+                                if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
+                                    stopPrice = softBe;
+                            }
+                            else if (tp1Hit)
+                            {
+                                decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                                decimal favPeak = activeDir > 0 ? c.High : c.Low;
+                                decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
 
-                            if (activeDir > 0 && candidateTrail > stopPrice)
-                                stopPrice = candidateTrail;
-                            else if (activeDir < 0 && candidateTrail < stopPrice)
-                                stopPrice = candidateTrail;
+                                if (activeDir > 0 && candidateTrail > stopPrice)
+                                    stopPrice = candidateTrail;
+                                else if (activeDir < 0 && candidateTrail < stopPrice)
+                                    stopPrice = candidateTrail;
+                            }
+                        }
+                        else
+                        {
+                            // --- Calibration CME (ES/MES, NQ/MNQ) : évite l'arrêt prématuré sur la respiration normale du carnet CME ---
+                            int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 5;
+                            int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
+                            if (!tp1Hit && maxFavExcursion >= Math.Max(step * minBeTriggerSteps, initialRiskPts * 0.68m))
+                            {
+                                decimal softBe = RoundToTick(entryPrice + activeDir * (step * beLockSteps), tickSize);
+                                if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
+                                    stopPrice = softBe;
+                            }
+                            else if (tp1Hit)
+                            {
+                                int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 8 : 4;
+                                decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.55m, tickSize));
+                                decimal favPeak = activeDir > 0 ? c.High : c.Low;
+                                decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
+
+                                if (activeDir > 0 && candidateTrail > stopPrice)
+                                    stopPrice = candidateTrail;
+                                else if (activeDir < 0 && candidateTrail < stopPrice)
+                                    stopPrice = candidateTrail;
+                            }
                         }
                     }
 
@@ -4314,7 +4345,7 @@ namespace ATAS.Indicators.Custom
                     {
                         decimal eodPnl = bankedPartialUsd
                             + activeDir * (c.Close - entryPrice) * pointVal * activeQty
-                            - (_botCommissionPerSideUsd * 2m * activeQty);
+                            - (commPerSide * 2m * activeQty);
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                             entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
@@ -4350,7 +4381,7 @@ namespace ATAS.Indicators.Custom
                     if (activeDir != 0 && activeDir != sig.Direction && b > entryBar)
                     {
                         decimal curOpenPnl = bankedPartialUsd + activeDir * (c.Close - entryPrice) * pointVal * activeQty;
-                        decimal revPnl = curOpenPnl - (_botCommissionPerSideUsd * 2m * activeQty);
+                        decimal revPnl = curOpenPnl - (commPerSide * 2m * activeQty);
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                             entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
@@ -4452,19 +4483,20 @@ namespace ATAS.Indicators.Custom
             }
 
             bool latestInSched = upToBar < 0 || IsBarWithinBotSchedule(GetCandle(upToBar).Time);
+            string tradedTag = contractInfo.IsCrossTradingMicro ? $" [CROISÉ➔{contractInfo.TradedSymbol}]" : string.Empty;
 
             if (state.IsHaltedByMaxDrawdown)
-                state.StatusLabel = $"COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT (-{state.MaxObservedDrawdownUsd:0}$ / -{_botMaxDrawdownUsd:0}$)";
+                state.StatusLabel = $"COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT (-{state.MaxObservedDrawdownUsd:0}$ / -{_botMaxDrawdownUsd:0}$){tradedTag}";
             else if (state.IsHaltedByMaxProfit)
-                state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ (+{state.TotalPnlUsd:0}$ / +{_botMaxProfitTargetUsd:0}$)";
+                state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ (+{state.TotalPnlUsd:0}$ / +{_botMaxProfitTargetUsd:0}$){tradedTag}";
             else if (!latestInSched)
-                state.StatusLabel = $"VEILLE HORAIRE — ACTIF DE {BotStartTimeText} À {BotEndTimeText}";
+                state.StatusLabel = $"VEILLE HORAIRE — ACTIF DE {BotStartTimeText} À {BotEndTimeText}{tradedTag}";
             else if (state.ActiveDirection > 0)
-                state.StatusLabel = $"LONG ACTIF (+{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
+                state.StatusLabel = $"LONG ACTIF (+{state.ActiveContracts} {contractInfo.TradedSymbol} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}${tradedTag}";
             else if (state.ActiveDirection < 0)
-                state.StatusLabel = $"SHORT ACTIF (-{state.ActiveContracts} lots @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}$";
+                state.StatusLabel = $"SHORT ACTIF (-{state.ActiveContracts} {contractInfo.TradedSymbol} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0;-0;0}${tradedTag}";
             else
-                state.StatusLabel = $"ARMÉ ({BotStartTimeText}-{BotEndTimeText}) — EN ATTENTE DE SIGNAL QUANT";
+                state.StatusLabel = $"ARMÉ ({BotStartTimeText}-{BotEndTimeText}) — EN ATTENTE DE SIGNAL QUANT{tradedTag}";
 
             return state;
         }
@@ -4533,10 +4565,14 @@ namespace ATAS.Indicators.Custom
 
         // =====================================================================
         // Synchronisation Multi-Sources du PnL Réel avec le Compte Actif ATAS X
-        // (Portfolio.ClosedPnL / OpenPnL / TotalPnL + Position.RealizedPnL / UnrealizedPnL + HistoryMyTrades + MyTrades)
+        // (Supporte nativement le Trading Croisé ATAS X : ex. Chart ES/NQ -> Position & PnL sur MES/MNQ)
         // =====================================================================
         private void SynchronizeWithActiveAccount(int upToBar, decimal tickSize, ref BotPerformanceState state)
         {
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            state.MarketProfileLabel = contractInfo.ProfileBadge;
+            state.CrossTradingLabel = contractInfo.CrossTradingBadge;
+            state.EffectivePointValueUsd = contractInfo.TradedPointValueUsd;
             state.SimulatedTotalPnlUsd = state.TotalPnlUsd;
 
             if (!_syncPnlWithActiveAccount)
@@ -4588,13 +4624,13 @@ namespace ATAS.Indicators.Custom
                     _liveKillSwitchExecuted = false;
                 }
 
-                decimal pointVal = GetPointDollarValue(tickSize);
+                decimal pointVal = contractInfo.TradedPointValueUsd;
                 decimal posVol = pos?.Volume ?? 0m;
                 decimal avgPrice = pos?.AveragePrice ?? 0m;
                 int realDir = posVol > 0m ? 1 : (posVol < 0m ? -1 : 0);
                 int realQty = (int)Math.Round(Math.Abs(posVol));
 
-                // 1. Extraction du PnL Latent / Open PnL temps réel du Compte Actif
+                // 1. Extraction du PnL Latent / Open PnL temps réel du Compte Actif (y compris sur contrat Micro croisé MES/MNQ)
                 decimal? posUnrealized = pos?.UnrealizedPnL;
                 decimal? pfOpen = pf?.OpenPnL;
                 decimal realUnrealized = 0m;
@@ -4631,9 +4667,10 @@ namespace ATAS.Indicators.Custom
                 }
 
                 // 2. Extraction du PnL Réalisé (Closed PnL) et des Statistiques de Trades Réels du Compte Actif
+                string? targetSecId = sec?.SecurityId ?? pos?.SecurityId;
                 ComputeActiveAccountTradesMetrics(
                     accountId,
-                    sec?.SecurityId,
+                    targetSecId,
                     pointVal,
                     out decimal tradesRealizedPnl,
                     out decimal tradesComm,
@@ -4739,34 +4776,35 @@ namespace ATAS.Indicators.Custom
                 state.IsHaltedByMaxProfit = state.TotalPnlUsd >= _botMaxProfitTargetUsd;
 
                 bool latestInSched = upToBar < 0 || IsBarWithinBotSchedule(GetCandle(upToBar).Time);
+                string crossTag = contractInfo.IsCrossTradingMicro ? $" [CROISÉ➔{contractInfo.TradedSymbol}]" : string.Empty;
 
                 if (!_enableTradingBot)
                 {
-                    state.StatusLabel = $"DÉSACTIVÉ | COMPTE ACTIF [{accountId}] PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$";
+                    state.StatusLabel = $"DÉSACTIVÉ | COMPTE [{accountId}]{crossTag} PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$";
                 }
                 else if (state.IsHaltedByMaxDrawdown)
                 {
-                    state.StatusLabel = $"COUPE-CIRCUIT [{accountId}] : DD MAX RÉEL ATTEINT (-{state.MaxObservedDrawdownUsd:0.00}$ / -{_botMaxDrawdownUsd:0}$)";
+                    state.StatusLabel = $"COUPE-CIRCUIT [{accountId}]{crossTag} : DD MAX RÉEL ATTEINT (-{state.MaxObservedDrawdownUsd:0.00}$ / -{_botMaxDrawdownUsd:0}$)";
                 }
                 else if (state.IsHaltedByMaxProfit)
                 {
-                    state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ [{accountId}] (+{state.TotalPnlUsd:0.00}$ / +{_botMaxProfitTargetUsd:0}$)";
+                    state.StatusLabel = $"OBJECTIF PNL MAX VERROUILLÉ [{accountId}]{crossTag} (+{state.TotalPnlUsd:0.00}$ / +{_botMaxProfitTargetUsd:0}$)";
                 }
                 else if (!latestInSched)
                 {
-                    state.StatusLabel = $"VEILLE HORAIRE [{accountId}] — ACTIF DE {BotStartTimeText} À {BotEndTimeText}";
+                    state.StatusLabel = $"VEILLE HORAIRE [{accountId}]{crossTag} — ACTIF DE {BotStartTimeText} À {BotEndTimeText}";
                 }
                 else if (state.ActiveDirection > 0)
                 {
-                    state.StatusLabel = $"LONG RÉEL [{accountId}] (+{state.ActiveContracts} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
+                    state.StatusLabel = $"LONG RÉEL [{accountId}]{crossTag} (+{state.ActiveContracts} {contractInfo.TradedSymbol} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
                 }
                 else if (state.ActiveDirection < 0)
                 {
-                    state.StatusLabel = $"SHORT RÉEL [{accountId}] (-{state.ActiveContracts} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
+                    state.StatusLabel = $"SHORT RÉEL [{accountId}]{crossTag} (-{state.ActiveContracts} {contractInfo.TradedSymbol} @ {state.ActiveEntryPrice}) | Latent: {state.UnrealizedPnlUsd:+0.00;-0.00;0.00}$";
                 }
                 else
                 {
-                    state.StatusLabel = $"SYNCHRONISÉ [{accountId}] — PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$ (En attente signal)";
+                    state.StatusLabel = $"SYNCHRONISÉ [{accountId}]{crossTag} — PnL Réel: {state.TotalPnlUsd:+0.00;-0.00;0.00}$ (En attente signal)";
                 }
             }
             catch
@@ -4796,6 +4834,19 @@ namespace ATAS.Indicators.Custom
             grossLossUsd = 0m;
 
             bool filterBySec = _accountPnlScope == ActiveAccountPnlScope.ChartInstrumentOnly && !string.IsNullOrWhiteSpace(securityId);
+            string? chartSym = InstrumentInfo?.Instrument;
+
+            bool MatchesInstrumentOrCrossFamily(string? candidateSec)
+            {
+                if (!filterBySec || string.IsNullOrWhiteSpace(candidateSec))
+                    return true;
+                if (string.Equals(candidateSec, securityId, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (AreInstrumentsInSameCrossFamily(candidateSec, securityId) ||
+                    AreInstrumentsInSameCrossFamily(candidateSec, chartSym))
+                    return true;
+                return false;
+            }
 
             // 1. Lecture prioritaire via TradingStatisticsProvider (HistoryMyTrades d'ATAS X)
             try
@@ -4815,8 +4866,7 @@ namespace ATAS.Indicators.Custom
                                     !string.Equals(h.AccountID, accountId, StringComparison.OrdinalIgnoreCase))
                                     continue;
 
-                                if (filterBySec && !string.IsNullOrWhiteSpace(h.SecurityId) &&
-                                    !string.Equals(h.SecurityId, securityId, StringComparison.OrdinalIgnoreCase))
+                                if (!MatchesInstrumentOrCrossFamily(h.SecurityId))
                                     continue;
 
                                 decimal comm = h.Commission ?? 0m;
@@ -4868,9 +4918,8 @@ namespace ATAS.Indicators.Custom
                         !string.Equals(tAcc, accountId, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    string? tSec = t.SecurityId ?? t.Security?.SecurityId;
-                    if (filterBySec && !string.IsNullOrWhiteSpace(tSec) &&
-                        !string.Equals(tSec, securityId, StringComparison.OrdinalIgnoreCase))
+                    string? tSec = t.SecurityId ?? t.Security?.SecurityId ?? t.Security?.Code;
+                    if (!MatchesInstrumentOrCrossFamily(tSec))
                         continue;
 
                     decimal comm = t.Commission ?? 0m;
@@ -4925,11 +4974,12 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Routage Live vers ATAS ITradingManager (Exécution SL / TP1 / TP2 / Trailing / Reversal & Kill-Switch Max DD / Max PnL)
+        // Routage Live vers ATAS ITradingManager (Exécution SL / TP1 / TP2 / Trailing / Reversal & Trading Croisé ES➔MES / NQ➔MNQ)
         // =====================================================================
         private void SendLiveMarketCloseOrReduce(ITradingManager tm, Position pos, int qtyToClose, string comment)
         {
-            if (tm?.Security == null || pos == null || pos.Volume == 0m || qtyToClose <= 0)
+            var targetSecurity = pos?.Security ?? tm?.Security;
+            if (tm == null || targetSecurity == null || pos == null || pos.Volume == 0m || qtyToClose <= 0)
                 return;
 
             int absPos = (int)Math.Round(Math.Abs(pos.Volume));
@@ -4939,7 +4989,7 @@ namespace ATAS.Indicators.Custom
 
             var exitOrder = new Order
             {
-                Security = tm.Security,
+                Security = targetSecurity,
                 Portfolio = tm.Portfolio,
                 Type = OrderTypes.Market,
                 Direction = pos.Volume > 0m ? OrderDirections.Sell : OrderDirections.Buy,
@@ -4954,17 +5004,46 @@ namespace ATAS.Indicators.Custom
             if (pos == null || pos.Volume == 0m)
                 return;
 
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            bool isCme = contractInfo.IsCmeMarket;
+            MarketProfilePreset prof = contractInfo.EffectiveProfile;
+
             int realDir = pos.Volume > 0m ? 1 : -1;
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
-            decimal fillPx = (pos.AveragePrice > 0m) ? RoundToTick(pos.AveragePrice, tickSize) : RoundToTick(curPrice, tickSize);
+            decimal chartRefPx = curPrice > 0m ? RoundToTick(curPrice, tickSize) : RoundToTick(pos.AveragePrice, tickSize);
+            decimal rawFillPx = pos.AveragePrice > 0m ? RoundToTick(pos.AveragePrice, tickSize) : chartRefPx;
+
+            // En Trading Croisé ATAS X (ex: chart ES continu vs contrat Micro MES à échéance), s'il existe un écart de base (basis spread)
+            // entre le prix du graphique et pos.AveragePrice, on conserve les niveaux SL/TP dans le référentiel de prix du graphique.
+            bool hasCrossBasisOffset = contractInfo.IsCrossTradingMicro && curPrice > 0m && Math.Abs(rawFillPx - chartRefPx) > step * 12m;
+            decimal fillPx = hasCrossBasisOffset ? chartRefPx : rawFillPx;
 
             if (_liveTrackedDir != realDir || _liveTrackedEntryPrice <= 0m || _liveTrackedStopPrice <= 0m || _liveTrackedTp1Price <= 0m || _liveTrackedTp2Price <= 0m)
             {
                 int refBar = Math.Max(0, CurrentBar - 1);
                 decimal atr = ComputeQuantAtr(refBar, tickSize);
-                decimal riskPts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
-                decimal tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize)));
-                decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize)));
+                decimal riskPts;
+                decimal tp1Dist;
+                decimal tp2Dist;
+
+                if (!isCme)
+                {
+                    riskPts = Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize));
+                    tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 2m, Math.Max(step * 3m, RoundToTick(atr * 0.55m, tickSize)));
+                    tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 2m, Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.15m, tickSize)));
+                }
+                else
+                {
+                    int minStopSteps = prof switch
+                    {
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 14,
+                        MarketProfilePreset.CmeSp500_ES_MES => 6,
+                        _ => 8
+                    };
+                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.55m, tickSize));
+                    tp1Dist = Math.Clamp(RoundToTick(riskPts * Math.Max(0.95m, _quantTp1RiskReward), tickSize), step * 4m, Math.Max(riskPts * 1.15m, RoundToTick(atr * 1.45m, tickSize)));
+                    tp2Dist = Math.Clamp(RoundToTick(riskPts * Math.Max(1.65m, _quantTp2RiskReward), tickSize), tp1Dist + step * 4m, Math.Max(tp1Dist + step * 4m, RoundToTick(atr * 2.65m, tickSize)));
+                }
 
                 _liveTrackedDir = realDir;
                 _liveTrackedEntryPrice = fillPx;
@@ -4978,8 +5057,8 @@ namespace ATAS.Indicators.Custom
                 return;
             }
 
-            // Recalage automatique des cibles TP1 / TP2 / SL sur le prix moyen d'exécution réel (pos.AveragePrice) dès réception du fill
-            if (pos.AveragePrice > 0m && !_liveTrackedTp1Hit && Math.Abs(_liveTrackedEntryPrice - fillPx) >= tickSize)
+            // Recalage automatique des cibles TP1 / TP2 / SL sur le prix moyen d'exécution réel (si même référentiel de prix sans basis spread)
+            if (pos.AveragePrice > 0m && !hasCrossBasisOffset && !_liveTrackedTp1Hit && Math.Abs(_liveTrackedEntryPrice - fillPx) >= tickSize)
             {
                 decimal riskPts = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
                 decimal tp1Dist = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
@@ -5028,7 +5107,10 @@ namespace ATAS.Indicators.Custom
 
                 decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
                 decimal step = tickSize * Math.Max(1, _ticksPerRow);
-                decimal pointVal = GetPointDollarValue(tickSize);
+                var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+                bool isCme = contractInfo.IsCmeMarket;
+                MarketProfilePreset prof = contractInfo.EffectiveProfile;
+                decimal pointVal = contractInfo.TradedPointValueUsd;
 
                 EnsureLivePositionTrackingInitialized(pos, livePrice, tickSize);
                 if (_liveTrackedDir == 0)
@@ -5076,7 +5158,7 @@ namespace ATAS.Indicators.Custom
                     _liveTrackedDir = 0;
                     _liveTrackedTp1Hit = false;
                     _liveTp1PartialOrderSent = false;
-                    SendLiveMarketCloseOrReduce(tm, pos, absQty, "QUANT_BOT_TP2_PROFIT");
+                    SendLiveMarketCloseOrReduce(tm, pos, absQty, $"QUANT_BOT_TP2_PROFIT_{contractInfo.TradedSymbol}");
                     return;
                 }
 
@@ -5084,7 +5166,9 @@ namespace ATAS.Indicators.Custom
                 if (tp1Hit)
                 {
                     _liveTrackedTp1Hit = true;
-                    decimal lockOffset = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                    decimal lockOffset = isCme
+                        ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.35m, tickSize))
+                        : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                     _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
 
                     if (absQty == 1 || !_botAutoBreakevenOnTp1)
@@ -5093,7 +5177,7 @@ namespace ATAS.Indicators.Custom
                         _liveTrackedDir = 0;
                         _liveTrackedTp1Hit = false;
                         _liveTp1PartialOrderSent = false;
-                        SendLiveMarketCloseOrReduce(tm, pos, 1, "QUANT_BOT_TP1_FULL_PROFIT");
+                        SendLiveMarketCloseOrReduce(tm, pos, 1, $"QUANT_BOT_TP1_FULL_PROFIT_{contractInfo.TradedSymbol}");
                         return;
                     }
                     else if (!_liveTp1PartialOrderSent)
@@ -5101,33 +5185,61 @@ namespace ATAS.Indicators.Custom
                         _liveTp1PartialOrderSent = true;
                         _lastLiveExitSentUtc = DateTime.UtcNow;
                         int halfQty = Math.Max(1, absQty / 2);
-                        SendLiveMarketCloseOrReduce(tm, pos, halfQty, "QUANT_BOT_TP1_50PCT_PROFIT");
+                        SendLiveMarketCloseOrReduce(tm, pos, halfQty, $"QUANT_BOT_TP1_50PCT_PROFIT_{contractInfo.TradedSymbol}");
                         return;
                     }
                 }
 
-                // 3. Mise à jour Early Profit-Lock (dès +0.45R) et Trailing Stop dynamique après TP1
+                // 3. Mise à jour Early Profit-Lock et Trailing Stop dynamique après TP1
                 decimal favExcursion = _liveTrackedDir > 0
                     ? (_liveMaxFavorablePrice - _liveTrackedEntryPrice)
                     : (_liveTrackedEntryPrice - _liveMaxFavorablePrice);
 
-                if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * 2m, _liveTrackedInitialRiskPts * 0.45m))
+                if (!isCme)
                 {
-                    decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * step, tickSize);
-                    if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
-                        (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
+                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * 2m, _liveTrackedInitialRiskPts * 0.45m))
                     {
-                        _liveTrackedStopPrice = softBe;
+                        decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * step, tickSize);
+                        if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = softBe;
+                        }
+                    }
+                    else if (_liveTrackedTp1Hit)
+                    {
+                        decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                        decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
+                        if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = candidateTrail;
+                        }
                     }
                 }
-                else if (_liveTrackedTp1Hit)
+                else
                 {
-                    decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
-                    decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
-                    if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
-                        (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
+                    int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 5;
+                    int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
+                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, _liveTrackedInitialRiskPts * 0.68m))
                     {
-                        _liveTrackedStopPrice = candidateTrail;
+                        decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * (step * beLockSteps), tickSize);
+                        if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = softBe;
+                        }
+                    }
+                    else if (_liveTrackedTp1Hit)
+                    {
+                        int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 8 : 4;
+                        decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.55m, tickSize));
+                        decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
+                        if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = candidateTrail;
+                        }
                     }
                 }
 
@@ -5141,7 +5253,9 @@ namespace ATAS.Indicators.Custom
                     _liveTrackedDir = 0;
                     _liveTrackedTp1Hit = false;
                     _liveTp1PartialOrderSent = false;
-                    SendLiveMarketCloseOrReduce(tm, pos, absQty, isTrailingProfit ? "QUANT_BOT_TRAIL_PROFIT" : "QUANT_BOT_STOP_LOSS");
+                    SendLiveMarketCloseOrReduce(tm, pos, absQty, isTrailingProfit
+                        ? $"QUANT_BOT_TRAIL_PROFIT_{contractInfo.TradedSymbol}"
+                        : $"QUANT_BOT_STOP_LOSS_{contractInfo.TradedSymbol}");
                 }
             }
             catch
@@ -5163,6 +5277,7 @@ namespace ATAS.Indicators.Custom
                 if (tm == null || tm.Security == null)
                     return;
 
+                var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
                 var pos = tm.Position;
                 decimal posVol = pos?.Volume ?? 0m;
                 decimal liveNetPnl = botState.IsSyncedWithActiveAccount
@@ -5180,7 +5295,7 @@ namespace ATAS.Indicators.Custom
                     {
                         _liveKillSwitchExecuted = true;
                         _liveTrackedDir = 0;
-                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), "QUANT_BOT_KILL_SWITCH");
+                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), $"QUANT_BOT_KILL_SWITCH_{contractInfo.TradedSymbol}");
                     }
                     return;
                 }
@@ -5191,14 +5306,17 @@ namespace ATAS.Indicators.Custom
                     if (_botFlattenAtEndTime && pos != null && posVol != 0m)
                     {
                         _liveTrackedDir = 0;
-                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), "QUANT_BOT_END_SCHEDULE");
+                        SendLiveMarketCloseOrReduce(tm, pos, (int)Math.Round(Math.Abs(posVol)), $"QUANT_BOT_END_SCHEDULE_{contractInfo.TradedSymbol}");
                     }
                     return;
                 }
 
                 _liveKillSwitchExecuted = false;
                 decimal step = tickSize * Math.Max(1, _ticksPerRow);
-                decimal curPrice = (tm.Security.LastTradePrice > 0m) ? tm.Security.LastTradePrice.Value : candle.Close;
+                // En Trading Croisé ATAS X (Chart ES/NQ ➔ Trade MES/MNQ), candle.Close est le prix temps réel du contrat directeur du graphique
+                decimal curPrice = candle.Close > 0m
+                    ? candle.Close
+                    : ((tm.Security.LastTradePrice > 0m) ? tm.Security.LastTradePrice.Value : 0m);
 
                 // 1. Surveillance et exécution temps réel de TP1 / TP2 / Trailing Stop / SL sur la position active
                 CheckLivePositionTargetsOnTick(curPrice);
@@ -5225,7 +5343,7 @@ namespace ATAS.Indicators.Custom
                         ? (int)Math.Round(Math.Abs(posVol))
                         : 0;
 
-                    // Ordre Market unique de taille (existingOppositeQty + targetQty) pour inverser ou ouvrir instantanément
+                    // Ordre Market unique de taille (existingOppositeQty + targetQty) envoyé à tm.Security (qui pointe sur MES / MNQ lorsque le Trading Croisé ATAS X est actif)
                     int orderQty = existingOppositeQty + targetQty;
 
                     _liveTrackedDir = signal.Direction;
@@ -5247,7 +5365,7 @@ namespace ATAS.Indicators.Custom
                         Type = OrderTypes.Market,
                         Direction = signal.Direction > 0 ? OrderDirections.Buy : OrderDirections.Sell,
                         QuantityToFill = orderQty,
-                        Comment = $"QUANT_BOT_{(signal.Direction > 0 ? "BUY" : "SELL")}_{signal.ConfluenceScore}%"
+                        Comment = $"QUANT_BOT_{(signal.Direction > 0 ? "BUY" : "SELL")}_{contractInfo.TradedSymbol}_{signal.ConfluenceScore}%"
                     };
                     _ = tm.OpenOrderAsync(mktOrder, false, false, false);
                 }
