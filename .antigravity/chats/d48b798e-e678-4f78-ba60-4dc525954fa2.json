@@ -357,11 +357,23 @@
       "id": "26f64a66-1304-4698-b493-2e209a654953",
       "role": "user",
       "content": "je voudrais qu'il soit adapté également au futur clé, s&p500, NASDAQ. et qu'il me laisse également trader les micro via le trading croisé de atasX sur la charte du contrat normal",
-      "status": "pending",
+      "status": "cancelled",
       "model": "gemini-4-argon-high",
       "client_type": "gemini-bridge",
       "parent_message_id": null,
       "created_at": "2026-11-09T10:30:03.012Z",
+      "sender": "ios",
+      "is_cancelled": true
+    },
+    {
+      "id": "be005774-4c3f-4530-8183-c514aec48b74",
+      "role": "user",
+      "content": "je voudrais qu'il soit adapté également au futur cme, s&p500, NASDAQ. et qu'il me laisse également trader les micro via le trading croisé de atasX sur la charte du contrat normal",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-09T10:32:27.524Z",
       "sender": "ios",
       "is_cancelled": false
     }
