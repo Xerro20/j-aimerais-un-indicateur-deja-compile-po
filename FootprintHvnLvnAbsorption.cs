@@ -4518,26 +4518,37 @@ namespace ATAS.Indicators.Custom
 
                 if (sig.Direction != 0)
                 {
-                    // Si une position opposée est ouverte et qu'un signal inverse validé par la stratégie apparaît, retournement immédiat
+                    // Si une position opposée est ouverte et qu'un signal inverse validé par la stratégie apparaît
                     if (activeDir != 0 && activeDir != sig.Direction && b > entryBar)
                     {
                         decimal curOpenPnl = bankedPartialUsd + activeDir * (c.Close - entryPrice) * pointVal * activeQty;
                         decimal revPnl = curOpenPnl - (commPerSide * 2m * activeQty);
 
-                        FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
-                            entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                            c.Close, Math.Round(revPnl, 2), "REVERSAL SIGNAL", tp1Hit, activeSignal);
+                        // Sur tout sauf BTC Binance (isCme), interdiction de couper en perte sur un simple bruit opposé :
+                        // on n'inverse que si le trade courant est en gain (ou TP1 déjà encaissé) ou sur retournement institutionnel majeur (>= 78%)
+                        bool allowReversal = !isCme || revPnl >= 0m || tp1Hit || (sig.ConfluenceScore >= 78 && b >= entryBar + 2);
+                        if (allowReversal)
+                        {
+                            if (revPnl < 0m)
+                                lastLossExitBar = b;
 
-                        activeDir = 0;
-                        activeQty = 0;
-                        bankedPartialUsd = 0m;
+                            FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                c.Close, Math.Round(revPnl, 2), "REVERSAL SIGNAL", tp1Hit, activeSignal);
 
-                        if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
-                            continue;
+                            activeDir = 0;
+                            activeQty = 0;
+                            bankedPartialUsd = 0m;
+
+                            if (state.IsHaltedByMaxDrawdown || state.IsHaltedByMaxProfit)
+                                continue;
+                        }
                     }
 
                     // Ouverture d'une nouvelle position Quant au prix exact du signal affiché
-                    if (activeDir == 0)
+                    // (Avec filtre anti-chop après un stop sur les marchés hors BTC Binance)
+                    bool cooldownOk = !isCme || (b - lastLossExitBar >= 2) || sig.ConfluenceScore >= 74;
+                    if (activeDir == 0 && cooldownOk)
                     {
                         activeDir = sig.Direction;
                         activeQty = initialQty;
