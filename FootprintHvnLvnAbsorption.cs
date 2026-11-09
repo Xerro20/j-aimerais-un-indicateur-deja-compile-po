@@ -1517,7 +1517,7 @@ namespace ATAS.Indicators.Custom
             string tmSecCode = TradingManager?.Security?.Code ?? TradingManager?.Security?.SecurityId ?? string.Empty;
             string posSecCode = TradingManager?.Position?.SecurityId ?? string.Empty;
 
-            var crossCtx = DataProvider?.CrossTradingContext;
+            var crossCtx = DataProvider as ICrossTradingIndicatorContext;
             bool atasCrossActive = crossCtx?.IsCrossTradingActive ?? false;
             string atasCrossDisplay = crossCtx?.CurrentCrossTradingDisplayName ?? string.Empty;
 
@@ -1780,7 +1780,7 @@ namespace ATAS.Indicators.Custom
                     _crossTradingMode = _crossTradingMode switch
                     {
                         CrossTradingExecutionMode.AutoAtasCrossTrading => CrossTradingExecutionMode.ForceMicroOnNormalChart,
-                        CrossTradingExecutionMode.ForceMicroOnNormalChart => CrossTradingExecutionMode.StandardChartContractOnly,
+                        CrossTradingExecutionMode.ForceMicroOnNormalChart => CrossTradingExecutionMode.NormalChartContractOnly,
                         _ => CrossTradingExecutionMode.AutoAtasCrossTrading
                     };
                     RecalculateValues();
@@ -1938,7 +1938,7 @@ namespace ATAS.Indicators.Custom
                     }
                 }
 
-                var crossCtx = DataProvider?.CrossTradingContext;
+                var crossCtx = DataProvider as ICrossTradingIndicatorContext;
                 if (!ReferenceEquals(crossCtx, _subscribedCrossTradingContext))
                 {
                     if (_subscribedCrossTradingContext != null)
@@ -6135,10 +6135,10 @@ namespace ATAS.Indicators.Custom
 
             string crossShort = _crossTradingMode switch
             {
-                CrossTradingExecutionMode.AutoAtasCrossOrMicro => ctrlContractInfo.IsCrossTradingActive
+                CrossTradingExecutionMode.AutoAtasCrossTrading => ctrlContractInfo.IsCrossTradingMicro
                     ? $"CROISÉ: {ctrlContractInfo.ChartSymbol}➔{ctrlContractInfo.TradedSymbol}"
                     : "CROISÉ: AUTO ATAS X",
-                CrossTradingExecutionMode.ForceMicroOnStandardChart => $"CROISÉ: MICRO ({ctrlContractInfo.TradedSymbol})",
+                CrossTradingExecutionMode.ForceMicroOnNormalChart => $"CROISÉ: MICRO ({ctrlContractInfo.TradedSymbol})",
                 _ => $"CROISÉ: OFF ({ctrlContractInfo.ChartSymbol})"
             };
 
@@ -6240,7 +6240,7 @@ namespace ATAS.Indicators.Custom
             context.DrawString(profileShort, subFont, isCmeProf ? Color.FromArgb(255, 186, 230, 253) : Color.FromArgb(255, 253, 224, 71), _chartProfileBtnRect.Left + 8, _chartProfileBtnRect.Top + 7);
 
             // 3c. Bouton Trading Croisé ATAS X (Charte Contrat Normal ES/NQ -> Exécution Micro MES/MNQ)
-            bool isCrossOn = ctrlContractInfo.IsCrossTradingActive || _crossTradingMode == CrossTradingExecutionMode.ForceMicroOnStandardChart;
+            bool isCrossOn = ctrlContractInfo.IsCrossTradingMicro || _crossTradingMode == CrossTradingExecutionMode.ForceMicroOnNormalChart;
             Color crossBg = _hoverCrossTradeBtn
                 ? Color.FromArgb(245, 6, 95, 70)
                 : (isCrossOn ? Color.FromArgb(235, 6, 78, 59) : Color.FromArgb(235, 15, 23, 42));
