@@ -5680,12 +5680,16 @@ namespace ATAS.Indicators.Custom
                     return;
                 }
 
+                decimal commRtUsd = Math.Max(0.50m, contractInfo.RoundTurnCommissionUsd);
+                decimal stepValUsd = Math.Max(0.05m, pointVal * step);
+                int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
+
                 // 2. Prise de profit TP1 (Sortie 100% si 1 contrat, ou Sortie 50% + Profit-Lock Stop si >= 2 contrats)
                 if (tp1Hit)
                 {
                     _liveTrackedTp1Hit = true;
                     decimal lockOffset = isCme
-                        ? Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize))
+                        ? Math.Max(step * Math.Max(2, commStepFloor + 1), RoundToTick(tp1DistPts * 0.45m, tickSize))
                         : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
                     _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
 
@@ -5737,9 +5741,9 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    int minBeTriggerSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2;
-                    int beLockSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 2 : 1;
-                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, _liveTrackedInitialRiskPts * 0.40m)))
+                    int minBeTriggerSteps = Math.Max(commStepFloor + 2, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 3);
+                    int beLockSteps = Math.Max(commStepFloor + 1, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2);
+                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, _liveTrackedInitialRiskPts * 0.45m)))
                     {
                         decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * (step * beLockSteps), tickSize);
                         if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
