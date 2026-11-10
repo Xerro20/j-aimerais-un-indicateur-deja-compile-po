@@ -1123,6 +1123,7 @@ namespace ATAS.Indicators.Custom
 
         // Suivi temps réel des niveaux SL / TP1 / TP2 / Trailing pour l'exécution Live ATAS (TradingManager)
         private readonly Dictionary<int, VisualTradeSignal> _lockedExecutedSignalsByBar = new Dictionary<int, VisualTradeSignal>();
+        private readonly Dictionary<int, ClusterRow[]> _barRowsCache = new Dictionary<int, ClusterRow[]>();
         private int _liveTrackedDir = 0;
         private int _liveTrackedSignalBar = -1;
         private decimal _liveTrackedEntryPrice = 0m;
