@@ -580,6 +580,18 @@
       "created_at": "2026-11-10T11:33:50.961Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "493d3fd9-223c-40a5-8e99-669bb16bfdfc",
+      "role": "user",
+      "content": "continue",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-10T13:28:27.117Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
