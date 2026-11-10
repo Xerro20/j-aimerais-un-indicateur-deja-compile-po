@@ -2878,8 +2878,8 @@ namespace ATAS.Indicators.Custom
                 if (sec == null)
                     return roundedClose;
 
-                decimal secBid = sec.BestBidPrice ?? 0m;
-                decimal secAsk = sec.BestAskPrice ?? 0m;
+                decimal secBid = sec.BestBidPrice;
+                decimal secAsk = sec.BestAskPrice;
                 decimal secLast = sec.LastTradePrice ?? 0m;
 
                 // Vérification de l'écart Bid-Ask (Spread) en temps réel
