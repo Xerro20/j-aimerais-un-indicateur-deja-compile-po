@@ -1028,6 +1028,31 @@ namespace ATAS.Indicators.Custom
             public decimal BarPocPrice;
             public int BullStackedImbalances;
             public int BearStackedImbalances;
+
+            // --- Suite d'Indicateurs ATAS Options X-Ray (Key Levels, Expected Move, Strike/Surface GEX/VEX/CEX, Flow Delta, Big Trades, Hedge Pressure) ---
+            public bool IsExternalXRaySynced;
+            public decimal XRayCallWall;
+            public decimal XRayPutWall;
+            public decimal XRayRegimeFlip;     // Zero Gamma (0γ) Flip Level
+            public decimal XRayZeroDtePin;     // 0DTE Pin Magnet Level
+            public decimal XRaySlipperyLow;    // Slippery Zone Lower Bound
+            public decimal XRaySlipperyHigh;   // Slippery Zone Upper Bound
+            public bool XRayInSlipperyZone;    // True si le prix traverse une Slippery Zone (accélération MM)
+            public int XRayGammaRegime;        // +1 = Positive Gamma (Dampening / Mean-Revert), -1 = Negative Gamma (Accelerating)
+            public decimal XRayExpectedMoveHigh;
+            public decimal XRayExpectedMoveLow;
+            public decimal XRayNetGex;         // Gamma Exposure nette
+            public decimal XRayNetDex;         // Delta Exposure nette
+            public decimal XRayNetVex;         // Vanna Exposure (sensibilité IV)
+            public decimal XRayNetCex;         // Charm Exposure (décroissance temporelle 0DTE)
+            public decimal XRayInstFlowDelta;  // Flow Delta Institutionnel (Firms + Pros + Brokers)
+            public decimal XRayRetailFlowDelta;// Flow Delta Retail
+            public decimal XRayHedgePressure;  // Pression de couverture mécanique des Market Makers (MM Hedge Δ)
+            public bool XRayHasBigTrade;       // Bulle Options X-Ray: Big Trades
+            public int XRayBigTradeDir;        // +1 = Achat / Bullish, -1 = Vente / Bearish
+            public string XRayBigTradeGroup;   // "FIRMS", "PROS", "BROKERS", "MM"
+            public decimal XRayBigTradeStrike;
+            public decimal XRayBigTradeDeltaEq;
         }
 
         private struct VisualTradeSignal
@@ -1051,6 +1076,7 @@ namespace ATAS.Indicators.Custom
             public decimal OiDelta;
             public int SweepCount;
             public string ReasonTag;
+            public string XRaySummaryTag;
         }
 
         private struct BotTradeExecutionRecord
