@@ -5537,21 +5537,30 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    int minStopSteps = prof switch
+                    decimal commRtUsd = Math.Max(0.50m, contractInfo.RoundTurnCommissionUsd);
+                    decimal stepValUsd = Math.Max(0.05m, contractInfo.TradedPointValueUsd * step);
+                    int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
+
+                    int baseMinStopSteps = prof switch
                     {
-                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 8,
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 6,
                         MarketProfilePreset.CmeSp500_ES_MES => 4,
-                        _ => 5
+                        _ => 4
                     };
-                    int minTp1Steps = prof switch
+                    int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 2);
+                    int baseMinTp1Steps = prof switch
                     {
-                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 5,
-                        MarketProfilePreset.CmeSp500_ES_MES => 3,
-                        _ => 3
+                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 6,
+                        MarketProfilePreset.CmeSp500_ES_MES => 4,
+                        _ => 4
                     };
-                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.50m, tickSize));
-                    tp1Dist = Math.Clamp(RoundToTick(riskPts * Math.Min(0.62m, _quantTp1RiskReward), tickSize), step * minTp1Steps, Math.Max(step * (minTp1Steps + 1), RoundToTick(atr * 0.50m, tickSize)));
-                    tp2Dist = Math.Clamp(RoundToTick(riskPts * Math.Min(1.30m, _quantTp2RiskReward), tickSize), tp1Dist + step * 2m, Math.Max(tp1Dist + step * 2m, RoundToTick(atr * 1.10m, tickSize)));
+                    int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 3);
+
+                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.45m, tickSize));
+                    decimal cmeTp1Rr = Math.Max(0.82m, Math.Min(0.95m, _quantTp1RiskReward));
+                    decimal cmeTp2Rr = Math.Max(1.65m, Math.Min(2.10m, _quantTp2RiskReward));
+                    tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * minTp1Steps, Math.Max(step * (minTp1Steps + 2), RoundToTick(atr * 0.72m, tickSize)));
+                    tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 3m, Math.Max(tp1Dist + step * 3m, RoundToTick(atr * 1.45m, tickSize)));
                 }
 
                 _liveTrackedDir = realDir;
