@@ -2478,6 +2478,8 @@ namespace ATAS.Indicators.Custom
 
             decimal midPrice = (candle.High + candle.Low) * 0.5m;
             decimal vwap = candle.VWAP > 0m ? candle.VWAP : midPrice;
+            decimal bodyLow = Math.Min(candle.Open, candle.Close);
+            decimal bodyHigh = Math.Max(candle.Open, candle.Close);
 
             for (int i = 0; i < rows.Length; i++)
             {
@@ -2490,17 +2492,19 @@ namespace ATAS.Indicators.Custom
 
                 if (!isCme)
                 {
-                    // --- Comportement 100% original préservé pour BTC Binance Futures / Crypto ---
                     if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
                     {
-                        callFlow += r.Volume * 0.85m;
+                        // Vendeurs agressifs absorbés / piégés en bas -> carburant haussier (Calls / Short-Covering)
+                        callFlow += r.Volume * 1.20m + askAggr * 0.85m;
+                        putFlow += bidAggr * 0.25m;
                     }
                     else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
                     {
-                        putFlow += r.Volume * 0.85m;
+                        // Acheteurs agressifs absorbés / piégés en haut -> carburant baissier (Puts / Long-Liquidation)
+                        putFlow += r.Volume * 1.20m + bidAggr * 0.85m;
+                        callFlow += askAggr * 0.25m;
                     }
-
-                    if (r.Price >= vwap)
+                    else if (r.Price >= vwap)
                     {
                         callFlow += askAggr * 1.15m;
                         putFlow += bidAggr * 0.85m;
@@ -2510,20 +2514,40 @@ namespace ATAS.Indicators.Custom
                         callFlow += askAggr * 0.90m;
                         putFlow += bidAggr * 1.15m;
                     }
+
+                    if ((r.IsHvn || r.IsPoc) && candle.Close > r.Price && candle.Close >= candle.Open)
+                        callFlow += r.Volume * 0.22m;
+                    else if ((r.IsHvn || r.IsPoc) && candle.Close < r.Price && candle.Close <= candle.Open)
+                        putFlow += r.Volume * 0.22m;
                 }
                 else
                 {
                     // --- Calibration Institutionnelle Hors BTC Binance (CME ES/MES, NQ/MNQ, GC, CL, Indices & Alts) ---
                     if (r.AbsorptionSide > 0 || r.TrappedSide > 0)
                     {
-                        callFlow += r.Volume * 1.05m;
+                        // Vendeurs piégés ou absorbés au Bid : flux haussier institutionnel (ne jamais pénaliser CallFlowPct !)
+                        callFlow += r.Volume * 1.25m + askAggr * 0.90m;
+                        putFlow += bidAggr * 0.20m;
                     }
                     else if (r.AbsorptionSide < 0 || r.TrappedSide < 0)
                     {
-                        putFlow += r.Volume * 1.05m;
+                        // Acheteurs piégés ou absorbés à l'Ask : flux baissier institutionnel (ne jamais pénaliser PutFlowPct !)
+                        putFlow += r.Volume * 1.25m + bidAggr * 0.90m;
+                        callFlow += askAggr * 0.20m;
                     }
-
-                    if (r.Price >= vwap)
+                    else if (r.Price < bodyLow && candle.Close > bodyLow && bidAggr > askAggr * 1.25m)
+                    {
+                        // Mèche basse rejetée avec ventes absorbées passivement
+                        callFlow += bidAggr * 1.10m + askAggr * 0.90m;
+                        putFlow += bidAggr * 0.35m;
+                    }
+                    else if (r.Price > bodyHigh && candle.Close < bodyHigh && askAggr > bidAggr * 1.25m)
+                    {
+                        // Mèche haute rejetée avec achats absorbés passivement
+                        putFlow += askAggr * 1.10m + bidAggr * 0.90m;
+                        callFlow += askAggr * 0.35m;
+                    }
+                    else if (r.Price >= vwap)
                     {
                         callFlow += askAggr * 1.15m;
                         putFlow += bidAggr * 0.88m;
@@ -2534,17 +2558,16 @@ namespace ATAS.Indicators.Custom
                         putFlow += bidAggr * 1.15m;
                     }
 
-                    // Bonus uniquement sur véritable absorption passive dans les mèches rejetées
-                    decimal bodyLow = Math.Min(candle.Open, candle.Close);
-                    decimal bodyHigh = Math.Max(candle.Open, candle.Close);
-                    if (r.Price < bodyLow && candle.Close >= midPrice && bidAggr > askAggr * 1.35m)
-                    {
-                        callFlow += (bidAggr - askAggr) * 0.55m;
-                    }
-                    else if (r.Price > bodyHigh && candle.Close <= midPrice && askAggr > bidAggr * 1.35m)
-                    {
-                        putFlow += (askAggr - bidAggr) * 0.55m;
-                    }
+                    // Ancrage HVN & Rejet LVN dans le flux d'options synthétique CME
+                    if ((r.IsHvn || r.IsPoc) && candle.Close > r.Price && candle.Close >= midPrice)
+                        callFlow += r.Volume * 0.28m;
+                    else if ((r.IsHvn || r.IsPoc) && candle.Close < r.Price && candle.Close <= midPrice)
+                        putFlow += r.Volume * 0.28m;
+
+                    if (r.IsLvn && r.Price <= midPrice && candle.Close > r.Price)
+                        callFlow += avgVol * 0.35m;
+                    else if (r.IsLvn && r.Price >= midPrice && candle.Close < r.Price)
+                        putFlow += avgVol * 0.35m;
                 }
 
                 // Détection des Sweeps / Block Prints sur les niveaux
