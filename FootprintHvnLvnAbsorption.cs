@@ -2878,8 +2878,8 @@ namespace ATAS.Indicators.Custom
                 if (sec == null)
                     return roundedClose;
 
-                decimal secBid = sec.BestBid?.Price ?? 0m;
-                decimal secAsk = sec.BestAsk?.Price ?? 0m;
+                decimal secBid = sec.BestBidPrice ?? 0m;
+                decimal secAsk = sec.BestAskPrice ?? 0m;
                 decimal secLast = sec.LastTradePrice ?? 0m;
 
                 // Vérification de l'écart Bid-Ask (Spread) en temps réel
@@ -6003,17 +6003,18 @@ namespace ATAS.Indicators.Custom
                     }
 
                     // Protection anti-écart de prix à l'envoi de l'ordre : on vérifie le prix BestAsk/BestBid exécutable en temps réel
-                    GetLiveExecutableChartPrice(
+                    decimal liveExecChartPx = GetLiveExecutableChartPrice(
+                        sigBar,
                         signal.Direction,
-                        candle,
+                        curPrice > 0m ? curPrice : signal.EntryPrice,
                         tickSize,
                         step,
-                        out decimal liveExecChartPx,
-                        out decimal liveSpreadSteps,
-                        out decimal crossBasisOffset);
+                        contractInfo.IsCmeMarket,
+                        out bool isPriceGapAcceptable,
+                        out decimal crossBasisOffset,
+                        out decimal rawExecPrice);
 
-                    decimal maxLiveSpreadSteps = contractInfo.IsCmeMarket ? 3.0m : 4.0m;
-                    if (liveSpreadSteps > maxLiveSpreadSteps)
+                    if (!isPriceGapAcceptable)
                         return;
 
                     if (liveExecChartPx > 0m)
@@ -6037,7 +6038,9 @@ namespace ATAS.Indicators.Custom
                             signal.Tp2Price = RoundToTick(liveExecChartPx + signal.Direction * prevTp2Dist, tickSize);
                         }
 
-                        signal.RealAccountFillPrice = RoundToTick(signal.EntryPrice + crossBasisOffset, tickSize);
+                        signal.RealAccountFillPrice = rawExecPrice > 0m
+                            ? rawExecPrice
+                            : RoundToTick(signal.EntryPrice + crossBasisOffset, tickSize);
                         signal.IsLiveFillSynced = true;
                         _liveCrossBasisOffset = crossBasisOffset;
                         _liveTrackedRealFillPrice = signal.RealAccountFillPrice;
