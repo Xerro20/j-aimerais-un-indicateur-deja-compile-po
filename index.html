@@ -1113,6 +1113,11 @@
 
         let barAbsSide = 0;
         let barTrapSide = 0;
+        let barHasHvnSupport = false;
+        let barHasHvnRes = false;
+        let barHasBullLvnRej = false;
+        let barHasBearLvnRej = false;
+        const midRowIdx = (bar.highIdx + bar.lowIdx) * 0.5;
 
         keys.forEach((r, kPos) => {
           const lv = bar.levels[r];
@@ -1127,22 +1132,31 @@
 
           const isHvn = showBarHvn && tot >= pocVol * (hvnPct / 100) && (tot >= prevTot && tot >= nextTot);
           const isInternal = kPos > 0 && kPos < keys.length - 1;
-          const isLvn = showBarHvn && isInternal && tot <= pocVol * (lvnPct / 100) && tot < prevTot && tot < nextTot;
+          const isLvn = showBarHvn && isInternal && tot <= pocVol * (lvnPct / 100) && (tot <= prevTot && tot <= nextTot && (tot < prevTot || tot < nextTot));
+
+          if (isHvn || isPoc) {
+            if (r >= bar.closeIdx && bar.closeIdx <= r - 1) barHasHvnSupport = true;
+            if (r <= bar.closeIdx && bar.closeIdx >= r + 1) barHasHvnRes = true;
+          }
+          if (isLvn) {
+            if (r >= midRowIdx && bar.closeIdx < r) barHasBullLvnRej = true;
+            if (r <= midRowIdx && bar.closeIdx > r) barHasBearLvnRej = true;
+          }
 
           let absSide = 0;
           if (showAbs && tot >= avgVol * absMult) {
             const inLower = r >= bar.lowIdx - 1;
             const inUpper = r <= bar.highIdx + 1;
-            if (inLower && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 62 && bar.closeIdx <= r) absSide = 1;
-            else if (inUpper && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 62 && bar.closeIdx >= r) absSide = -1;
+            if (inLower && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 57 && bar.closeIdx <= r) absSide = 1;
+            else if (inUpper && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 57 && bar.closeIdx >= r) absSide = -1;
           }
 
           let trapSide = 0;
-          if (showTrapped && tot >= avgVol * trapMult) {
-            const inLowerTrap = r >= bodyLowIdx && bar.closeIdx <= r - 1;
-            const inUpperTrap = r <= bodyHighIdx && bar.closeIdx >= r + 1;
-            if (inLowerTrap && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 60) trapSide = 1;
-            else if (inUpperTrap && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 60) trapSide = -1;
+          if (showTrapped && tot >= avgVol * Math.min(trapMult, 0.85)) {
+            const inLowerTrap = (r >= bodyLowIdx - 1 || r >= bar.lowIdx - 2) && bar.closeIdx <= r - 1;
+            const inUpperTrap = (r <= bodyHighIdx + 1 || r <= bar.highIdx + 2) && bar.closeIdx >= r + 1;
+            if (inLowerTrap && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 56) trapSide = 1;
+            else if (inUpperTrap && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 56) trapSide = -1;
           }
 
           ctx.fillStyle = "rgba(22, 31, 51, 0.82)";
@@ -1251,14 +1265,21 @@
           ctx.fillRect(xLeft, topPad, cellW, prices.length * rowH);
         }
 
-        // Evaluate Visual Buy / Sell Signal taking into account ATAS X Options Flow
+        // Evaluate Visual Buy / Sell Signal taking into account ATAS X Options Flow, Trapped Traders & HVN/LVN
         if (showBuySell) {
-          const hasBull = barAbsSide > 0 || barTrapSide > 0;
-          const hasBear = barAbsSide < 0 || barTrapSide < 0;
+          const hasBullHvnLvn = barHasHvnSupport && barHasBullLvnRej && isBullBar;
+          const hasBearHvnLvn = barHasHvnRes && barHasBearLvnRej && !isBullBar;
+          const hasBull = barAbsSide > 0 || barTrapSide > 0 || hasBullHvnLvn;
+          const hasBear = barAbsSide < 0 || barTrapSide < 0 || hasBearHvnLvn;
+          const effOptFloor = barTrapSide !== 0 ? Math.min(optDom, 50) : optDom;
 
-          if (hasBull && !hasBear && bar.callPct >= optDom) {
+          if (hasBull && !hasBear && bar.callPct >= effOptFloor) {
             totalBuySignals++;
-            const score = Math.min(98, 68 + Math.round((bar.callPct - 50) * 0.8) + (barAbsSide > 0 && barTrapSide > 0 ? 8 : 0));
+            const score = Math.min(98, 68 + Math.round((bar.callPct - 50) * 0.8) + (barAbsSide > 0 && barTrapSide > 0 ? 8 : 0) + (barHasBullLvnRej ? 4 : 0));
+            const structTag = barHasBullLvnRej ? "HVN+LVN▲" : "HVN/POC▲";
+            const reasonStr = (barAbsSide > 0 && barTrapSide > 0)
+              ? `ABS▲+V.PIÉGÉS▲ + ${structTag}`
+              : (barTrapSide > 0 ? `V.PIÉGÉS▲ + ${structTag}` : (barAbsSide > 0 ? `ABS BID▲ + ${structTag}` : `${structTag} REJECT`));
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1278,13 +1299,17 @@
               pcr: bar.pcr,
               oiDelta: bar.oiDelta,
               sweeps: bar.sweeps,
-              reason: barAbsSide > 0 && barTrapSide > 0 ? "ABS BID + V.PIÉGÉS + CALL FLOW" : "V.PIÉGÉS + CALL FLOW"
+              reason: reasonStr
             };
             lastTradeSignal = sig;
             tradeSignalsToDraw.push(sig);
-          } else if (hasBear && !hasBull && bar.putPct >= optDom) {
+          } else if (hasBear && !hasBull && bar.putPct >= effOptFloor) {
             totalSellSignals++;
-            const score = Math.min(98, 68 + Math.round((bar.putPct - 50) * 0.8) + (barAbsSide < 0 && barTrapSide < 0 ? 8 : 0));
+            const score = Math.min(98, 68 + Math.round((bar.putPct - 50) * 0.8) + (barAbsSide < 0 && barTrapSide < 0 ? 8 : 0) + (barHasBearLvnRej ? 4 : 0));
+            const structTag = barHasBearLvnRej ? "HVN+LVN▼" : "HVN/POC▼";
+            const reasonStr = (barAbsSide < 0 && barTrapSide < 0)
+              ? `ABS▼+A.PIÉGÉS▼ + ${structTag}`
+              : (barTrapSide < 0 ? `A.PIÉGÉS▼ + ${structTag}` : (barAbsSide < 0 ? `ABS ASK▼ + ${structTag}` : `${structTag} REJECT`));
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1304,7 +1329,7 @@
               pcr: bar.pcr,
               oiDelta: bar.oiDelta,
               sweeps: bar.sweeps,
-              reason: barAbsSide < 0 && barTrapSide < 0 ? "ABS ASK + A.PIÉGÉS + PUT FLOW" : "A.PIÉGÉS + PUT FLOW"
+              reason: reasonStr
             };
             lastTradeSignal = sig;
             tradeSignalsToDraw.push(sig);
