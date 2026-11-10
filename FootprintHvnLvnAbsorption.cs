@@ -2067,9 +2067,13 @@ namespace ATAS.Indicators.Custom
             CheckRealtimeAccountKillSwitch();
             if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
             {
+                decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
                 decimal lastPx = CurrentBar > 0
                     ? GetCandle(CurrentBar - 1).Close
                     : (TradingManager?.Security?.LastTradePrice ?? 0m);
+                var pos = position ?? TradingManager?.Position;
+                if (pos != null && pos.Volume != 0m)
+                    EnsureLivePositionTrackingInitialized(pos, lastPx, tickSize);
                 if (lastPx > 0m)
                     CheckLivePositionTargetsOnTick(lastPx);
             }
@@ -2080,6 +2084,50 @@ namespace ATAS.Indicators.Custom
         {
             base.OnNewMyTrade(myTrade);
             CheckRealtimeAccountKillSwitch();
+            if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && myTrade != null && myTrade.Price > 0m)
+            {
+                decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+                decimal lastPx = CurrentBar > 0
+                    ? GetCandle(CurrentBar - 1).Close
+                    : myTrade.Price;
+                var pos = TradingManager?.Position;
+                if (pos != null && pos.Volume != 0m)
+                {
+                    EnsureLivePositionTrackingInitialized(pos, lastPx, tickSize);
+                }
+                else if (_liveTrackedDir != 0 && _liveTrackedSignalBar >= 0 && !_liveTrackedTp1Hit)
+                {
+                    // Synchronisation immédiate du prix d'exécution réel dès réception du fill MyTrade (même avant mise à jour de Position)
+                    decimal step = tickSize * Math.Max(1, _ticksPerRow);
+                    decimal fillPx = RoundToTick(myTrade.Price - _liveCrossBasisOffset, tickSize);
+                    if (fillPx > 0m && Math.Abs(fillPx - _liveTrackedEntryPrice) <= step * 8m)
+                    {
+                        decimal prevRisk = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
+                        decimal tp1Dist = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
+                        decimal tp2Dist = Math.Max(tp1Dist + step * 2m, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
+                        decimal candidateStop = RoundToTick(fillPx - _liveTrackedDir * prevRisk, tickSize);
+
+                        _liveTrackedEntryPrice = fillPx;
+                        _liveTrackedRealFillPrice = RoundToTick(myTrade.Price, tickSize);
+                        _liveTrackedStopPrice = _liveTrackedDir > 0
+                            ? Math.Min(_liveTrackedStopPrice, candidateStop)
+                            : Math.Max(_liveTrackedStopPrice, candidateStop);
+                        _liveTrackedTp1Price = RoundToTick(fillPx + _liveTrackedDir * tp1Dist, tickSize);
+                        _liveTrackedTp2Price = RoundToTick(fillPx + _liveTrackedDir * tp2Dist, tickSize);
+
+                        if (_lockedExecutedSignalsByBar.TryGetValue(_liveTrackedSignalBar, out var lockedSig) && lockedSig.Direction == _liveTrackedDir)
+                        {
+                            lockedSig.EntryPrice = _liveTrackedEntryPrice;
+                            lockedSig.RealAccountFillPrice = _liveTrackedRealFillPrice;
+                            lockedSig.IsLiveFillSynced = true;
+                            lockedSig.StopPrice = _liveTrackedStopPrice;
+                            lockedSig.Tp1Price = _liveTrackedTp1Price;
+                            lockedSig.Tp2Price = _liveTrackedTp2Price;
+                            _lockedExecutedSignalsByBar[_liveTrackedSignalBar] = lockedSig;
+                        }
+                    }
+                }
+            }
             RedrawChart();
         }
 
@@ -2370,6 +2418,17 @@ namespace ATAS.Indicators.Custom
             {
                 EnsureTradingManagerSubscriptions();
 
+                VisualTradeSignal rawEvaluatedSignal = signal;
+
+                // En mode LiveAutoTradingManager sur la bougie active, on évalue et route l'ordre réel AVANT que la simulation
+                // ne filtre le signal, afin qu'aucune position théorique de backtest ne bloque un ordre réel ni ne crée de décalage visuel.
+                if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager && bar == CurrentBar - 1)
+                {
+                    BotPerformanceState preLiveState = default;
+                    SynchronizeWithActiveAccount(bar, tickSize, ref preLiveState);
+                    ProcessLiveTradingManagerBot(bar, candle, tickSize, rawEvaluatedSignal, preLiveState);
+                }
+
                 List<BotTradeExecutionRecord> simTrades = new List<BotTradeExecutionRecord>();
                 BotPerformanceState botState = _enableTradingBot
                     ? SimulateQuantTradingBot(bar, tickSize, out simTrades)
@@ -2378,15 +2437,24 @@ namespace ATAS.Indicators.Custom
                 if (_enableTradingBot && _onlyShowExecutedBotSignals)
                 {
                     bool openedOnThisBar = false;
-                    for (int i = 0; i < simTrades.Count; i++)
+                    if (_lockedExecutedSignalsByBar.TryGetValue(bar, out var lockedOnBar) && lockedOnBar.Direction != 0)
                     {
-                        if (simTrades[i].EntryBar == bar)
+                        openedOnThisBar = true;
+                        signal = lockedOnBar;
+                    }
+                    else
+                    {
+                        for (int i = 0; i < simTrades.Count; i++)
                         {
-                            openedOnThisBar = true;
-                            signal = simTrades[i].EntrySignal;
-                            break;
+                            if (simTrades[i].EntryBar == bar)
+                            {
+                                openedOnThisBar = true;
+                                signal = simTrades[i].EntrySignal;
+                                break;
+                            }
                         }
                     }
+
                     if (!openedOnThisBar)
                         signal = default;
 
@@ -2398,17 +2466,7 @@ namespace ATAS.Indicators.Custom
 
                 if (_enableTradingBot && _botMode == BotExecutionMode.LiveAutoTradingManager)
                 {
-                    VisualTradeSignal liveSignal = signal;
-                    if (liveSignal.Direction == 0 && simTrades.Count > 0)
-                    {
-                        var lastSim = simTrades[simTrades.Count - 1];
-                        if (lastSim.EntryBar == bar &&
-                            lastSim.ExitBar >= bar &&
-                            lastSim.EntrySignal.Direction != 0)
-                        {
-                            liveSignal = lastSim.EntrySignal;
-                        }
-                    }
+                    VisualTradeSignal liveSignal = signal.Direction != 0 ? signal : rawEvaluatedSignal;
                     ProcessLiveTradingManagerBot(bar, candle, tickSize, liveSignal, botState);
 
                     // Si l'ordre réel a verrouillé ou recalé le prix d'entrée exact sur cette bougie, synchroniser immédiatement les séries visuelles
