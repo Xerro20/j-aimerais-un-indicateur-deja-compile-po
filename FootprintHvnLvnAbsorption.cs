@@ -1019,7 +1019,12 @@ namespace ATAS.Indicators.Custom
             public decimal VwapZScore;
             public decimal EmaFast;
             public decimal EmaSlow;
-            public int TrendBias; // +1 = Haussier (EMA8 >= EMA21 ou Close >= VWAP), -1 = Baissier, 0 = Neutre
+            public decimal EmaTrend50;
+            public int TrendBias; // +1 = Haussier (EMA8 >= EMA21 et Close >= VWAP), -1 = Baissier, 0 = Neutre
+            public bool MultiBarStructureBull;
+            public bool MultiBarStructureBear;
+            public bool DeltaTailBullRecovery;
+            public bool DeltaTailBearRejection;
             public decimal BarPocPrice;
             public int BullStackedImbalances;
             public int BearStackedImbalances;
@@ -1031,6 +1036,8 @@ namespace ATAS.Indicators.Custom
             public int Direction; // +1 = ACHAT (BUY ▲), -1 = VENTE (SELL ▼), 0 = Aucun
             public decimal TriggerPrice;
             public decimal EntryPrice;
+            public decimal RealAccountFillPrice;
+            public bool IsLiveFillSynced;
             public decimal StopPrice;
             public decimal Tp1Price;
             public decimal Tp2Price;
