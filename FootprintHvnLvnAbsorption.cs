@@ -4559,6 +4559,9 @@ namespace ATAS.Indicators.Custom
             decimal step = tickSize * Math.Max(1, _ticksPerRow);
             decimal pointVal = contractInfo.TradedPointValueUsd;
             decimal commPerSide = contractInfo.TradedCommissionPerSideUsd;
+            decimal commRtUsd = Math.Max(0.50m, commPerSide * 2m);
+            decimal stepValueUsd = Math.Max(0.05m, pointVal * step);
+            int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValueUsd));
             int minVisible = FirstVisibleBarNumber >= 0 ? FirstVisibleBarNumber : upToBar;
             int lookbackStart = Math.Max(0, Math.Min(minVisible, upToBar - Math.Max(220, ProfileLookbackBars * 4)));
             if (_botResetLimitsEachSession)
