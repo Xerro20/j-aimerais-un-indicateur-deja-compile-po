@@ -592,6 +592,18 @@
       "created_at": "2026-11-10T13:28:27.117Z",
       "sender": "ios",
       "is_cancelled": false
+    },
+    {
+      "id": "aa5c5d36-b657-417d-af4b-e445bfb267f2",
+      "role": "agent",
+      "content": "Your weekly Google allowance for this model is used up.\nIt comes back in about 4 days.\nTwo ways to keep going now:\n- Pick another model in the app — each family has its own allowance, and the picker shows what's left.\n- Get more from Google: https://antigravity.google/g1-upgrade",
+      "status": "error",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": "493d3fd9-223c-40a5-8e99-669bb16bfdfc",
+      "created_at": "2026-11-10T13:30:23.782Z",
+      "sender": "macOS",
+      "is_cancelled": false
     }
   ]
 }
