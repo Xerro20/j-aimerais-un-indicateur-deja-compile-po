@@ -40,8 +40,8 @@ Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplac
 | **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `148 480 octets` (145,0 Ko) |
-| **SHA-256** | `bc9a92f00e7b1eab9fe2766fb1a75156779f60e366932e99c58fba04684b2819` |
+| **Taille du binaire** | `154 624 octets` (151,0 Ko) |
+| **SHA-256** | `17f53b6f3a93d51bf0385a09dc6ae11595a285a6a8594f9eb6592cba6c2e88d2` |
 
 ---
 
