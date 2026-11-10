@@ -2312,6 +2312,8 @@ namespace ATAS.Indicators.Custom
             if (rows.Length == 0)
                 return;
 
+            _barRowsCache[bar] = rows;
+
             var optMetrics = AnalyzeBarOptionsFlow(bar, candle, rows, tickSize);
             var signal = EvaluateBuySellSignal(
                 bar, candle, rows, tickSize,
@@ -2962,9 +2964,9 @@ namespace ATAS.Indicators.Custom
                 }
 
                 // Profil Composite glissant (sur les N dernières bougies en cache) pour HVN / LVN structurels
-                if (_enableCompositeProfile && bar >= 4)
+                if (EnableCompositeProfile && bar >= 4)
                 {
-                    int compLb = Math.Min(isCme ? 35 : 40, Math.Min(bar, _compositeLookbackBars));
+                    int compLb = Math.Min(isCme ? 35 : 40, Math.Min(bar, ProfileLookbackBars));
                     decimal bandRange = atr * 2.5m;
                     decimal minBandP = candle.Low - bandRange;
                     decimal maxBandP = candle.High + bandRange;
@@ -2995,8 +2997,8 @@ namespace ATAS.Indicators.Custom
 
                     if (maxCompVol > 0m && compMap.Count >= 5)
                     {
-                        decimal hvnThresh = maxCompVol * (Math.Min(_compositeHvnPct, 68) / 100m);
-                        decimal lvnThresh = maxCompVol * (Math.Max(_compositeLvnPct, 26) / 100m);
+                        decimal hvnThresh = maxCompVol * (Math.Min(CompositeHvnPct, 68) / 100m);
+                        decimal lvnThresh = maxCompVol * (Math.Max(CompositeLvnPct, 26) / 100m);
 
                         foreach (var kv in compMap)
                         {
@@ -3045,10 +3047,10 @@ namespace ATAS.Indicators.Custom
             bool effectiveTrapBuyers = hasTrapBuyers || hasPrevBarTrapBuyersSqueeze;
 
             // --- Pilier 3 autonome : Signal Structurel HVN + LVN (Rebond sur Support HVN + Rejet de Poche LVN + Flux/Delta aligné) ---
-            bool hasBullHvnStruct = (_enableBarHvn && hasBullBarHvnSupport) || (_enableCompositeProfile && hasCompHvnSupport);
-            bool hasBearHvnStruct = (_enableBarHvn && hasBearBarHvnResistance) || (_enableCompositeProfile && hasCompHvnResistance);
-            bool hasBullLvnReject = (_enableBarLvn && hasLowerLvnRejection) || (_enableCompositeProfile && hasCompLvnBullRejection);
-            bool hasBearLvnReject = (_enableBarLvn && hasUpperLvnRejection) || (_enableCompositeProfile && hasCompLvnBearRejection);
+            bool hasBullHvnStruct = (_enableBarHvn && hasBullBarHvnSupport) || (EnableCompositeProfile && hasCompHvnSupport);
+            bool hasBearHvnStruct = (_enableBarHvn && hasBearBarHvnResistance) || (EnableCompositeProfile && hasCompHvnResistance);
+            bool hasBullLvnReject = (_enableBarLvn && hasLowerLvnRejection) || (EnableCompositeProfile && hasCompLvnBullRejection);
+            bool hasBearLvnReject = (_enableBarLvn && hasUpperLvnRejection) || (EnableCompositeProfile && hasCompLvnBearRejection);
 
             bool hasBullHvnLvnSetup = hasBullHvnStruct && hasBullLvnReject &&
                                       candle.Close > candle.Open &&
@@ -3072,7 +3074,7 @@ namespace ATAS.Indicators.Custom
                 : _quantMinConfluenceScore;
 
             // Calcul du plancher de ticks pour couvrir les commissions Aller-Retour (notamment sur Micro MNQ / MES)
-            decimal commRtUsd = Math.Max(0.50m, contractInfo.RoundTurnCommissionUsd);
+            decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
             decimal tickValueUsd = Math.Max(0.05m, contractInfo.TradedPointValueUsd * tickSize);
             int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / Math.Max(0.05m, tickValueUsd * Math.Max(1, _ticksPerRow))));
 
@@ -4861,6 +4863,8 @@ namespace ATAS.Indicators.Custom
                 if (rows.Length == 0)
                     continue;
 
+                _barRowsCache[b] = rows;
+
                 var opt = AnalyzeBarOptionsFlow(b, c, rows, tickSize);
                 var sig = EvaluateBuySellSignal(
                     b, c, rows, tickSize,
@@ -5538,7 +5542,7 @@ namespace ATAS.Indicators.Custom
                 }
                 else
                 {
-                    decimal commRtUsd = Math.Max(0.50m, contractInfo.RoundTurnCommissionUsd);
+                    decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
                     decimal stepValUsd = Math.Max(0.05m, contractInfo.TradedPointValueUsd * step);
                     int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
 
@@ -5681,7 +5685,7 @@ namespace ATAS.Indicators.Custom
                     return;
                 }
 
-                decimal commRtUsd = Math.Max(0.50m, contractInfo.RoundTurnCommissionUsd);
+                decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
                 decimal stepValUsd = Math.Max(0.05m, pointVal * step);
                 int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
 
