@@ -461,10 +461,10 @@ namespace ATAS.Indicators.Custom
             set { _trappedMinVolume = value; RecalculateValues(); }
         }
 
-        private decimal _trappedVolumeMultiplier = 1.15m;
+        private decimal _trappedVolumeMultiplier = 0.65m;
         [Display(Name = "Multiplicateur de Volume Min vs Moyenne Bougie", GroupName = GrpTrappedDetect, Order = 30,
-            Description = "Le volume du niveau piégé doit être au moins X fois supérieur au volume moyen par niveau de la bougie (ex: 1.15x).")]
-        [Range(0.5, 10.0)]
+            Description = "Le volume du niveau piégé dans la mèche doit atteindre au moins X fois le volume moyen hors-POC de la bougie (ex: 0.65x).")]
+        [Range(0.2, 10.0)]
         public decimal TrappedVolumeMultiplier
         {
             get => _trappedVolumeMultiplier;
@@ -481,7 +481,7 @@ namespace ATAS.Indicators.Custom
             set { _trappedMinDominantPct = value; RecalculateValues(); }
         }
 
-        private decimal _trappedImbalanceRatio = 1.75m;
+        private decimal _trappedImbalanceRatio = 1.45m;
         [Display(Name = "Ratio d'Imbalance Diagonale Min (Piégés)", GroupName = GrpTrappedDetect, Order = 50,
             Description = "Imbalance diagonale Ask[i]/Bid[i-1] pour acheteurs piégés ou Bid[i]/Ask[i+1] pour vendeurs piégés (1.0 = désactivé).")]
         [Range(1.0, 20.0)]
@@ -491,7 +491,7 @@ namespace ATAS.Indicators.Custom
             set { _trappedImbalanceRatio = value; RecalculateValues(); }
         }
 
-        private int _trappedWickZonePct = 40;
+        private int _trappedWickZonePct = 42;
         [Display(Name = "Zone de Piégeage Extrême (% du Range)", GroupName = GrpTrappedDetect, Order = 60,
             Description = "Le cluster piégé doit se situer dans la mèche ou dans les X% supérieurs (acheteurs piégés) / inférieurs (vendeurs piégés) de la bougie.")]
         [Range(10, 100)]
