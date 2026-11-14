@@ -2450,10 +2450,11 @@ namespace ATAS.Indicators.Custom
             int curBar = CurrentBar - 1;
             decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
             decimal bigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
-            if (_enableBigTradesReversal && trade.Volume >= bigTradeMin && trade.Price > 0m &&
+            decimal cumPrice = trade.FirstPrice > 0m ? trade.FirstPrice : GetCandle(curBar).Close;
+            if (_enableBigTradesReversal && trade.Volume >= bigTradeMin && cumPrice > 0m &&
                 (trade.Direction == TradeDirection.Buy || trade.Direction == TradeDirection.Sell))
             {
-                RecordLiveBigTradePrint(curBar, trade.Price, trade.Volume, trade.Direction == TradeDirection.Buy);
+                RecordLiveBigTradePrint(curBar, cumPrice, trade.Volume, trade.Direction == TradeDirection.Buy);
             }
 
             if (!_enableAtasOptionsFlow)
