@@ -6563,27 +6563,18 @@ namespace ATAS.Indicators.Custom
             var bodyFont = new RenderFont("Consolas", 10);
 
             string sym = InstrumentInfo?.Instrument ?? "Instrument";
-            string optBiasTxt = latestOpt.OptionsBias > 0
-                ? "CALLS HAUSSIER ▲"
-                : (latestOpt.OptionsBias < 0 ? "PUTS BAISSIER ▼" : "NEUTRE");
-            Color optBiasCol = latestOpt.OptionsBias > 0
-                ? BuySignalColor
-                : (latestOpt.OptionsBias < 0 ? SellSignalColor : Color.FromArgb(255, 200, 210, 225));
-
             decimal hudTickSize = InstrumentInfo != null && InstrumentInfo.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
             var contractInfo = ResolveContractAndCrossTradingInfo(hudTickSize);
 
             var lines = new List<(string text, Color color, bool bold)>
             {
-                ($"QUANT ORDERFLOW • OPTIONS • AUTO-BOT [{sym}]", Color.White, true),
+                ($"BOT BIGTRADES ◆ REVERSAL • OPTIONS X-RAY • HVN/LVN [{sym}]", Color.White, true),
                 ($"MARCHÉ & CROISÉ   : {contractInfo.ProfileBadge}  |  {contractInfo.CrossTradingBadge} ({contractInfo.TradedPointValueUsd:0.##}$/pt)", Color.FromArgb(255, 250, 204, 21), true),
                 ($"HVN Intra-Bar : {barHvnCount}  |  Zones HVN Profil : {compHvnCount}  |  VPOC : {(compPocPrice > 0m ? $"{compPocPrice}" : "N/A")}", BarHvnColor, false),
-                ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}  |  ATR({_quantAtrPeriod}) : {latestOpt.AtrPoints:0.00}", BarLvnColor, false),
-                ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)  |  Max Z-Score : {latestOpt.MaxVolumeZScore:0.0}σ", Color.FromArgb(255, 220, 230, 240), false),
-                ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}  |  VWAP Z : {latestOpt.VwapZScore:+0.0;-0.0;0.0}σ", Color.FromArgb(255, 16, 245, 150), false),
-                ($"Flux Options ATAS X : Calls {latestOpt.CallFlowPct:0}% / Puts {latestOpt.PutFlowPct:0}% (PCR {latestOpt.PutCallRatio:0.00}) [{optBiasTxt}]", optBiasCol, true),
+                ($"LVN Intra-Bar : {barLvnCount}  |  Zones LVN Profil : {compLvnCount}  |  ATR : {latestOpt.AtrPoints:0.00}", BarLvnColor, false),
+                ($"BigTrades ◆ Visibles : Vendeurs (Rouges) {bullAbsCount}  |  Acheteurs (Verts) {bearAbsCount}  |  Piégés (Or) : {trappedSellersCount + trappedBuyersCount}", Color.FromArgb(255, 250, 204, 21), false),
                 ($"Options X-Ray SPX   : CALL WALL {latestOpt.XRayCallWall:0.##} (+{latestOpt.XRayCallWallGexM:0.0}M) | MP {latestOpt.XRayMaxPain:0.##} | PUT WALL {latestOpt.XRayPutWall:0.##} ({latestOpt.XRayPutWallGexM:+0.0;-0.0;0.0}M)", Color.FromArgb(255, 250, 204, 21), true),
-                ($"BigTrades ◆ & Quant : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (Seuil ◆≥{GetEffectiveBigTradeMinLots(hudTickSize):0} lots, 0 DTE={latestOpt.XRayZeroDteExpectedMovePts:0}pts)", Color.FromArgb(255, 125, 211, 252), false)
+                ($"Signaux Reversal ◆  : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (Seuil ◆≥{GetEffectiveBigTradeMinLots(hudTickSize):0} lots, 0 DTE={latestOpt.XRayZeroDteExpectedMovePts:0}pts)", Color.FromArgb(255, 125, 211, 252), true)
             };
 
             string acctDisplay = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName)
@@ -6614,11 +6605,11 @@ namespace ATAS.Indicators.Custom
                 lines.Add(($"BOT STATUS          : {botPerf.StatusLabel}", statusCol, true));
                 lines.Add(($"HORAIRES DU BOT     : {( _enableBotSchedule ? $"{BotStartTimeText} -> {BotEndTimeText} (Filtre Horaire ACTIF)" : "24h/24 (Filtre Horaire DÉSACTIVÉ)" )}", Color.FromArgb(255, 165, 243, 252), false));
                 lines.Add(($"DRAWDOWN / DD MAX   : -{botPerf.CurrentDrawdownUsd:0.00}$ (Max Observé -{botPerf.MaxObservedDrawdownUsd:0.00}$) / Limite -{_botMaxDrawdownUsd:0}$", Color.FromArgb(255, 251, 191, 36), false));
-                lines.Add(($"STATS QUANT BOT     : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
+                lines.Add(($"STATS BOT BIGTRADES : Trades {botPerf.TotalTrades} ({botPerf.WinRatePct:0}% Win) | PF {botPerf.ProfitFactor:0.00} | Sharpe {botPerf.SharpeRatio:0.00} | Exp {botPerf.ExpectancyUsd:+0;-0;0}$", Color.FromArgb(255, 203, 213, 225), false));
             }
             else
             {
-                lines.Add(("BOT STATUS          : DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte pour activer)", Color.FromArgb(255, 148, 163, 184), true));
+                lines.Add(("BOT STATUS          : DÉSACTIVÉ (Cliquez sur [BOT BIGTRADES: OFF] sur la charte pour activer)", Color.FromArgb(255, 148, 163, 184), true));
                 lines.Add(($"HORAIRES CONFIGURÉS : {BotStartTimeText} -> {BotEndTimeText} ({(_enableBotSchedule ? "ON" : "OFF")})", Color.FromArgb(255, 148, 163, 184), false));
             }
 
@@ -6626,26 +6617,9 @@ namespace ATAS.Indicators.Custom
             {
                 var s = latestSignal.Value;
                 bool isBuy = s.Direction > 0;
-                string tag = isBuy ? "★ DERNIER SIGNAL ACHAT ▲" : "★ DERNIER SIGNAL VENTE ▼";
+                string tag = isBuy ? "◆ DERNIER REVERSAL ACHAT ▲" : "◆ DERNIER REVERSAL VENTE ▼";
                 Color c = isBuy ? BuySignalColor : SellSignalColor;
-                lines.Add(($"{tag}: Entrée {s.EntryPrice} | SL {s.StopPrice} | TP1 {s.Tp1Price} | TP2 {s.Tp2Price} [{s.ConfluenceScore}%]", c, true));
-            }
-            else if (latestAbs.HasValue)
-            {
-                var a = latestAbs.Value;
-                bool bull = a.Side > 0;
-                string tag = bull ? "▲ DERNIÈRE ABS BULL" : "▼ DERNIÈRE ABS BEAR";
-                Color c = bull ? BullishAbsorptionColor : BearishAbsorptionColor;
-                lines.Add(($"{tag}: {a.Price} | Vol {a.Volume:0} | Δ {a.Delta:+0;-0;0}", c, true));
-            }
-
-            if (latestTrapped.HasValue)
-            {
-                var t = latestTrapped.Value;
-                bool bull = t.Side > 0;
-                string tag = bull ? "▲ VENDEURS PIÉGÉS" : "▼ ACHETEURS PIÉGÉS";
-                Color c = bull ? TrappedSellersBullColor : TrappedBuyersBearColor;
-                lines.Add(($"{tag}: {t.Price} | Vol {t.Volume:0} | Δ {t.Delta:+0;-0;0}", c, true));
+                lines.Add(($"{tag}: Entrée {s.EntryPrice} | SL {s.StopPrice} | TP1 {s.Tp1Price} | TP2 {s.Tp2Price} ({s.BigTradeLots:0}L @ {s.BigTradePrice})", c, true));
             }
 
             int pad = 10;
