@@ -676,6 +676,18 @@
       "created_at": "2026-11-14T19:52:49.670Z",
       "sender": "macOS",
       "is_cancelled": false
+    },
+    {
+      "id": "5e29a56c-e3b4-40ad-ab46-3eabaf11075a",
+      "role": "user",
+      "content": "ça ne va pas tu as tout repris de l'ancienne stratégie qui ne fonctionne pas... reprend que ce que je t'ai demandé, en gardant uniquement se qu'on a discuter de pratique. n'ouvre que des trades basé sur se que je t'ai demandé pour se nouveau bot.",
+      "status": "pending",
+      "model": "gemini-4-argon-high",
+      "client_type": "gemini-bridge",
+      "parent_message_id": null,
+      "created_at": "2026-11-14T20:45:55.707Z",
+      "sender": "ios",
+      "is_cancelled": false
     }
   ]
 }
