@@ -645,46 +645,41 @@ namespace ATAS.Indicators.Custom
         [Range(5, 400)]
         public int HudOffsetY { get; set; } = 36;
 
-        [Display(Name = "Activer les alertes sonores (Achat/Vente, Absorption & Piégés)", GroupName = GrpHudAlerts, Order = 50)]
+        [Display(Name = "Activer les alertes sonores BigTrade Reversal", GroupName = GrpHudAlerts, Order = 50)]
         public bool EnableAlerts { get; set; } = true;
 
         [Display(Name = "Fichier son d'alerte", GroupName = GrpHudAlerts, Order = 60)]
         public string AlertSoundFile { get; set; } = "alert1.wav";
 
         // =====================================================================
-        // 11. MODÈLE QUANT SENIOR (Z-SCORE, ATR, CVD & VWAP REGIME)
+        // 11. GESTION STOP-LOSS & TAKE-PROFIT DU REVERSAL BIGTRADE
         // =====================================================================
-        private bool _enableQuantFilter = true;
-        [Display(Name = "Activer le Raffinement Quant Senior (Z-Score + CVD + ATR)", GroupName = GrpQuantEngine, Order = 10,
-            Description = "Affine les signaux avec un modèle statistique institutionnel : Z-Score de volume/delta sur les clusters, divergence CVD, régime VWAP ± σ et volatilité ATR(14).")]
+        private bool _enableQuantFilter = false;
+        [Browsable(false)]
         public bool EnableQuantFilter
         {
-            get => _enableQuantFilter;
-            set { _enableQuantFilter = value; RecalculateValues(); }
+            get => false;
+            set { _enableQuantFilter = false; }
         }
 
-        private decimal _quantMinClusterZScore = 0.85m;
-        [Display(Name = "Z-Score Minimum du Cluster (σ Volume/Delta)", GroupName = GrpQuantEngine, Order = 20,
-            Description = "Nombre d'écarts-types (σ) minimum au-dessus de la moyenne de la bougie pour valider statistiquement le cluster d'absorption/piégeage.")]
-        [Range(0.0, 5.0)]
+        private decimal _quantMinClusterZScore = 0.0m;
+        [Browsable(false)]
         public decimal QuantMinClusterZScore
         {
             get => _quantMinClusterZScore;
-            set { _quantMinClusterZScore = value; RecalculateValues(); }
+            set { _quantMinClusterZScore = value; }
         }
 
-        private int _quantMinConfluenceScore = 62;
-        [Display(Name = "Score Quant Composite Minimum (0-100%)", GroupName = GrpQuantEngine, Order = 30,
-            Description = "Seuil de probabilité multi-facteurs (HVN/LVN + Absorption + Traders Piégés + Flux d'Options ATAS X + Z-Score/CVD) requis pour valider un signal.")]
-        [Range(50, 95)]
+        private int _quantMinConfluenceScore = 50;
+        [Browsable(false)]
         public int QuantMinConfluenceScore
         {
             get => _quantMinConfluenceScore;
-            set { _quantMinConfluenceScore = value; RecalculateValues(); }
+            set { _quantMinConfluenceScore = value; }
         }
 
         private int _quantAtrPeriod = 14;
-        [Display(Name = "Période ATR (Volatilité Dynamique SL/TP)", GroupName = GrpQuantEngine, Order = 40)]
+        [Display(Name = "Période ATR (Calibrage Volatilité SL/TP)", GroupName = GrpQuantEngine, Order = 40)]
         [Range(5, 100)]
         public int QuantAtrPeriod
         {
@@ -692,9 +687,9 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrPeriod = value; RecalculateValues(); }
         }
 
-        private decimal _quantAtrStopMultiplier = 0.85m;
-        [Display(Name = "Multiplicateur ATR pour Stop-Loss (SL)", GroupName = GrpQuantEngine, Order = 50,
-            Description = "Calcule le Stop-Loss structurel sous/sur le niveau d'absorption/piégeage ajusté par X * ATR(14).")]
+        private decimal _quantAtrStopMultiplier = 0.90m;
+        [Display(Name = "Distance Max Stop-Loss (Multiplicateur ATR)", GroupName = GrpQuantEngine, Order = 50,
+            Description = "Calcule le Stop-Loss structurel sous/sur le losange BigTrade piégé et l'extrême de la bougie.")]
         [Range(0.2, 5.0)]
         public decimal QuantAtrStopMultiplier
         {
@@ -702,9 +697,9 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrStopMultiplier = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp1RiskReward = 0.75m;
-        [Display(Name = "Ratio Risk/Reward TP1 (Prise de Profit Rapide + Profit-Lock)", GroupName = GrpQuantEngine, Order = 60,
-            Description = "Distance de prise de profit TP1 haute probabilité (0.75R) : encaisse 50% (ou 100% si 1 lot) immédiatement et verrouille le Stop en gain.")]
+        private decimal _quantTp1RiskReward = 1.00m;
+        [Display(Name = "Ratio Risk/Reward TP1 (Sortie 50% + Breakeven)", GroupName = GrpQuantEngine, Order = 60,
+            Description = "Distance de prise de profit TP1 (1.0R) : encaisse 50% (ou 100% si 1 lot) et verrouille le Stop en gain.")]
         [Range(0.3, 10.0)]
         public decimal QuantTp1RiskReward
         {
@@ -712,9 +707,9 @@ namespace ATAS.Indicators.Custom
             set { _quantTp1RiskReward = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp2RiskReward = 1.50m;
-        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final + Trailing Stop)", GroupName = GrpQuantEngine, Order = 70,
-            Description = "Objectif de prise de profit final TP2 (1.50R) accompagné d'un Trailing Stop dynamique verrouillant les gains tick par tick.")]
+        private decimal _quantTp2RiskReward = 2.00m;
+        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final / Mur Options X-Ray)", GroupName = GrpQuantEngine, Order = 70,
+            Description = "Objectif de prise de profit final TP2 (2.0R ou aligné sur PUT WALL / MAX PAIN / CALL WALL).")]
         [Range(0.6, 15.0)]
         public decimal QuantTp2RiskReward
         {
@@ -723,11 +718,11 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // 12. BOT DE TRADING QUANT & RISK GUARD (MAX DRAWDOWN & MAX PNL)
+        // 12. BOT DE TRADING BIGTRADES REVERSAL & RISK GUARD (MAX DD & MAX PNL)
         // =====================================================================
         private bool _enableTradingBot = true;
-        [Display(Name = "Activer le Bot de Trading Quant", GroupName = GrpQuantBot, Order = 10,
-            Description = "Active le moteur d'exécution automatique et le simulateur temps réel basé sur les signaux Quant Order Flow + Flux d'Options.")]
+        [Display(Name = "Activer le Bot BigTrades Reversal", GroupName = GrpQuantBot, Order = 10,
+            Description = "Ouvre uniquement des trades basés sur les BigTrades Piégés (losanges ◆) + Reversal avec Options X-Ray et HVN/LVN.")]
         public bool EnableTradingBot
         {
             get => _enableTradingBot;
