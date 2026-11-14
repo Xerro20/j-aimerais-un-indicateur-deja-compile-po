@@ -7384,7 +7384,8 @@ namespace ATAS.Indicators.Custom
                 ($"Heavy Abs Bull: {bullAbsCount} (Bid)  |  Bear: {bearAbsCount} (Ask)  |  Max Z-Score : {latestOpt.MaxVolumeZScore:0.0}σ", Color.FromArgb(255, 220, 230, 240), false),
                 ($"Vendeurs Piégés ▲: {trappedSellersCount}  |  Acheteurs Piégés ▼: {trappedBuyersCount}  |  VWAP Z : {latestOpt.VwapZScore:+0.0;-0.0;0.0}σ", Color.FromArgb(255, 16, 245, 150), false),
                 ($"Flux Options ATAS X : Calls {latestOpt.CallFlowPct:0}% / Puts {latestOpt.PutFlowPct:0}% (PCR {latestOpt.PutCallRatio:0.00}) [{optBiasTxt}]", optBiasCol, true),
-                ($"Signaux Quant       : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (ΔOI {latestOpt.OiDelta:+0;-0;0}, Sweeps {latestOpt.SweepCount})", Color.FromArgb(255, 125, 211, 252), false)
+                ($"Options X-Ray SPX   : CALL WALL {latestOpt.XRayCallWall:0.##} (+{latestOpt.XRayCallWallGexM:0.0}M) | MP {latestOpt.XRayMaxPain:0.##} | PUT WALL {latestOpt.XRayPutWall:0.##} ({latestOpt.XRayPutWallGexM:+0.0;-0.0;0.0}M)", Color.FromArgb(255, 250, 204, 21), true),
+                ($"BigTrades ◆ & Quant : ACHAT ▲ {buySignalsCount}  |  VENTE ▼ {sellSignalsCount}  (Seuil ◆≥{GetEffectiveBigTradeMinLots(hudTickSize):0} lots, 0 DTE={latestOpt.XRayZeroDteExpectedMovePts:0}pts)", Color.FromArgb(255, 125, 211, 252), false)
             };
 
             string acctDisplay = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName)
