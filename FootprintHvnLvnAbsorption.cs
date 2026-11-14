@@ -4240,10 +4240,10 @@ namespace ATAS.Indicators.Custom
 
             int visibleHvnCells = 0;
             int visibleLvnCells = 0;
-            int visibleBullAbs = 0;
-            int visibleBearAbs = 0;
-            int visibleTrappedSellers = 0;
-            int visibleTrappedBuyers = 0;
+            int visibleBullAbs = 0;       // Nombre de BigTrades Vendeurs (Losanges Rouges ◆) visibles
+            int visibleBearAbs = 0;       // Nombre de BigTrades Acheteurs (Losanges Verts ◆) visibles
+            int visibleTrappedSellers = 0; // Nombre de BigTrades Vendeurs Piégés (◆ Or) visibles
+            int visibleTrappedBuyers = 0;  // Nombre de BigTrades Acheteurs Piégés (◆ Or) visibles
             int visibleBuySignals = 0;
             int visibleSellSignals = 0;
 
@@ -4252,7 +4252,7 @@ namespace ATAS.Indicators.Custom
             VisualTradeSignal? latestTradeSignal = null;
             BarOptionsFlowMetrics latestBarOptMetrics = default;
 
-            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN, Heavy Absorption, Trapped Traders & Options Flow
+            // 2. Boucle sur les bougies visibles : Rendu Footprint HVN, LVN, BigTrades (Losanges ◆) & Signaux Reversal
             for (int bar = firstBar; bar <= lastBar; bar++)
             {
                 var candle = GetCandle(bar);
@@ -4263,6 +4263,8 @@ namespace ATAS.Indicators.Custom
                     out int bestTrapSellersIdx, out int bestTrapBuyersIdx);
                 if (rows.Length == 0)
                     continue;
+
+                _barRowsCache[bar] = rows;
 
                 var barOpt = AnalyzeBarOptionsFlow(bar, candle, rows, tickSize);
                 if (bar == lastBar)
@@ -4278,23 +4280,23 @@ namespace ATAS.Indicators.Custom
                 int cellW = CustomCellWidthPx > 0 ? CustomCellWidthPx : Math.Max(8, barSpan - 4);
                 int cellX = xMid - cellW / 2;
 
-                int barBestAbsSide = 0;
-                int barBestTrapSide = 0;
-
                 for (int i = 0; i < rows.Length; i++)
                 {
                     ClusterRow r = rows[i];
                     if (r.Volume <= 0m && !r.IsLvn)
                         continue;
 
+                    if (r.HasBigTradeSell) visibleBullAbs++;
+                    if (r.HasBigTradeBuy) visibleBearAbs++;
+                    if (r.TrappedBigTradeSide > 0) visibleTrappedSellers++;
+                    if (r.TrappedBigTradeSide < 0) visibleTrappedBuyers++;
+
                     int yCenter = ChartInfo.GetYByPrice(r.Price, false);
                     int yTop = yCenter - rowHeight / 2;
                     Rectangle cellRect = new Rectangle(cellX, yTop, cellW, rowHeight);
 
-                    bool hasSpecialOrderFlow = r.AbsorptionSide != 0 || r.TrappedSide != 0;
-
                     // --- A. Rendu LVN Intra-Bougie ---
-                    if (r.IsLvn && !hasSpecialOrderFlow)
+                    if (r.IsLvn)
                     {
                         visibleLvnCells++;
                         Color fill = Color.FromArgb(BarLvnFillAlpha, BarLvnColor.R, BarLvnColor.G, BarLvnColor.B);
@@ -4313,7 +4315,7 @@ namespace ATAS.Indicators.Custom
                     }
 
                     // --- B. Rendu HVN & POC Intra-Bougie ---
-                    if (r.IsHvn && !hasSpecialOrderFlow)
+                    if (r.IsHvn)
                     {
                         visibleHvnCells++;
                         Color baseColor = r.IsPoc ? BarPocColor : BarHvnColor;
@@ -4333,103 +4335,8 @@ namespace ATAS.Indicators.Custom
                         }
                     }
 
-                    // --- C. Rendu ACHETEURS & VENDEURS PIÉGÉS (Trapped Buyers / Sellers) ---
-                    if (r.TrappedSide != 0)
-                    {
-                        bool isTrappedSellersBull = r.TrappedSide > 0;
-                        if (isTrappedSellersBull) visibleTrappedSellers++; else visibleTrappedBuyers++;
-                        barBestTrapSide = r.TrappedSide;
-
-                        Color trapBase = isTrappedSellersBull ? TrappedSellersBullColor : TrappedBuyersBearColor;
-                        Color trapFill = Color.FromArgb(TrappedHighlightAlpha, trapBase.R, trapBase.G, trapBase.B);
-                        Color trapBorder = Color.FromArgb(255, trapBase.R, trapBase.G, trapBase.B);
-
-                        if (r.AbsorptionSide == 0)
-                        {
-                            context.FillRectangle(trapFill, cellRect);
-                            var trapPen = new RenderPen(trapBorder, 2f, DashStyle.DashDot);
-                            context.DrawRectangle(trapPen, cellRect);
-
-                            Rectangle rightAccent = new Rectangle(cellRect.Right - 4, cellRect.Top, 4, cellRect.Height);
-                            context.FillRectangle(trapBorder, rightAccent);
-
-                            if (ShowCellBadges && rowHeight >= CellFontSize - 1)
-                            {
-                                string badge = isTrappedSellersBull
-                                    ? $"V.PIÉGÉS▲ {r.Bid:0}x{r.Ask:0} ({r.TrappedDominantPct:0}%)"
-                                    : $"A.PIÉGÉS▼ {r.Bid:0}x{r.Ask:0} ({r.TrappedDominantPct:0}%)";
-                                Size bSz = context.MeasureString(badge, boldFont);
-                                int bx = cellW >= bSz.Width + 8 ? cellRect.Left + 5 : cellRect.Right + 4;
-                                int by = yCenter - bSz.Height / 2;
-                                context.DrawString(badge, boldFont, Color.White, bx, by);
-                            }
-                        }
-
-                        var trapEv = new RaySignalEvent
-                        {
-                            Bar = bar,
-                            Price = r.Price,
-                            Volume = r.Volume,
-                            Delta = r.Delta,
-                            Side = r.TrappedSide,
-                            IsTrapped = true
-                        };
-                        activeTrappedRays.Add(trapEv);
-                        latestTrapped = trapEv;
-                    }
-
-                    // --- D. Rendu HEAVY ABSORPTION (et Confluence ABS + PIÉGÉ) sur le Footprint ---
-                    if (r.AbsorptionSide != 0)
-                    {
-                        bool isBull = r.AbsorptionSide > 0;
-                        if (isBull) visibleBullAbs++; else visibleBearAbs++;
-                        barBestAbsSide = r.AbsorptionSide;
-
-                        Color absBase = isBull ? BullishAbsorptionColor : BearishAbsorptionColor;
-                        Color absFill = Color.FromArgb(AbsHighlightAlpha, absBase.R, absBase.G, absBase.B);
-                        Color absBorder = Color.FromArgb(255, absBase.R, absBase.G, absBase.B);
-
-                        context.FillRectangle(absFill, cellRect);
-                        var absPen = new RenderPen(absBorder, AbsBorderThickness);
-                        context.DrawRectangle(absPen, cellRect);
-
-                        Rectangle accentBar = new Rectangle(cellRect.Left, cellRect.Top, Math.Max(3, AbsBorderThickness + 1), cellRect.Height);
-                        context.FillRectangle(absBorder, accentBar);
-
-                        if (r.TrappedSide != 0)
-                        {
-                            Color trapCol = r.TrappedSide > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor;
-                            Rectangle rightTrapBar = new Rectangle(cellRect.Right - 4, cellRect.Top, 4, cellRect.Height);
-                            context.FillRectangle(trapCol, rightTrapBar);
-                        }
-
-                        if (ShowCellBadges && rowHeight >= CellFontSize - 1)
-                        {
-                            string prefix = r.TrappedSide != 0
-                                ? (isBull ? "ABS+PIÉGÉ▲" : "ABS+PIÉGÉ▼")
-                                : (isBull ? "ABS▲" : "ABS▼");
-                            string badge = $"{prefix} {r.Bid:0}x{r.Ask:0} ({r.DominantPct:0}%)";
-                            Size bSz = context.MeasureString(badge, boldFont);
-                            int bx = cellW >= bSz.Width + 8 ? cellRect.Left + 5 : cellRect.Right + 4;
-                            int by = yCenter - bSz.Height / 2;
-                            context.DrawString(badge, boldFont, Color.White, bx, by);
-                        }
-
-                        var ev = new RaySignalEvent
-                        {
-                            Bar = bar,
-                            Price = r.Price,
-                            Volume = r.Volume,
-                            Delta = r.Delta,
-                            Side = r.AbsorptionSide,
-                            IsTrapped = false
-                        };
-                        activeAbsRays.Add(ev);
-                        latestAbsorption = ev;
-                    }
-
-                    // --- E. Texte Bid x Ask intégré optionnel (si mode chandelier) ---
-                    if (RenderBuiltInBidAskText && !hasSpecialOrderFlow && rowHeight >= CellFontSize && cellW >= 48)
+                    // --- C. Texte Bid x Ask intégré optionnel (si mode chandelier) ---
+                    if (RenderBuiltInBidAskText && rowHeight >= CellFontSize && cellW >= 48)
                     {
                         string baText = $"{r.Bid:0} x {r.Ask:0}";
                         Size sz = context.MeasureString(baText, cellFont);
@@ -4446,22 +4353,7 @@ namespace ATAS.Indicators.Custom
                     RenderBigTradeDiamondsOnBar(context, bar, candle, rows, xMid, rowHeight, boldFont, cellFont);
                 }
 
-                // Marqueur d'absorption au sommet ou au creux de la bougie
-                if (ShowBarExtremeMarker && barBestAbsSide != 0)
-                {
-                    Color markerCol = barBestAbsSide > 0 ? BullishAbsorptionColor : BearishAbsorptionColor;
-                    DrawExtremeMarker(context, candle, barBestAbsSide, markerCol, xMid, rowHeight, BarMarkerStyle, 0);
-                }
-
-                // Marqueur des Acheteurs / Vendeurs Piégés au sommet ou au creux de la bougie
-                if (ShowTrappedBarMarker && barBestTrapSide != 0)
-                {
-                    Color trapCol = barBestTrapSide > 0 ? TrappedSellersBullColor : TrappedBuyersBearColor;
-                    int extraOffset = (ShowBarExtremeMarker && barBestAbsSide == barBestTrapSide) ? (BarMarkerSize * 2 + 4) : 0;
-                    DrawExtremeMarker(context, candle, barBestTrapSide, trapCol, xMid, rowHeight, AbsorptionMarkerType.Arrow, extraOffset);
-                }
-
-                // Évaluation du signal visuel Achat / Vente prenant en compte le Flux d'Options ATAS X
+                // Évaluation du signal Reversal sur BigTrade Piégé (◆) + HVN/LVN + Options X-Ray
                 if (_enableVisualBuySellAlerts)
                 {
                     var sig = EvaluateBuySellSignal(
@@ -4485,18 +4377,6 @@ namespace ATAS.Indicators.Custom
                 RenderOptionsXRayOverlay(context, chartRegion, firstBar, lastBar, tickSize, latestBarOptMetrics, boldFont, cellFont);
             }
 
-            // 3. Projection des rayons Support / Résistance des Heavy Absorptions
-            if (ProjectAbsorptionRays && activeAbsRays.Count > 0)
-            {
-                RenderSignalRays(context, activeAbsRays, lastBar, step, cellFont, AbsorptionRayMaxBars, false);
-            }
-
-            // 4. Projection des rayons de liquidation des Acheteurs / Vendeurs Piégés
-            if (ProjectTrappedRays && activeTrappedRays.Count > 0)
-            {
-                RenderSignalRays(context, activeTrappedRays, lastBar, step, cellFont, TrappedRayMaxBars, true);
-            }
-
             // 5. Simulation, Synchronisation Temps Réel avec le Compte Actif ATAS X & Alignement 100% Signaux <-> Trades
             EnsureTradingManagerSubscriptions();
 
@@ -4508,7 +4388,7 @@ namespace ATAS.Indicators.Custom
             }
             else
             {
-                botPerf.StatusLabel = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
+                botPerf.StatusLabel = "DÉSACTIVÉ (Cliquez sur [BOT BIGTRADES: OFF] sur la charte)";
             }
 
             // Si l'option d'alignement strict est active, n'afficher les cartouches ★ QUANT ACHAT/VENTE qu'aux endroits exacts où le Bot ouvre un trade
