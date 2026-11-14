@@ -1,47 +1,23 @@
 // =============================================================================
-//  Footprint HVN / LVN, Heavy Absorption, Trapped Traders & Options Flow Alerts
+//  ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN
 //  Cible : .NET 10.0 (ATAS X Windows & macOS)
 //
-//  Fonctionnalités principales :
-//    1. HVN (High Volume Nodes) :
-//       - Détection intra-bougie sur le Footprint (POC + clusters à fort volume
-//         >= % du POC et pic local de volume).
-//       - Profil de Volume Composite (Session ou Rolling N bougies) avec zones
-//         HVN projetées horizontalement sur le graphique.
-//    2. LVN (Low Volume Nodes) :
-//       - Détection intra-bougie des creux de liquidité (poches de faible volume /
-//         single prints situés entre deux zones plus denses).
-//       - Détection des vallées LVN sur le Profil de Volume Composite avec
-//         projection horizontale des niveaux de rejet rapide.
-//    3. Heavy Absorption (Absorption Massive Bid / Ask sur le Footprint) :
-//       - Filtrage multi-critères : Volume absolu minimum, Multiplicateur de
-//         volume par rapport à la moyenne des niveaux de la bougie, Dominance
-//         Bid/Ask (%), Ratio d'Imbalance diagonale, Localisation (extrêmes /
-//         mèches ou mur intra-bar) et Rejet du prix (clôture opposée).
-//       - Surbrillance néon directe sur la cellule Footprint absorbée, badge
-//         "ABS ▲ / ▼" avec volume & delta, marqueur sur l'extrême de la bougie
-//         et rayon S/R projeté jusqu'à mitigation.
-//    4. Acheteurs & Vendeurs Piégés (Trapped Buyers & Trapped Sellers) :
-//       - Acheteurs Piégés (Trapped Buyers ▼ - Baissier) : Agressivité acheteuse
-//         forte (Ask >> Bid, imbalance diagonale acheteuse, delta positif) dans
-//         la mèche haute / extrême supérieur, suivie d'un rejet baissier (la
-//         bougie clôture nettement sous le cluster d'acheteurs piégés).
-//       - Vendeurs Piégés (Trapped Sellers ▲ - Haussier) : Agressivité vendeuse
-//         forte (Bid >> Ask, imbalance diagonale vendeuse, delta négatif) dans
-//         la mèche basse / extrême inférieur, suivie d'un rejet haussier (la
-//         bougie clôture nettement au-dessus du cluster de vendeurs piégés).
-//    5. Alerte Visuelle Achat / Vente & Flux d'Options ATAS X :
-//       - Intègre le flux d'options fourni par ATAS X via IOptionsDataFeed /
-//         Security (OptionTypes.Call / Put, StrikePrice, OpenInterest), les
-//         variations d'Open Interest (ΔOI = Candle.OI), les Sweeps / Block Trades
-//         (OnNewTrade / OnCumulativeTrade) et l'asymétrie Call Flow vs Put Flow.
-//       - Déclenche une Alerte Visuelle ACHAT ▲ (BUY) ou VENTE ▼ (SELL) sur le
-//         graphique (cartouche sur la bougie + bannière visuelle d'alerte +
-//         niveaux Entrée / Stop-Loss + alertes sonores ATAS X) lorsqu'une
-//         Heavy Absorption ou un Piégeage de Traders est confirmé par le Flux
-//         d'Options ATAS X.
-//    6. Panneau HUD temps réel + 8 Séries de données ATAS + Alertes sonores.
+//  Architecture exclusive (sans aucune règle de l'ancienne stratégie) :
+//    1. BigTrades Piégés (Losanges ◆) + Reversal (SEUL déclencheur de trades) :
+//       - ACHAT (▲ REVERSAL LONG) : Un gros BigTrade Sell (Losange Rouge ◆) est
+//         piégé / absorbé dans le bas du mouvement suivi d'un retournement haussier
+//         clôturant au-dessus du losange.
+//       - VENTE (▼ REVERSAL SHORT) : Un gros BigTrade Buy (Losange Vert ◆) est
+//         piégé / rejeté dans le haut du mouvement suivi d'un retournement baissier
+//         clôturant sous le losange.
+//    2. Indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL, 0 DTE & Profil GEX)
+//    3. Code HVN (High Volume Nodes) & LVN (Low Volume Nodes) (Intra-Bar & Composite)
+//    4. Outils Pratiques conservés :
+//       - Bouton d'activation du Bot sur la charte + Encadrement Horaire (Début/Fin)
+//       - Synchronisation du PnL Réel avec le Compte Actif ATAS + Trading Croisé Micro
+//       - Coupe-Circuit Max Drawdown ($) & Objectif Max PnL ($)
 // =============================================================================
+#pragma warning disable CS0414, CS0649
 
 using System;
 using System.Collections;
@@ -3991,37 +3967,6 @@ namespace ATAS.Indicators.Custom
                     continue;
                 rows[i].VolumeZScore = Math.Round((rows[i].Volume - avgLevelVol) / stdVol, 2);
                 rows[i].DeltaZScore = Math.Round((Math.Abs(rows[i].Delta) - (decimal)Math.Abs(meanDeltaD)) / stdDelta, 2);
-            }
-
-            // Agrégation Micro-Cluster Symétrique (2 ticks contigus sur CME / hors BTC lorsque le flux répartit un mur sur 2 niveaux)
-            bool useCmePooling = isCme && _enableCmeMicroClusterPooling && _ticksPerRow == 1 && count >= 5;
-
-            void GetSymmetricPooledLow(int idx, out decimal pBid, out decimal pAsk, out decimal pVol)
-            {
-                if (!useCmePooling || idx + 1 >= count)
-                {
-                    pBid = rows[idx].Bid;
-                    pAsk = rows[idx].Ask;
-                    pVol = rows[idx].Volume;
-                    return;
-                }
-                pBid = rows[idx].Bid + rows[idx + 1].Bid * 0.65m;
-                pAsk = rows[idx].Ask + rows[idx + 1].Ask * 0.65m;
-                pVol = pBid + pAsk;
-            }
-
-            void GetSymmetricPooledHigh(int idx, out decimal pBid, out decimal pAsk, out decimal pVol)
-            {
-                if (!useCmePooling || idx - 1 < 0)
-                {
-                    pBid = rows[idx].Bid;
-                    pAsk = rows[idx].Ask;
-                    pVol = rows[idx].Volume;
-                    return;
-                }
-                pBid = rows[idx].Bid + rows[idx - 1].Bid * 0.65m;
-                pAsk = rows[idx].Ask + rows[idx - 1].Ask * 0.65m;
-                pVol = pBid + pAsk;
             }
 
             // 1. Détection HVN Intra-Bougie
