@@ -1310,6 +1310,78 @@
           }
         });
 
+        // Draw BigTrades Concentric Diamonds (◆) on Bar (matching ATAS X BigTradesReversalOptionsBot)
+        let hasBigTradeBullTrap = false;
+        let hasBigTradeBearTrap = false;
+        let bigTradeDomLots = 0;
+
+        if (bar.bigTrades && bar.bigTrades.length > 0) {
+          bar.bigTrades.forEach(bt => {
+            if (bt.lots < bigTradeMinLots) return;
+            if (bt.trapped && !bt.isBuy && isBullBar && bar.closeIdx < bt.rowIdx) {
+              hasBigTradeBullTrap = true;
+              bigTradeDomLots = Math.max(bigTradeDomLots, bt.lots);
+            } else if (bt.trapped && bt.isBuy && !isBullBar && bar.closeIdx > bt.rowIdx) {
+              hasBigTradeBearTrap = true;
+              bigTradeDomLots = Math.max(bigTradeDomLots, bt.lots);
+            }
+
+            if (!showBigTrades) return;
+            const yCenter = topPad + bt.rowIdx * rowH + rowH / 2;
+            const halfR = Math.min(18, Math.max(10, Math.round(10 + (bt.lots - bigTradeMinLots) * 0.14)));
+            const outerR = halfR + 4;
+            const fillCol = bt.isBuy ? "rgba(16, 185, 129, 0.88)" : "rgba(239, 68, 68, 0.88)";
+            const glowCol = bt.isBuy ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.35)";
+            const borderCol = bt.trapped ? "#fbbf24" : "#ffffff";
+
+            // Outer diamond glow
+            ctx.fillStyle = glowCol;
+            ctx.beginPath();
+            ctx.moveTo(xMid, yCenter - outerR);
+            ctx.lineTo(xMid + outerR, yCenter);
+            ctx.lineTo(xMid, yCenter + outerR);
+            ctx.lineTo(xMid - outerR, yCenter);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = bt.isBuy ? "#10b981" : "#ef4444";
+            ctx.lineWidth = 1.3;
+            ctx.stroke();
+
+            // Inner core diamond
+            ctx.fillStyle = fillCol;
+            ctx.beginPath();
+            ctx.moveTo(xMid, yCenter - halfR);
+            ctx.lineTo(xMid + halfR, yCenter);
+            ctx.lineTo(xMid, yCenter + halfR);
+            ctx.lineTo(xMid - halfR, yCenter);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = borderCol;
+            ctx.lineWidth = bt.trapped ? 2.2 : 1.4;
+            ctx.stroke();
+
+            // Center white dot
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(xMid, yCenter, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Lot pill tag
+            const lbl = bt.trapped ? `◆ ${bt.lots} PIÉGÉ` : `◆ ${bt.lots}L`;
+            ctx.font = "bold 8.5px Consolas, monospace";
+            const tw = ctx.measureText(lbl).width + 8;
+            const lx = xMid - tw / 2;
+            const ly = bt.isBuy ? (yCenter - outerR - 14) : (yCenter + outerR + 2);
+            ctx.fillStyle = "rgba(10, 15, 28, 0.92)";
+            ctx.fillRect(lx, ly, tw, 13);
+            ctx.strokeStyle = borderCol;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(lx, ly, tw, 13);
+            ctx.fillStyle = bt.trapped ? "#fde047" : "#ffffff";
+            ctx.fillText(lbl, lx + 4, ly + 9.5);
+          });
+        }
+
         // Check if current bar falls inside the Bot Schedule Window
         const barInSched = isBarInSchedule(bar.time, startStr, endStr);
         if (chartScheduleEnabled && !barInSched) {
@@ -1317,21 +1389,23 @@
           ctx.fillRect(xLeft, topPad, cellW, prices.length * rowH);
         }
 
-        // Evaluate Visual Buy / Sell Signal taking into account ATAS X Options Flow, Trapped Traders & HVN/LVN
+        // Evaluate Visual Buy / Sell Signal taking into account BigTrades Piégés (◆), Reversal, Options X-Ray & HVN/LVN
         if (showBuySell) {
           const hasBullHvnLvn = barHasHvnSupport && barHasBullLvnRej && isBullBar;
           const hasBearHvnLvn = barHasHvnRes && barHasBearLvnRej && !isBullBar;
-          const hasBull = barAbsSide > 0 || barTrapSide > 0 || hasBullHvnLvn;
-          const hasBear = barAbsSide < 0 || barTrapSide < 0 || hasBearHvnLvn;
-          const effOptFloor = barTrapSide !== 0 ? Math.min(optDom, 50) : optDom;
+          const hasBull = hasBigTradeBullTrap || barAbsSide > 0 || barTrapSide > 0 || hasBullHvnLvn;
+          const hasBear = hasBigTradeBearTrap || barAbsSide < 0 || barTrapSide < 0 || hasBearHvnLvn;
+          const effOptFloor = (hasBigTradeBullTrap || hasBigTradeBearTrap || barTrapSide !== 0) ? Math.min(optDom, 50) : optDom;
 
           if (hasBull && !hasBear && bar.callPct >= effOptFloor) {
             totalBuySignals++;
-            const score = Math.min(98, 68 + Math.round((bar.callPct - 50) * 0.8) + (barAbsSide > 0 && barTrapSide > 0 ? 8 : 0) + (barHasBullLvnRej ? 4 : 0));
+            const score = Math.min(99, 72 + Math.round((bar.callPct - 50) * 0.8) + (hasBigTradeBullTrap ? 10 : 0) + (barAbsSide > 0 && barTrapSide > 0 ? 6 : 0) + (barHasBullLvnRej ? 4 : 0));
             const structTag = barHasBullLvnRej ? "HVN+LVN▲" : "HVN/POC▲";
-            const reasonStr = (barAbsSide > 0 && barTrapSide > 0)
-              ? `ABS▲+V.PIÉGÉS▲ + ${structTag}`
-              : (barTrapSide > 0 ? `V.PIÉGÉS▲ + ${structTag}` : (barAbsSide > 0 ? `ABS BID▲ + ${structTag}` : `${structTag} REJECT`));
+            const reasonStr = hasBigTradeBullTrap
+              ? `◆ BIGTRADE PIÉGÉ (${bigTradeDomLots}L) + REVERSAL▲ + ${structTag}`
+              : ((barAbsSide > 0 && barTrapSide > 0)
+                ? `ABS▲+V.PIÉGÉS▲ + ${structTag}`
+                : (barTrapSide > 0 ? `V.PIÉGÉS▲ + ${structTag}` : (barAbsSide > 0 ? `ABS BID▲ + ${structTag}` : `${structTag} REJECT`)));
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1342,7 +1416,7 @@
               entryIdx: bar.closeIdx,
               stopIdx: Math.min(prices.length - 1, bar.lowIdx + 1),
               entryPrice: prices[bar.closeIdx],
-              stopPrice: (prices[bar.lowIdx] - 0.50),
+              stopPrice: (prices[bar.lowIdx] - 5.00),
               lowIdx: bar.lowIdx,
               highIdx: bar.highIdx,
               score,
@@ -1351,17 +1425,21 @@
               pcr: bar.pcr,
               oiDelta: bar.oiDelta,
               sweeps: bar.sweeps,
+              isBigTradeReversal: hasBigTradeBullTrap,
+              bigTradeLots: bigTradeDomLots,
               reason: reasonStr
             };
             lastTradeSignal = sig;
             tradeSignalsToDraw.push(sig);
           } else if (hasBear && !hasBull && bar.putPct >= effOptFloor) {
             totalSellSignals++;
-            const score = Math.min(98, 68 + Math.round((bar.putPct - 50) * 0.8) + (barAbsSide < 0 && barTrapSide < 0 ? 8 : 0) + (barHasBearLvnRej ? 4 : 0));
+            const score = Math.min(99, 72 + Math.round((bar.putPct - 50) * 0.8) + (hasBigTradeBearTrap ? 10 : 0) + (barAbsSide < 0 && barTrapSide < 0 ? 6 : 0) + (barHasBearLvnRej ? 4 : 0));
             const structTag = barHasBearLvnRej ? "HVN+LVN▼" : "HVN/POC▼";
-            const reasonStr = (barAbsSide < 0 && barTrapSide < 0)
-              ? `ABS▼+A.PIÉGÉS▼ + ${structTag}`
-              : (barTrapSide < 0 ? `A.PIÉGÉS▼ + ${structTag}` : (barAbsSide < 0 ? `ABS ASK▼ + ${structTag}` : `${structTag} REJECT`));
+            const reasonStr = hasBigTradeBearTrap
+              ? `◆ BIGTRADE PIÉGÉ (${bigTradeDomLots}L) + REVERSAL▼ + ${structTag}`
+              : ((barAbsSide < 0 && barTrapSide < 0)
+                ? `ABS▼+A.PIÉGÉS▼ + ${structTag}`
+                : (barTrapSide < 0 ? `A.PIÉGÉS▼ + ${structTag}` : (barAbsSide < 0 ? `ABS ASK▼ + ${structTag}` : `${structTag} REJECT`)));
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1372,7 +1450,7 @@
               entryIdx: bar.closeIdx,
               stopIdx: Math.max(0, bar.highIdx - 1),
               entryPrice: prices[bar.closeIdx],
-              stopPrice: (prices[bar.highIdx] + 0.50),
+              stopPrice: (prices[bar.highIdx] + 5.00),
               lowIdx: bar.lowIdx,
               highIdx: bar.highIdx,
               score,
@@ -1381,6 +1459,8 @@
               pcr: bar.pcr,
               oiDelta: bar.oiDelta,
               sweeps: bar.sweeps,
+              isBigTradeReversal: hasBigTradeBearTrap,
+              bigTradeLots: bigTradeDomLots,
               reason: reasonStr
             };
             lastTradeSignal = sig;
