@@ -544,14 +544,6 @@
 
           <div class="control-group">
             <div class="control-label">
-              <span style="color: #00ff88;">Dominance Min Flux Calls/Puts (%)</span>
-              <span class="control-val" id="valOptDom">53%</span>
-            </div>
-            <input type="range" id="rngOptDom" min="50" max="80" value="53" />
-          </div>
-
-          <div class="control-group">
-            <div class="control-label">
               <span>Seuil HVN (% du POC Bougie)</span>
               <span class="control-val" id="valHvn">70%</span>
             </div>
@@ -564,22 +556,6 @@
               <span class="control-val" id="valLvn">25%</span>
             </div>
             <input type="range" id="rngLvn" min="5" max="50" value="25" />
-          </div>
-
-          <div class="control-group">
-            <div class="control-label">
-              <span>Multiplicateur Heavy Absorption</span>
-              <span class="control-val" id="valAbsMult">1.5x</span>
-            </div>
-            <input type="range" id="rngAbsMult" min="12" max="30" value="15" />
-          </div>
-
-          <div class="control-group">
-            <div class="control-label">
-              <span>Multiplicateur Traders Piégés (Mèche)</span>
-              <span class="control-val" id="valTrapMult">0.65x</span>
-            </div>
-            <input type="range" id="rngTrapMult" min="5" max="20" value="6.5" step="0.5" />
           </div>
 
           <div class="control-group">
@@ -617,7 +593,7 @@
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBuySell" checked />
-              <span style="color: #00ff88; font-weight: 700;">★ Signaux Reversal ACHAT ▲ / VENTE ▼</span>
+              <span style="color: #00ff88; font-weight: 700;">★ Signaux Reversal BigTrades Piégés (ACHAT ▲ / VENTE ▼)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBanner" checked />
@@ -626,18 +602,6 @@
             <label class="toggle-item">
               <input type="checkbox" id="chkEntrySl" checked />
               <span>Afficher Niveaux Prix d'Entrée &amp; Stop-Loss (SL)</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkTrapped" checked />
-              <span style="color: #10f596; font-weight: 600;">Afficher Acheteurs &amp; Vendeurs Piégés (▲/▼)</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkAbs" checked />
-              <span>Afficher Heavy Absorption (Bid / Ask)</span>
-            </label>
-            <label class="toggle-item">
-              <input type="checkbox" id="chkRays" checked />
-              <span>Projeter Rayons HVN Zone &amp; LVN Pocket</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBarHvn" checked />
@@ -665,7 +629,7 @@
               <div class="chart-bot-actions">
                 <button type="button" id="btnChartBotToggle" class="chart-bot-btn" onclick="toggleBotFromChart()">
                   <span class="led" id="ledChartBot"></span>
-                  <span id="lblChartBotToggle">🤖 BOT QUANT : ON (ACTIF)</span>
+                  <span id="lblChartBotToggle">🤖 BOT BIGTRADES : ON (ACTIF)</span>
                 </button>
                 <button type="button" id="btnChartBotMode" class="chart-sub-btn" onclick="toggleBotModeFromChart()">
                   ⚡ MODE : SIM / PAPER
@@ -1047,22 +1011,16 @@
 
     function analyzeAndRender() {
       const bigTradeMinLots = parseInt((document.getElementById("rngBigTradeLots") || { value: 40 }).value, 10);
-      const optDom = parseInt(document.getElementById("rngOptDom").value, 10);
       const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
       const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
-      const absMult = parseInt(document.getElementById("rngAbsMult").value, 10) / 10;
-      const trapMult = parseInt(document.getElementById("rngTrapMult").value, 10) / 10;
       const maxDdLimit = parseInt(document.getElementById("rngMaxDd").value, 10);
       const maxPnlLimit = parseInt(document.getElementById("rngMaxPnl").value, 10);
 
       if (document.getElementById("valBigTradeLots")) {
         document.getElementById("valBigTradeLots").textContent = bigTradeMinLots + " lots";
       }
-      document.getElementById("valOptDom").textContent = optDom + "%";
       document.getElementById("valHvn").textContent = hvnPct + "%";
       document.getElementById("valLvn").textContent = lvnPct + "%";
-      document.getElementById("valAbsMult").textContent = absMult.toFixed(1) + "x";
-      document.getElementById("valTrapMult").textContent = trapMult.toFixed(2) + "x";
       document.getElementById("valMaxDd").textContent = "-" + maxDdLimit + "$";
       document.getElementById("valMaxPnl").textContent = "+" + maxPnlLimit + "$";
 
@@ -1073,10 +1031,7 @@
       const showBuySell = document.getElementById("chkBuySell").checked;
       const showBanner = document.getElementById("chkBanner").checked;
       const showEntrySl = document.getElementById("chkEntrySl").checked;
-      const showTrapped = document.getElementById("chkTrapped").checked;
       const showBarHvn = document.getElementById("chkBarHvn").checked;
-      const showAbs = document.getElementById("chkAbs").checked;
-      const showRays = document.getElementById("chkRays").checked;
       const showHud = document.getElementById("chkHud").checked;
 
       const startStr = (document.getElementById("inpBotStart") || {}).value || "15:30";
@@ -1119,16 +1074,12 @@
 
       let totalHvn = 0;
       let totalLvn = 0;
-      let totalBullAbs = 0;
-      let totalBearAbs = 0;
-      let totalTrapSell = 0;
-      let totalTrapBuy = 0;
+      let totalBigTradeSellTrapped = 0;
+      let totalBigTradeBuyTrapped = 0;
       let totalBuySignals = 0;
       let totalSellSignals = 0;
       let lastTradeSignal = null;
 
-      const absRays = [];
-      const trapRays = [];
       const tradeSignalsToDraw = [];
 
       const colStep = 156;
@@ -1141,30 +1092,23 @@
         const keys = Object.keys(bar.levels).map(Number).sort((a, b) => a - b);
         let pocVol = 0;
         let pocRow = -1;
-        let sumVol = 0;
 
         keys.forEach(r => {
           const tot = bar.levels[r].bid + bar.levels[r].ask;
-          sumVol += tot;
           if (tot > pocVol) {
             pocVol = tot;
             pocRow = r;
           }
         });
-        const avgVol = sumVol / keys.length;
 
         // O/C side bar
         const yOpen = topPad + bar.openIdx * rowH + rowH / 2;
         const yClose = topPad + bar.closeIdx * rowH + rowH / 2;
         const isBullBar = bar.closeIdx < bar.openIdx;
-        const bodyHighIdx = Math.min(bar.openIdx, bar.closeIdx);
-        const bodyLowIdx = Math.max(bar.openIdx, bar.closeIdx);
 
         ctx.fillStyle = isBullBar ? "#10b981" : "#ef4444";
         ctx.fillRect(xLeft - 6, Math.min(yOpen, yClose) - 6, 3, Math.abs(yClose - yOpen) + 12);
 
-        let barAbsSide = 0;
-        let barTrapSide = 0;
         let barHasHvnSupport = false;
         let barHasHvnRes = false;
         let barHasBullLvnRej = false;
@@ -1195,81 +1139,13 @@
             if (r <= midRowIdx && bar.closeIdx > r) barHasBearLvnRej = true;
           }
 
-          let absSide = 0;
-          if (showAbs && tot >= avgVol * absMult) {
-            const inLower = r >= bar.lowIdx - 1;
-            const inUpper = r <= bar.highIdx + 1;
-            if (inLower && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 57 && bar.closeIdx <= r) absSide = 1;
-            else if (inUpper && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 57 && bar.closeIdx >= r) absSide = -1;
-          }
-
-          let trapSide = 0;
-          if (showTrapped && tot >= avgVol * Math.min(trapMult, 0.85)) {
-            const inLowerTrap = (r >= bodyLowIdx - 1 || r >= bar.lowIdx - 2) && bar.closeIdx <= r - 1;
-            const inUpperTrap = (r <= bodyHighIdx + 1 || r <= bar.highIdx + 2) && bar.closeIdx >= r + 1;
-            if (inLowerTrap && lv.bid > lv.ask && Math.round((lv.bid / tot) * 100) >= 56) trapSide = 1;
-            else if (inUpperTrap && lv.ask > lv.bid && Math.round((lv.ask / tot) * 100) >= 56) trapSide = -1;
-          }
-
           ctx.fillStyle = "rgba(22, 31, 51, 0.82)";
           ctx.fillRect(xLeft, yTop, cellW, h);
           ctx.strokeStyle = "rgba(51, 65, 85, 0.6)";
           ctx.lineWidth = 1;
           ctx.strokeRect(xLeft, yTop, cellW, h);
 
-          if (absSide !== 0) {
-            barAbsSide = absSide;
-            if (absSide > 0) totalBullAbs++; else totalBearAbs++;
-            if (trapSide !== 0) {
-              barTrapSide = trapSide;
-              if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
-            }
-
-            const col = absSide > 0 ? "#00f0ff" : "#ff2d87";
-            ctx.fillStyle = absSide > 0 ? "rgba(0, 240, 255, 0.34)" : "rgba(255, 45, 135, 0.34)";
-            ctx.fillRect(xLeft, yTop, cellW, h);
-            ctx.strokeStyle = col;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(xLeft, yTop, cellW, h);
-            ctx.fillStyle = col;
-            ctx.fillRect(xLeft, yTop, 4, h);
-
-            if (trapSide !== 0) {
-              ctx.fillStyle = trapSide > 0 ? "#10f596" : "#ff5a36";
-              ctx.fillRect(xLeft + cellW - 4, yTop, 4, h);
-            }
-
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 9.5px Consolas, monospace";
-            const prefix = trapSide !== 0
-              ? (absSide > 0 ? "ABS+PIÉGÉ▲ " : "ABS+PIÉGÉ▼ ")
-              : (absSide > 0 ? "ABS▲ " : "ABS▼ ");
-            ctx.fillText(prefix + lv.bid + "x" + lv.ask, xLeft + 6, yTop + h / 2 + 3.5);
-
-            absRays.push({ rowIdx: r, price: prices[r], side: absSide, xStart: xLeft + cellW });
-          } else if (trapSide !== 0) {
-            barTrapSide = trapSide;
-            if (trapSide > 0) totalTrapSell++; else totalTrapBuy++;
-            const col = trapSide > 0 ? "#10f596" : "#ff5a36";
-            ctx.fillStyle = trapSide > 0 ? "rgba(16, 245, 150, 0.28)" : "rgba(255, 90, 54, 0.28)";
-            ctx.fillRect(xLeft, yTop, cellW, h);
-
-            ctx.save();
-            ctx.setLineDash([5, 2]);
-            ctx.strokeStyle = col;
-            ctx.lineWidth = 1.8;
-            ctx.strokeRect(xLeft, yTop, cellW, h);
-            ctx.restore();
-
-            ctx.fillStyle = col;
-            ctx.fillRect(xLeft + cellW - 4, yTop, 4, h);
-
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 9.5px Consolas, monospace";
-            ctx.fillText((trapSide > 0 ? "V.PIÉGÉS▲ " : "A.PIÉGÉS▼ ") + lv.bid + "x" + lv.ask, xLeft + 5, yTop + h / 2 + 3.5);
-
-            trapRays.push({ rowIdx: r, price: prices[r], side: trapSide, xStart: xLeft + cellW });
-          } else if (isHvn) {
+          if (isHvn) {
             totalHvn++;
             const col = isPoc ? "#ff8c00" : "#f59e0b";
             ctx.fillStyle = isPoc ? "rgba(255, 140, 0, 0.32)" : "rgba(245, 158, 11, 0.24)";
@@ -1320,9 +1196,11 @@
             if (bt.lots < bigTradeMinLots) return;
             if (bt.trapped && !bt.isBuy && isBullBar && bar.closeIdx < bt.rowIdx) {
               hasBigTradeBullTrap = true;
+              totalBigTradeSellTrapped++;
               bigTradeDomLots = Math.max(bigTradeDomLots, bt.lots);
             } else if (bt.trapped && bt.isBuy && !isBullBar && bar.closeIdx > bt.rowIdx) {
               hasBigTradeBearTrap = true;
+              totalBigTradeBuyTrapped++;
               bigTradeDomLots = Math.max(bigTradeDomLots, bt.lots);
             }
 
@@ -1389,23 +1267,13 @@
           ctx.fillRect(xLeft, topPad, cellW, prices.length * rowH);
         }
 
-        // Evaluate Visual Buy / Sell Signal taking into account BigTrades Piégés (◆), Reversal, Options X-Ray & HVN/LVN
+        // STRICTLY AND ONLY open trades on BigTrades Piégés (◆) + Reversal!
         if (showBuySell) {
-          const hasBullHvnLvn = barHasHvnSupport && barHasBullLvnRej && isBullBar;
-          const hasBearHvnLvn = barHasHvnRes && barHasBearLvnRej && !isBullBar;
-          const hasBull = hasBigTradeBullTrap || barAbsSide > 0 || barTrapSide > 0 || hasBullHvnLvn;
-          const hasBear = hasBigTradeBearTrap || barAbsSide < 0 || barTrapSide < 0 || hasBearHvnLvn;
-          const effOptFloor = (hasBigTradeBullTrap || hasBigTradeBearTrap || barTrapSide !== 0) ? Math.min(optDom, 50) : optDom;
-
-          if (hasBull && !hasBear && bar.callPct >= effOptFloor) {
+          if (hasBigTradeBullTrap && !hasBigTradeBearTrap) {
             totalBuySignals++;
-            const score = Math.min(99, 72 + Math.round((bar.callPct - 50) * 0.8) + (hasBigTradeBullTrap ? 10 : 0) + (barAbsSide > 0 && barTrapSide > 0 ? 6 : 0) + (barHasBullLvnRej ? 4 : 0));
-            const structTag = barHasBullLvnRej ? "HVN+LVN▲" : "HVN/POC▲";
-            const reasonStr = hasBigTradeBullTrap
-              ? `◆ BIGTRADE PIÉGÉ (${bigTradeDomLots}L) + REVERSAL▲ + ${structTag}`
-              : ((barAbsSide > 0 && barTrapSide > 0)
-                ? `ABS▲+V.PIÉGÉS▲ + ${structTag}`
-                : (barTrapSide > 0 ? `V.PIÉGÉS▲ + ${structTag}` : (barAbsSide > 0 ? `ABS BID▲ + ${structTag}` : `${structTag} REJECT`)));
+            const score = Math.min(99, 82 + Math.min(12, Math.round((bigTradeDomLots - bigTradeMinLots) * 0.25)) + (barHasHvnSupport ? 3 : 0) + (barHasBullLvnRej ? 2 : 0));
+            const structTag = barHasBullLvnRej ? "HVN+LVN▲" : "PUT WALL / HVN▲";
+            const reasonStr = `◆ BIGTRADE SELL PIÉGÉ (${bigTradeDomLots}L) + REVERSAL ▲ + ${structTag}`;
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1420,26 +1288,17 @@
               lowIdx: bar.lowIdx,
               highIdx: bar.highIdx,
               score,
-              callPct: bar.callPct,
-              putPct: bar.putPct,
-              pcr: bar.pcr,
-              oiDelta: bar.oiDelta,
-              sweeps: bar.sweeps,
-              isBigTradeReversal: hasBigTradeBullTrap,
+              isBigTradeReversal: true,
               bigTradeLots: bigTradeDomLots,
               reason: reasonStr
             };
             lastTradeSignal = sig;
             tradeSignalsToDraw.push(sig);
-          } else if (hasBear && !hasBull && bar.putPct >= effOptFloor) {
+          } else if (hasBigTradeBearTrap && !hasBigTradeBullTrap) {
             totalSellSignals++;
-            const score = Math.min(99, 72 + Math.round((bar.putPct - 50) * 0.8) + (hasBigTradeBearTrap ? 10 : 0) + (barAbsSide < 0 && barTrapSide < 0 ? 6 : 0) + (barHasBearLvnRej ? 4 : 0));
-            const structTag = barHasBearLvnRej ? "HVN+LVN▼" : "HVN/POC▼";
-            const reasonStr = hasBigTradeBearTrap
-              ? `◆ BIGTRADE PIÉGÉ (${bigTradeDomLots}L) + REVERSAL▼ + ${structTag}`
-              : ((barAbsSide < 0 && barTrapSide < 0)
-                ? `ABS▼+A.PIÉGÉS▼ + ${structTag}`
-                : (barTrapSide < 0 ? `A.PIÉGÉS▼ + ${structTag}` : (barAbsSide < 0 ? `ABS ASK▼ + ${structTag}` : `${structTag} REJECT`)));
+            const score = Math.min(99, 82 + Math.min(12, Math.round((bigTradeDomLots - bigTradeMinLots) * 0.25)) + (barHasHvnRes ? 3 : 0) + (barHasBearLvnRej ? 2 : 0));
+            const structTag = barHasBearLvnRej ? "HVN+LVN▼" : "CALL WALL / HVN▼";
+            const reasonStr = `◆ BIGTRADE BUY PIÉGÉ (${bigTradeDomLots}L) + REVERSAL ▼ + ${structTag}`;
             const sig = {
               barIdx: bIdx,
               barTime: bar.time,
@@ -1454,12 +1313,7 @@
               lowIdx: bar.lowIdx,
               highIdx: bar.highIdx,
               score,
-              callPct: bar.callPct,
-              putPct: bar.putPct,
-              pcr: bar.pcr,
-              oiDelta: bar.oiDelta,
-              sweeps: bar.sweeps,
-              isBigTradeReversal: hasBigTradeBearTrap,
+              isBigTradeReversal: true,
               bigTradeLots: bigTradeDomLots,
               reason: reasonStr
             };
@@ -1468,7 +1322,7 @@
           }
         }
 
-        // Time + Options Flow mini footer per bar
+        // Time + BigTrade status footer per bar
         ctx.fillStyle = (!chartScheduleEnabled || barInSched) ? "#94a3b8" : "#f59e0b";
         ctx.font = "11px Consolas, monospace";
         ctx.fillText(
@@ -1477,42 +1331,13 @@
           canvas.height - 24
         );
 
-        const isCallDom = bar.callPct >= 50;
-        ctx.fillStyle = isCallDom ? "#00ff88" : "#ff6b8b";
+        const btTag = hasBigTradeBullTrap
+          ? `◆ SELL ${bigTradeDomLots}L PIÉGÉ ▲`
+          : (hasBigTradeBearTrap ? `◆ BUY ${bigTradeDomLots}L PIÉGÉ ▼` : "HVN / LVN / GEX");
+        ctx.fillStyle = hasBigTradeBullTrap ? "#00ff88" : (hasBigTradeBearTrap ? "#ff6b8b" : "#64748b");
         ctx.font = "bold 9.5px Consolas, monospace";
-        const optTxt = isCallDom
-          ? `Calls ${bar.callPct}% (PCR ${bar.pcr})`
-          : `Puts ${bar.putPct}% (PCR ${bar.pcr})`;
-        ctx.fillText(optTxt, xLeft + 6, canvas.height - 9);
+        ctx.fillText(btTag, xLeft + 8, canvas.height - 9);
       });
-
-      // Draw Projected S/R & Trapped Rays
-      if (showRays) {
-        absRays.forEach(ray => {
-          const y = topPad + ray.rowIdx * rowH + rowH / 2;
-          const col = ray.side > 0 ? "#00f0ff" : "#ff2d87";
-          ctx.strokeStyle = col;
-          ctx.lineWidth = 1.8;
-          ctx.beginPath();
-          ctx.moveTo(ray.xStart, y);
-          ctx.lineTo(priceAxisX - 6, y);
-          ctx.stroke();
-        });
-
-        trapRays.forEach(ray => {
-          const y = topPad + ray.rowIdx * rowH + rowH / 2;
-          const col = ray.side > 0 ? "#10f596" : "#ff5a36";
-          ctx.save();
-          ctx.setLineDash([5, 4]);
-          ctx.strokeStyle = col;
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.moveTo(ray.xStart, y);
-          ctx.lineTo(priceAxisX - 6, y);
-          ctx.stroke();
-          ctx.restore();
-        });
-      }
 
       // Draw Visual Buy / Sell Callouts & Entry/Stop levels
       tradeSignalsToDraw.forEach(sig => {
@@ -1545,7 +1370,7 @@
           ctx.restore();
         }
 
-        const boxW = 136;
+        const boxW = 140;
         const boxH = 34;
         const boxX = sig.xMid - boxW / 2;
         const yAnchor = isBuy
@@ -1571,16 +1396,16 @@
         ctx.fillStyle = col;
         ctx.fillRect(boxX, boxY, boxW, 3);
 
-        ctx.font = "bold 10px Consolas, monospace";
+        ctx.font = "bold 9.5px Consolas, monospace";
         ctx.fillStyle = col;
-        const l1 = isBuy ? `★ ACHAT ▲ [${sig.score}%]` : `★ VENTE ▼ [${sig.score}%]`;
-        ctx.fillText(l1, boxX + 9, boxY + 14);
+        const l1 = isBuy ? `▲ REVERSAL LONG [${sig.score}%]` : `▼ REVERSAL SHORT [${sig.score}%]`;
+        ctx.fillText(l1, boxX + 6, boxY + 14);
 
-        ctx.font = "9.5px Consolas, monospace";
-        ctx.fillStyle = "#ffffff";
+        ctx.font = "9px Consolas, monospace";
+        ctx.fillStyle = "#fde047";
         const l2 = isBuy
-          ? `Calls ${sig.callPct}% | PCR ${sig.pcr}`
-          : `Puts ${sig.putPct}% | PCR ${sig.pcr}`;
+          ? `◆ Sell ${sig.bigTradeLots}L Piégé + HVN`
+          : `◆ Buy ${sig.bigTradeLots}L Piégé + Wall`;
         ctx.fillText(l2, boxX + 7, boxY + 28);
       });
 
@@ -1671,7 +1496,7 @@
       } else if (showBot && eligibleBotSignals.length === 0) {
         botStatus = `PAUSE HORS PLAGE (${startStr} → ${endStr})`;
       } else if (!showBot) {
-        botStatus = "DÉSACTIVÉ (Cliquez sur [BOT QUANT: OFF] sur la charte)";
+        botStatus = "DÉSACTIVÉ (Cliquez sur [BOT BIGTRADES: OFF] sur la charte)";
       }
 
       // Active Account Real PnL Synchronization (TradingManager.Portfolio & Position)
@@ -1713,11 +1538,11 @@
         if (showBot) {
           btnToggle.classList.remove("off");
           lblToggle.textContent = botHaltedDd
-            ? "🤖 BOT QUANT : STOP DD MAX"
-            : (botHaltedPnl ? "🤖 BOT QUANT : LOCK PNL MAX" : "🤖 BOT QUANT : ON (ACTIF)");
+            ? "🤖 BOT BIGTRADES : STOP DD MAX"
+            : (botHaltedPnl ? "🤖 BOT BIGTRADES : LOCK PNL MAX" : "🤖 BOT BIGTRADES : ON (ACTIF)");
         } else {
           btnToggle.classList.add("off");
-          lblToggle.textContent = "🤖 BOT QUANT : OFF (CLIQUEZ)";
+          lblToggle.textContent = "🤖 BOT BIGTRADES : OFF (CLIQUEZ)";
         }
       }
       if (btnMode) {
@@ -1784,7 +1609,7 @@
       ctx.font = "bold 9.5px Consolas, monospace";
       ctx.fillStyle = "#ffffff";
       ctx.fillText(
-        showBot ? "BOT QUANT : ON (ACTIF)" : "BOT QUANT : OFF (CLIQUEZ)",
+        showBot ? "BOT BIGTRADES : ON" : "BOT BIGTRADES : OFF",
         canvasBotToggleRect.x + 24,
         canvasBotToggleRect.y + 16
       );
@@ -1974,13 +1799,13 @@
         ctx.font = "bold 10.5px Consolas, monospace";
         ctx.fillStyle = col;
         const title = isBuy
-          ? `▲ ALERTE VISUELLE ACHAT @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`
-          : `▼ ALERTE VISUELLE VENTE @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)} (${lastTradeSignal.score}%)`;
+          ? `▲ REVERSAL ACHAT (BIGTRADE PIÉGÉ ◆) @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)}`
+          : `▼ REVERSAL VENTE (BIGTRADE PIÉGÉ ◆) @ ${lastTradeSignal.entryPrice.toFixed(2)} | SL ${lastTradeSignal.stopPrice.toFixed(2)}`;
         ctx.fillText(title, bx + 12, by + 16);
 
         ctx.font = "9.5px Consolas, monospace";
-        ctx.fillStyle = "#e2e8f0";
-        const sub = `Flux Options ATAS X: Calls ${lastTradeSignal.callPct}% / Puts ${lastTradeSignal.putPct}% (PCR ${lastTradeSignal.pcr}) | ΔOI ${lastTradeSignal.oiDelta > 0 ? "+" : ""}${lastTradeSignal.oiDelta}`;
+        ctx.fillStyle = "#fde047";
+        const sub = `${lastTradeSignal.reason} | Options X-Ray: CW 28050 • MP 27900 • PW 27850`;
         ctx.fillText(sub, bx + 12, by + 32);
       }
 
@@ -2020,16 +1845,15 @@
         ctx.fillText(`Options X-Ray: CW 28050 (+15M) | MP 27900 | PW 27850 (-69.5M)`, hx + 10, hy + 47);
 
         ctx.fillStyle = "#10f596";
-        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy} | 0 DTE=1226pts`, hx + 10, hy + 62);
+        ctx.fillText(`BigTrades Sell Piégés ▲: ${totalBigTradeSellTrapped} | Buy Piégés ▼: ${totalBigTradeBuyTrapped}`, hx + 10, hy + 62);
 
-        const lastBar = bars[bars.length - 1];
         ctx.font = "bold 9.5px Consolas, monospace";
-        ctx.fillStyle = lastBar.callPct >= 50 ? "#00ff88" : "#ff6b8b";
-        ctx.fillText(`Flux Options ATAS X: Calls ${lastBar.callPct}% / Puts ${lastBar.putPct}% (PCR ${lastBar.pcr})`, hx + 10, hy + 78);
+        ctx.fillStyle = "#a7f3d0";
+        ctx.fillText(`0 DTE = 1226pts · MP 27900 | Stratégie: BigTrades ◆ + Reversal`, hx + 10, hy + 78);
 
         ctx.fillStyle = "#7dd3fc";
         ctx.fillText(
-          `Signaux Reversal: ▲${totalBuySignals} ▼${totalSellSignals} | Plage: ${chartScheduleEnabled ? `${startStr}→${endStr}` : "24h/24"}`,
+          `Trades Reversal ◆: ▲${totalBuySignals} ▼${totalSellSignals} | Plage: ${chartScheduleEnabled ? `${startStr}→${endStr}` : "24h/24"}`,
           hx + 10,
           hy + 94
         );
@@ -2244,7 +2068,7 @@
       }
     });
 
-    ["rngBigTradeLots", "rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBigTrades", "chkOptionsXRay", "chkDomTags", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud", "inpBotStart", "inpBotEnd"]
+    ["rngBigTradeLots", "rngHvn", "rngLvn", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBigTrades", "chkOptionsXRay", "chkDomTags", "chkBuySell", "chkBanner", "chkEntrySl", "chkBarHvn", "chkHud", "inpBotStart", "inpBotEnd"]
       .forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener("input", analyzeAndRender);
