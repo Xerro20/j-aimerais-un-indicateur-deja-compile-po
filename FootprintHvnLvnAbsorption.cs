@@ -523,6 +523,65 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
+        // 7b. BIGTRADES PIÉGÉS (LOSANGES ◆) & REVERSAL (COMME SUR LA PHOTO NQ)
+        // =====================================================================
+        private bool _enableBigTradesReversal = true;
+        [Display(Name = "Activer BigTrades Piégés (Losanges ◆) + Reversal", GroupName = GrpBigTrades, Order = 10,
+            Description = "Détecte les BigTrades institutionnels (losanges rouges/verts ◆ sur le Footprint ou le Tape > 40 lots sur NQ) qui se retrouvent piégés en mèche/extrême et déclenche un trade Reversal avec HVN/LVN et Options X-Ray.")]
+        public bool EnableBigTradesReversal
+        {
+            get => _enableBigTradesReversal;
+            set { _enableBigTradesReversal = value; RecalculateValues(); RedrawChart(); }
+        }
+
+        private int _bigTradeMinLots = 40;
+        [Display(Name = "Seuil Minimum BigTrade (Lots — ex: 40 lots sur NQ)", GroupName = GrpBigTrades, Order = 20,
+            Description = "Seuil de volume agressif (ex: 40 lots sur NQ comme l'alerte 'New BigTrade at ... is more than 40 lots' de la capture) pour afficher un losange BigTrade ◆ et qualifier un BigTrade Piégé.")]
+        [Range(1, 50000)]
+        public int BigTradeMinLots
+        {
+            get => _bigTradeMinLots;
+            set { _bigTradeMinLots = Math.Max(1, value); RecalculateValues(); RedrawChart(); }
+        }
+
+        private bool _bigTradeAutoScaleByMarket = true;
+        [Display(Name = "Calibrer automatiquement le seuil BigTrade selon le contrat", GroupName = GrpBigTrades, Order = 30,
+            Description = "Adapte automatiquement le seuil BigTrade aux différents contrats (NQ = 40 lots, ES = 85 lots, MNQ = 120 lots, MES = 150 lots, GC/CL = 25 lots) tout en respectant le seuil personnalisé sur NQ.")]
+        public bool BigTradeAutoScaleByMarket
+        {
+            get => _bigTradeAutoScaleByMarket;
+            set { _bigTradeAutoScaleByMarket = value; RecalculateValues(); RedrawChart(); }
+        }
+
+        private int _bigTradeReversalLookbackBars = 3;
+        [Display(Name = "Fenêtre Multi-Bougies pour Reversal sur BigTrade Piégé (bougies)", GroupName = GrpBigTrades, Order = 40,
+            Description = "Permet de déclencher le Reversal lorsque le losange BigTrade apparaît sur la bougie courante OU sur les 1 à 3 bougies précédentes et que la bougie actuelle confirme le retournement au-delà du losange piégé.")]
+        [Range(1, 6)]
+        public int BigTradeReversalLookbackBars
+        {
+            get => _bigTradeReversalLookbackBars;
+            set { _bigTradeReversalLookbackBars = Math.Clamp(value, 1, 6); RecalculateValues(); RedrawChart(); }
+        }
+
+        [Display(Name = "Afficher les Losanges BigTrades (◆) sur les bougies", GroupName = GrpBigTrades, Order = 50,
+            Description = "Dessine les losanges doubles ATAS BigTrades (◆ Vert = BigTrade Buy, ◆ Rouge = BigTrade Sell) proportionnels au volume directement sur les bougies.")]
+        public bool ShowBigTradeDiamonds { get; set; } = true;
+
+        [Display(Name = "Taille de base des Losanges BigTrades (px)", GroupName = GrpBigTrades, Order = 60)]
+        [Range(6, 36)]
+        public int BigTradeDiamondBaseSize { get; set; } = 13;
+
+        [Display(Name = "Afficher l'encadré d'alerte BigTrade en bas à gauche (style ATAS Alerts)", GroupName = GrpBigTrades, Order = 70,
+            Description = "Affiche la notification temps réel 'New BigTrade at ... (sell/buy) is more than 40 lots' en bas à gauche du graphique comme sur la capture d'écran.")]
+        public bool ShowBigTradeAlertToast { get; set; } = true;
+
+        [Display(Name = "Couleur Losange BigTrade Achat (Buy ◆)", GroupName = GrpBigTrades, Order = 80)]
+        public Color BigTradeBuyColor { get; set; } = Color.FromArgb(255, 16, 235, 130); // Vert Émeraude Vif
+
+        [Display(Name = "Couleur Losange BigTrade Vente (Sell ◆)", GroupName = GrpBigTrades, Order = 90)]
+        public Color BigTradeSellColor { get; set; } = Color.FromArgb(255, 239, 68, 68); // Rouge Corail Vif
+
+        // =====================================================================
         // 8. ACHETEURS & VENDEURS PIÉGÉS (VISUEL & RAYONS)
         // =====================================================================
         [Display(Name = "Couleur Vendeurs Piégés (Signal Bullish ▲)", GroupName = GrpTrappedVisual, Order = 10)]
@@ -613,6 +672,71 @@ namespace ATAS.Indicators.Custom
 
         [Display(Name = "Couleur Alerte Visuelle VENTE (SELL ▼)", GroupName = GrpOptionsAlerts, Order = 100)]
         public Color SellSignalColor { get; set; } = Color.FromArgb(255, 255, 42, 85); // Rouge / Crête Néon Vif
+
+        // =====================================================================
+        // 9b. INDICATEUR OPTIONS X-RAY (CALL WALL, MAX PAIN, PUT WALL & PROFIL GEX)
+        // =====================================================================
+        private bool _enableOptionsXRayOverlay = true;
+        [Display(Name = "Afficher l'Indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL)", GroupName = GrpOptionsXRay, Order = 10,
+            Description = "Affiche sur le graphique l'indicateur d'options visible sur la capture : lignes CALL WALL (+XX.XM), MAX PAIN, PUT WALL (-XX.XM), bandeau 0 DTE = ...pts • MP ... et profil GEX par strike.")]
+        public bool EnableOptionsXRayOverlay
+        {
+            get => _enableOptionsXRayOverlay;
+            set { _enableOptionsXRayOverlay = value; RecalculateValues(); RedrawChart(); }
+        }
+
+        [Display(Name = "Afficher l'Histogramme Strike GEX à droite (Jaune Calls / Bleu-Gris Puts)", GroupName = GrpOptionsXRay, Order = 20,
+            Description = "Dessine sur le bord droit du graphique les barres horizontales d'exposition Gamma/OI par strike (jaunes pour les Calls, bleues-grises pour les Puts) comme sur Options X-Ray.")]
+        public bool ShowOptionsStrikeGexProfile { get; set; } = true;
+
+        [Display(Name = "Afficher les Badges d'Ordres Style DOM ATAS ([X] [2] [TP / SL $ +... R])", GroupName = GrpOptionsXRay, Order = 30,
+            Description = "Affiche les étiquettes d'ordres TP / SL / Position avec gain/perte en $ et bouton [R] exactement comme sur les captures d'écran ATAS.")]
+        public bool ShowDomStyleOrderTags { get; set; } = true;
+
+        private decimal _optionsStrikeStepPoints = 0m;
+        [Display(Name = "Pas entre les Strikes d'Options (0 = Auto : 50 pts NQ / 25 pts ES)", GroupName = GrpOptionsXRay, Order = 40)]
+        [Range(0, 5000)]
+        public decimal OptionsStrikeStepPoints
+        {
+            get => _optionsStrikeStepPoints;
+            set { _optionsStrikeStepPoints = Math.Max(0m, value); RecalculateValues(); RedrawChart(); }
+        }
+
+        private decimal _manualCallWallPrice = 0m;
+        [Display(Name = "Forcer Prix CALL WALL (0 = Calcul Auto Session / Options X-Ray)", GroupName = GrpOptionsXRay, Order = 50,
+            Description = "Laissez 0 pour détecter automatiquement le CALL WALL (ex: 28050 ou 27950 sur NQ), ou saisissez un strike précis.")]
+        public decimal ManualCallWallPrice
+        {
+            get => _manualCallWallPrice;
+            set { _manualCallWallPrice = Math.Max(0m, value); RecalculateValues(); RedrawChart(); }
+        }
+
+        private decimal _manualMaxPainPrice = 0m;
+        [Display(Name = "Forcer Prix MAX PAIN (0 = Calcul Auto Session / Options X-Ray)", GroupName = GrpOptionsXRay, Order = 60,
+            Description = "Laissez 0 pour détecter automatiquement le niveau MAX PAIN (ex: 27900 sur NQ), ou saisissez un strike précis.")]
+        public decimal ManualMaxPainPrice
+        {
+            get => _manualMaxPainPrice;
+            set { _manualMaxPainPrice = Math.Max(0m, value); RecalculateValues(); RedrawChart(); }
+        }
+
+        private decimal _manualPutWallPrice = 0m;
+        [Display(Name = "Forcer Prix PUT WALL (0 = Calcul Auto Session / Options X-Ray)", GroupName = GrpOptionsXRay, Order = 70,
+            Description = "Laissez 0 pour détecter automatiquement le PUT WALL (ex: 27850 sur NQ), ou saisissez un strike précis.")]
+        public decimal ManualPutWallPrice
+        {
+            get => _manualPutWallPrice;
+            set { _manualPutWallPrice = Math.Max(0m, value); RecalculateValues(); RedrawChart(); }
+        }
+
+        [Display(Name = "Couleur CALL WALL (Ligne & Badge)", GroupName = GrpOptionsXRay, Order = 80)]
+        public Color CallWallLineColor { get; set; } = Color.FromArgb(255, 16, 185, 129); // Vert Émeraude CALL WALL
+
+        [Display(Name = "Couleur MAX PAIN (Ligne Pointillée & Badge)", GroupName = GrpOptionsXRay, Order = 90)]
+        public Color MaxPainLineColor { get; set; } = Color.FromArgb(255, 239, 68, 68); // Rouge Corail MAX PAIN
+
+        [Display(Name = "Couleur PUT WALL (Ligne & Badge)", GroupName = GrpOptionsXRay, Order = 100)]
+        public Color PutWallLineColor { get; set; } = Color.FromArgb(255, 139, 92, 246); // Violet PUT WALL
 
         // =====================================================================
         // 10. PANNEAU HUD & ALERTES SONORES
