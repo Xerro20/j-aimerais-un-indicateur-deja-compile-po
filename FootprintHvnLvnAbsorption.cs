@@ -1107,10 +1107,23 @@ namespace ATAS.Indicators.Custom
             public bool IsPoc;
             public bool IsHvn;
             public bool IsLvn;
-            public int AbsorptionSide; // +1 = Bullish (Bid absorbé en bas), -1 = Bearish (Ask absorbé en haut), 0 = Aucun
-            public int TrappedSide;    // +1 = Vendeurs Piégés en bas (Signal Bullish ▲), -1 = Acheteurs Piégés en haut (Signal Bearish ▼), 0 = Aucun
+            public int AbsorptionSide;     // +1 = Bullish (Bid absorbé en bas), -1 = Bearish (Ask absorbé en haut), 0 = Aucun
+            public int TrappedSide;        // +1 = Vendeurs Piégés en bas (Signal Bullish ▲), -1 = Acheteurs Piégés en haut (Signal Bearish ▼), 0 = Aucun
             public decimal DominantPct;
             public decimal TrappedDominantPct;
+            public bool HasBigTradeBuy;    // Losange Vert (BigTrade Buy ◆)
+            public bool HasBigTradeSell;   // Losange Rouge (BigTrade Sell ◆)
+            public decimal BigTradeBuyVol;
+            public decimal BigTradeSellVol;
+            public int TrappedBigTradeSide;// +1 = BigTrade Sell Rouge Piégé en bas (Bullish Reversal ◆▲), -1 = BigTrade Buy Vert Piégé en haut (Bearish Reversal ◆▼)
+        }
+
+        private struct LiveBigTradePrint
+        {
+            public decimal Price;
+            public decimal Volume;
+            public bool IsBuy;
+            public DateTime TimeUtc;
         }
 
         private struct RaySignalEvent
@@ -1155,30 +1168,22 @@ namespace ATAS.Indicators.Custom
             public int BullStackedImbalances;
             public int BearStackedImbalances;
 
-            // --- Suite d'Indicateurs ATAS Options X-Ray (Key Levels, Expected Move, Strike/Surface GEX/VEX/CEX, Flow Delta, Big Trades, Hedge Pressure) ---
-            public bool IsExternalXRaySynced;
+            // --- Indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL, 0 DTE Expected Move & Régime Gamma) ---
             public decimal XRayCallWall;
-            public decimal XRayPutWall;
-            public decimal XRayRegimeFlip;     // Zero Gamma (0γ) Flip Level
-            public decimal XRayZeroDtePin;     // 0DTE Pin Magnet Level
-            public decimal XRaySlipperyLow;    // Slippery Zone Lower Bound
-            public decimal XRaySlipperyHigh;   // Slippery Zone Upper Bound
-            public bool XRayInSlipperyZone;    // True si le prix traverse une Slippery Zone (accélération MM)
-            public int XRayGammaRegime;        // +1 = Positive Gamma (Dampening / Mean-Revert), -1 = Negative Gamma (Accelerating)
-            public decimal XRayExpectedMoveHigh;
-            public decimal XRayExpectedMoveLow;
-            public decimal XRayNetGex;         // Gamma Exposure nette
-            public decimal XRayNetDex;         // Delta Exposure nette
-            public decimal XRayNetVex;         // Vanna Exposure (sensibilité IV)
-            public decimal XRayNetCex;         // Charm Exposure (décroissance temporelle 0DTE)
-            public decimal XRayInstFlowDelta;  // Flow Delta Institutionnel (Firms + Pros + Brokers)
-            public decimal XRayRetailFlowDelta;// Flow Delta Retail
-            public decimal XRayHedgePressure;  // Pression de couverture mécanique des Market Makers (MM Hedge Δ)
-            public bool XRayHasBigTrade;       // Bulle Options X-Ray: Big Trades
-            public int XRayBigTradeDir;        // +1 = Achat / Bullish, -1 = Vente / Bearish
-            public string XRayBigTradeGroup;   // "FIRMS", "PROS", "BROKERS", "MM"
-            public decimal XRayBigTradeStrike;
-            public decimal XRayBigTradeDeltaEq;
+            public decimal XRayCallWallGexM;           // Ex: +15.0M ou +11.9M
+            public decimal XRayMaxPain;                // Ex: 27900
+            public decimal XRayPutWall;                // Ex: 27850
+            public decimal XRayPutWallGexM;            // Ex: -69.5M ou -82.4M
+            public decimal XRayZeroDteExpectedMovePts; // Ex: 1226pts
+            public int XRayGammaRegime;                // +1 = Positive Gamma (au-dessus de Max Pain), -1 = Negative Gamma
+
+            // --- Métriques BigTrades Piégés (Losanges ◆) sur la bougie ---
+            public bool HasBigTradeBuyOnBar;
+            public bool HasBigTradeSellOnBar;
+            public bool HasTrappedBigTradeBull;
+            public bool HasTrappedBigTradeBear;
+            public decimal TrappedBigTradePrice;
+            public decimal TrappedBigTradeLots;
         }
 
         private struct VisualTradeSignal
@@ -1201,6 +1206,9 @@ namespace ATAS.Indicators.Custom
             public decimal PutCallRatio;
             public decimal OiDelta;
             public int SweepCount;
+            public bool IsBigTradeReversal;
+            public decimal BigTradePrice;
+            public decimal BigTradeLots;
             public string ReasonTag;
             public string XRaySummaryTag;
         }
@@ -1283,6 +1291,11 @@ namespace ATAS.Indicators.Custom
         // Suivi temps réel des niveaux SL / TP1 / TP2 / Trailing pour l'exécution Live ATAS (TradingManager)
         private readonly Dictionary<int, VisualTradeSignal> _lockedExecutedSignalsByBar = new Dictionary<int, VisualTradeSignal>();
         private readonly Dictionary<int, ClusterRow[]> _barRowsCache = new Dictionary<int, ClusterRow[]>();
+        private readonly Dictionary<int, List<LiveBigTradePrint>> _liveBigTradesByBar = new Dictionary<int, List<LiveBigTradePrint>>();
+        private decimal _lastBigTradeToastPrice = 0m;
+        private decimal _lastBigTradeToastVol = 0m;
+        private bool _lastBigTradeToastIsBuy = false;
+        private DateTime _lastBigTradeToastTime = DateTime.MinValue;
         private int _liveTrackedDir = 0;
         private int _liveTrackedSignalBar = -1;
         private decimal _liveTrackedEntryPrice = 0m;
