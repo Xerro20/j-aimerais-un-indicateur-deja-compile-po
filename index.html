@@ -1999,7 +1999,7 @@
 
         ctx.font = "bold 9.5px Consolas, monospace";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("QUANT ORDERFLOW • OPTIONS • AUTO-BOT", hx + 10, hy + 16);
+        ctx.fillText("BIGTRADES ◆ • REVERSAL • OPTIONS X-RAY", hx + 10, hy + 16);
 
         // Mini clickable Bot ON/OFF button inside HUD top-right
         canvasHudBotBtnRect = { x: hx + hudW - 84, y: hy + 4, w: 78, h: 17 };
@@ -2014,13 +2014,13 @@
 
         ctx.font = "9.5px Consolas, monospace";
         ctx.fillStyle = "#f59e0b";
-        ctx.fillText(`HVN: ${totalHvn} | LVN: ${totalLvn} | VPOC: ${prices[compPocIdx].toFixed(2)} | ATR: 2.25`, hx + 10, hy + 32);
+        ctx.fillText(`HVN: ${totalHvn} | LVN: ${totalLvn} | VPOC: ${prices[compPocIdx].toFixed(2)} | Seuil ◆≥${bigTradeMinLots}L`, hx + 10, hy + 32);
 
-        ctx.fillStyle = "#e2e8f0";
-        ctx.fillText(`Heavy Abs Bull: ${totalBullAbs} | Bear: ${totalBearAbs} | Max Z-Score: 2.4σ`, hx + 10, hy + 47);
+        ctx.fillStyle = "#fde047";
+        ctx.fillText(`Options X-Ray: CW 28050 (+15M) | MP 27900 | PW 27850 (-69.5M)`, hx + 10, hy + 47);
 
         ctx.fillStyle = "#10f596";
-        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy}`, hx + 10, hy + 62);
+        ctx.fillText(`Vendeurs Piégés ▲: ${totalTrapSell} | Acheteurs Piégés ▼: ${totalTrapBuy} | 0 DTE=1226pts`, hx + 10, hy + 62);
 
         const lastBar = bars[bars.length - 1];
         ctx.font = "bold 9.5px Consolas, monospace";
@@ -2029,7 +2029,7 @@
 
         ctx.fillStyle = "#7dd3fc";
         ctx.fillText(
-          `Signaux: ▲${totalBuySignals} ▼${totalSellSignals} | Plage: ${chartScheduleEnabled ? `${startStr}→${endStr}` : "24h/24"}`,
+          `Signaux Reversal: ▲${totalBuySignals} ▼${totalSellSignals} | Plage: ${chartScheduleEnabled ? `${startStr}→${endStr}` : "24h/24"}`,
           hx + 10,
           hy + 94
         );
@@ -2089,13 +2089,124 @@
           ctx.font = "bold 9.5px Consolas, monospace";
           ctx.fillStyle = isB ? "#00ff88" : "#ff2a55";
           ctx.fillText(
-            `${isB ? "★ QUANT ACHAT ▲" : "★ QUANT VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
+            `${isB ? "★ REVERSAL ACHAT ▲" : "★ REVERSAL VENTE ▼"}: ${lastTradeSignal.entryPrice.toFixed(2)} (SL ${lastTradeSignal.stopPrice.toFixed(2)})`,
             hx + 10,
             hy + (showBot ? 145 : 136)
           );
         }
       } else {
         canvasHudBotBtnRect = { x: 0, y: 0, w: 0, h: 0 };
+      }
+
+      // 4. Draw Options X-Ray Overlay (CALL WALL, MAX PAIN, PUT WALL, 0 DTE & Strike GEX Histogram)
+      if (showOptionsXRay) {
+        const gexWeights = [0.95, 0.55, 0.72, 0.48, 0.82, 0.38, 0.68, 0.44, 1.00, 0.58, 0.74, 0.42, 0.62, 0.85];
+        for (let r = 0; r < prices.length; r++) {
+          const yMid = topPad + r * rowH + rowH / 2;
+          const isAboveMp = r <= 6; // >= 27900 Max Pain
+          const bw = Math.round(gexWeights[r] * 112);
+          ctx.fillStyle = r === 0
+            ? "rgba(253, 224, 71, 0.78)"
+            : (r === 8
+              ? "rgba(139, 92, 246, 0.75)"
+              : (isAboveMp ? "rgba(250, 204, 21, 0.55)" : "rgba(100, 116, 139, 0.52)"));
+          ctx.fillRect(priceAxisX - bw - 4, yMid - 4, bw, 8);
+        }
+
+        const drawXRayLine = (rowIdx, labelTxt, col, dashed) => {
+          const y = topPad + rowIdx * rowH + rowH / 2;
+          ctx.save();
+          if (dashed) ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = col;
+          ctx.lineWidth = dashed ? 1.8 : 2.2;
+          ctx.beginPath();
+          ctx.moveTo(leftPad + 140, y);
+          ctx.lineTo(priceAxisX - 4, y);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.font = "bold 9.5px Consolas, monospace";
+          const tw = ctx.measureText(labelTxt).width + 14;
+          const bx = priceAxisX - tw - 8;
+          const by = y - 18;
+          ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+          ctx.fillRect(bx, by, tw, 16);
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(bx, by, tw, 16);
+          ctx.fillStyle = col;
+          ctx.fillText(labelTxt, bx + 7, by + 11.5);
+        };
+
+        // CALL WALL 28050 (row 0), MAX PAIN 27900 (row 6), PUT WALL 27850 (row 8)
+        drawXRayLine(0, "CALL WALL 28050 · +15M", "#10b981", false);
+        drawXRayLine(6, "MAX PAIN 27900", "#ef4444", true);
+        drawXRayLine(8, "PUT WALL 27850 · -69.5M", "#8b5cf6", false);
+      }
+
+      // 5. Draw DOM-Style Order Tags ([X │ 2 │ TP │ $ +3755.00 │ R] / [X │ 2 │ SL │ $ -2355.00 │ R])
+      if (showDomTags) {
+        const drawDomTag = (rowIdx, txt, borderCol) => {
+          const y = topPad + rowIdx * rowH + rowH / 2;
+          const xTag = 500;
+          ctx.font = "bold 9px Consolas, monospace";
+          const tw = ctx.measureText(txt).width + 12;
+          ctx.save();
+          ctx.setLineDash([2, 2]);
+          ctx.strokeStyle = borderCol;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(xTag + tw, y);
+          ctx.lineTo(priceAxisX - 6, y);
+          ctx.stroke();
+          ctx.restore();
+
+          ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
+          ctx.fillRect(xTag, y - 9, tw, 18);
+          ctx.strokeStyle = borderCol;
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(xTag, y - 9, tw, 18);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(txt, xTag + 6, y + 3);
+        };
+
+        drawDomTag(5, "X │ 2 │ TP │ $ +3755.00 │ R", "#10b981");
+        drawDomTag(10, "X │ 2 │ BUY │ $+5905.00", "#0ea5e9");
+        drawDomTag(12, "X │ 2 │ SL │ $ -2355.00 │ R", "#ef4444");
+      }
+
+      // 6. Draw Bottom-Left BigTrade Alert Toast ("Alert — NQ: New BigTrade at 27899.25 (sell) is more than 40 lots")
+      if (showBigTrades) {
+        const tx = 18;
+        const ty = canvas.height - 84;
+        const tw = 428;
+        const th = 42;
+        ctx.fillStyle = "rgba(17, 24, 39, 0.95)";
+        ctx.fillRect(tx, ty, tw, th);
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 1.6;
+        ctx.strokeRect(tx, ty, tw, th);
+
+        const ix = tx + 18;
+        const iy = ty + th / 2;
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.moveTo(ix, iy - 8);
+        ctx.lineTo(ix + 8, iy);
+        ctx.lineTo(ix, iy + 8);
+        ctx.lineTo(ix - 8, iy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+
+        ctx.font = "bold 9.5px Consolas, monospace";
+        ctx.fillStyle = "#fde047";
+        ctx.fillText("Alert", tx + 34, ty + 15);
+        ctx.font = "9.5px Consolas, monospace";
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillText(`NQ: New BigTrade at 27899.25 (sell) is more than ${bigTradeMinLots} lots`, tx + 34, ty + 31);
       }
     }
 
@@ -2133,8 +2244,11 @@
       }
     });
 
-    ["rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud", "inpBotStart", "inpBotEnd"]
-      .forEach(id => document.getElementById(id).addEventListener("input", analyzeAndRender));
+    ["rngBigTradeLots", "rngOptDom", "rngHvn", "rngLvn", "rngAbsMult", "rngTrapMult", "rngMaxDd", "rngMaxPnl", "chkBot", "chkBigTrades", "chkOptionsXRay", "chkDomTags", "chkBuySell", "chkBanner", "chkEntrySl", "chkTrapped", "chkBarHvn", "chkAbs", "chkRays", "chkHud", "inpBotStart", "inpBotEnd"]
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", analyzeAndRender);
+      });
 
     analyzeAndRender();
   </script>
