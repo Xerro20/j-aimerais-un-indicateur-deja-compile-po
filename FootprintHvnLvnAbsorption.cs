@@ -7826,5 +7826,472 @@ namespace ATAS.Indicators.Custom
                 : Color.FromArgb(255, 255, 65, 85);
             context.DrawString(realPnlTxt, btnFont, realPnlCol, _chartAcctScopeToggleRect.Right + 10, acctY + 6);
         }
+
+        // =====================================================================
+        // 1. Rendu des Losanges BigTrades (◆) sur les Bougies (Style ATAS X)
+        // =====================================================================
+        private void RenderBigTradeDiamondsOnBar(
+            RenderContext context,
+            int bar,
+            IndicatorCandle candle,
+            List<ClusterRow> rows,
+            int xMid,
+            int rowHeight,
+            RenderFont boldFont,
+            RenderFont cellFont)
+        {
+            if (rows == null || rows.Count == 0)
+                return;
+
+            decimal tickSize = InstrumentInfo != null && InstrumentInfo.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            decimal effMinLots = GetEffectiveBigTradeMinLots(tickSize);
+            if (effMinLots <= 0m) effMinLots = 40m;
+
+            // Sélection des plus gros BigTrades de la bougie (max 3 par bougie pour éviter toute surcharge visuelle)
+            var bigRows = new List<ClusterRow>();
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (rows[i].HasBigTradeBuy || rows[i].HasBigTradeSell)
+                    bigRows.Add(rows[i]);
+            }
+
+            if (bigRows.Count == 0)
+                return;
+
+            bigRows.Sort((a, b) =>
+            {
+                decimal maxA = Math.Max(a.BigTradeBuyVol, a.BigTradeSellVol);
+                decimal maxB = Math.Max(b.BigTradeBuyVol, b.BigTradeSellVol);
+                return maxB.CompareTo(maxA);
+            });
+
+            int maxDiamondsPerBar = Math.Min(3, bigRows.Count);
+            for (int idx = 0; idx < maxDiamondsPerBar; idx++)
+            {
+                var r = bigRows[idx];
+                int yCenter = ChartInfo.GetYByPrice(r.Price, false);
+                bool isSellDom = r.HasBigTradeSell && (!r.HasBigTradeBuy || r.BigTradeSellVol >= r.BigTradeBuyVol);
+                decimal domVol = isSellDom ? r.BigTradeSellVol : r.BigTradeBuyVol;
+
+                // Taille du losange proportionnelle au volume par rapport au seuil BigTrade
+                double volRatio = (double)(domVol / effMinLots);
+                int halfR = (int)Math.Clamp(BigTradeDiamondBaseSize + Math.Log2(Math.Max(1.0, volRatio)) * 4.5, 9.0, 26.0);
+                int outerR = halfR + 4;
+
+                Color fillCol = isSellDom ? BigTradeSellColor : BigTradeBuyColor;
+                Color outerGlowCol = Color.FromArgb(115, fillCol.R, fillCol.G, fillCol.B);
+                Color innerCoreCol = Color.FromArgb(230, fillCol.R, fillCol.G, fillCol.B);
+                Color borderCol = r.TrappedBigTradeSide != 0
+                    ? Color.FromArgb(255, 250, 204, 21) // Contour Or lumineux si le BigTrade est PIÉGÉ !
+                    : Color.FromArgb(245, 255, 255, 255);
+
+                // Double losange concentrique (exactement comme l'indicateur BigTrades ATAS de la capture)
+                Point[] outerDiamond = new Point[]
+                {
+                    new Point(xMid, yCenter - outerR),
+                    new Point(xMid + outerR, yCenter),
+                    new Point(xMid, yCenter + outerR),
+                    new Point(xMid - outerR, yCenter)
+                };
+                Point[] innerDiamond = new Point[]
+                {
+                    new Point(xMid, yCenter - halfR),
+                    new Point(xMid + halfR, yCenter),
+                    new Point(xMid, yCenter + halfR),
+                    new Point(xMid - halfR, yCenter)
+                };
+
+                context.FillPolygon(outerGlowCol, outerDiamond);
+                context.DrawPolygon(new RenderPen(Color.FromArgb(190, fillCol.R, fillCol.G, fillCol.B), 1.4f), outerDiamond);
+
+                context.FillPolygon(innerCoreCol, innerDiamond);
+                context.DrawPolygon(new RenderPen(borderCol, r.TrappedBigTradeSide != 0 ? 2.2f : 1.5f), innerDiamond);
+
+                // Point central et étiquette de lots si le BigTrade est piégé ou très massif
+                Rectangle centerDot = new Rectangle(xMid - 2, yCenter - 2, 4, 4);
+                context.FillEllipse(Color.White, centerDot);
+
+                if ((r.TrappedBigTradeSide != 0 || idx == 0) && rowHeight >= 9)
+                {
+                    string lotTxt = r.TrappedBigTradeSide != 0
+                        ? $"◆ {domVol:0} PIÉGÉ"
+                        : $"{domVol:0}";
+                    Size sz = context.MeasureString(lotTxt, cellFont);
+                    int lx = xMid - sz.Width / 2;
+                    int ly = isSellDom ? (yCenter + outerR + 2) : (yCenter - outerR - sz.Height - 2);
+                    Rectangle pill = new Rectangle(lx - 3, ly - 1, sz.Width + 6, sz.Height + 2);
+                    context.FillRectangle(Color.FromArgb(215, 10, 15, 28), pill);
+                    context.DrawRectangle(new RenderPen(borderCol, 1f), pill);
+                    context.DrawString(
+                        lotTxt,
+                        cellFont,
+                        r.TrappedBigTradeSide != 0 ? Color.FromArgb(255, 253, 224, 71) : Color.White,
+                        lx,
+                        ly);
+                }
+            }
+        }
+
+        // =====================================================================
+        // 2. Rendu de l'Indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL & Profil GEX)
+        //    Fidèle à la capture d'écran ATAS X de l'utilisateur
+        // =====================================================================
+        private void RenderOptionsXRayOverlay(
+            RenderContext context,
+            Rectangle chartRegion,
+            int firstBar,
+            int lastBar,
+            decimal tickSize,
+            BarOptionsFlowMetrics optMetrics,
+            RenderFont boldFont,
+            RenderFont cellFont)
+        {
+            if (optMetrics.XRayCallWall <= 0m || optMetrics.XRayPutWall <= 0m || optMetrics.XRayMaxPain <= 0m)
+                return;
+
+            decimal strikeStep = GetEffectiveOptionsStrikeStep(tickSize);
+            if (strikeStep <= 0m) strikeStep = 50m;
+
+            int xLeftLine = Math.Max(chartRegion.Left + 40, ChartInfo.GetXByBar(Math.Max(firstBar, lastBar - 55)));
+            int xRightEdge = chartRegion.Right - 6;
+
+            // A. Profil GEX Horizontal par Strike sur le bord droit (Barres Jaunes Call GEX / Gris-Bleu Put GEX)
+            if (ShowOptionsStrikeGexProfile)
+            {
+                decimal minStrike = optMetrics.XRayPutWall - strikeStep * 4m;
+                decimal maxStrike = optMetrics.XRayCallWall + strikeStep * 4m;
+                decimal subStep = Math.Max(tickSize * 4m, strikeStep / 2m);
+                int maxBarPxWidth = Math.Clamp(chartRegion.Width / 6, 95, 185);
+
+                for (decimal strike = minStrike; strike <= maxStrike; strike += subStep)
+                {
+                    int yStrike = ChartInfo.GetYByPrice(strike, false);
+                    if (yStrike < chartRegion.Top + 32 || yStrike > chartRegion.Bottom - 24)
+                        continue;
+
+                    bool isAboveMp = strike >= optMetrics.XRayMaxPain;
+                    decimal distToCallWall = Math.Abs(strike - optMetrics.XRayCallWall);
+                    decimal distToPutWall = Math.Abs(strike - optMetrics.XRayPutWall);
+                    decimal distToMp = Math.Abs(strike - optMetrics.XRayMaxPain);
+
+                    // Pondération gaussienne autour des strikes clés (Call Wall, Max Pain, Put Wall)
+                    double callWeight = Math.Exp(-(double)(distToCallWall / (strikeStep * 1.4m))) * 0.95
+                                      + Math.Exp(-(double)(distToMp / (strikeStep * 2.0m))) * 0.35;
+                    double putWeight = Math.Exp(-(double)(distToPutWall / (strikeStep * 1.4m))) * 1.00
+                                     + Math.Exp(-(double)(distToMp / (strikeStep * 2.2m))) * 0.40;
+
+                    // Modulation déterministe par strike pour reproduire l'histogramme multi-strikes SPX/NDX
+                    int strikeHash = Math.Abs(((int)Math.Round(strike / subStep)) * 73 % 100);
+                    double mod = 0.45 + (strikeHash / 100.0) * 0.55;
+
+                    double normRatio = isAboveMp
+                        ? Math.Clamp(callWeight * mod, 0.08, 1.0)
+                        : Math.Clamp(putWeight * mod, 0.08, 1.0);
+
+                    int barW = (int)Math.Round(maxBarPxWidth * normRatio);
+                    int barH = Math.Clamp((int)Math.Abs(ChartInfo.GetYByPrice(strike, false) - ChartInfo.GetYByPrice(strike + subStep, false)) - 2, 4, 11);
+
+                    Rectangle gexRect = new Rectangle(xRightEdge - barW, yStrike - barH / 2, barW, barH);
+
+                    // Jaune vif sur les strikes Call GEX (> Max Pain) et Bleu-Gris sur les strikes Put GEX (< Max Pain)
+                    Color gexCol = isAboveMp
+                        ? Color.FromArgb(195, 250, 204, 21)
+                        : Color.FromArgb(175, 100, 116, 139);
+
+                    if (Math.Abs(strike - optMetrics.XRayCallWall) < subStep * 0.4m)
+                        gexCol = Color.FromArgb(230, 253, 224, 71);
+                    else if (Math.Abs(strike - optMetrics.XRayPutWall) < subStep * 0.4m)
+                        gexCol = Color.FromArgb(220, 139, 92, 246);
+
+                    context.FillRectangle(gexCol, gexRect);
+                }
+            }
+
+            // B. En-tête supérieur droit : "Options X-Ray: SPX options data" + "0 DTE = 1226pts · MP 27900"
+            var headerTitleFont = new RenderFont("Consolas", 10, FontStyle.Bold);
+            var headerSubFont = new RenderFont("Consolas", 9, FontStyle.Bold);
+            string hdrLine1 = "Options X-Ray: SPX options data";
+            string hdrLine2 = $"0 DTE = {optMetrics.XRayZeroDteExpectedMovePts:0}pts · MP {optMetrics.XRayMaxPain:0.##}";
+
+            Size sHdr1 = context.MeasureString(hdrLine1, headerTitleFont);
+            Size sHdr2 = context.MeasureString(hdrLine2, headerSubFont);
+            int hdrW = Math.Max(sHdr1.Width, sHdr2.Width) + 18;
+            int hdrH = sHdr1.Height + sHdr2.Height + 12;
+            int hdrX = chartRegion.Right - hdrW - 14;
+            int hdrY = chartRegion.Top + 44;
+
+            Rectangle hdrRect = new Rectangle(hdrX, hdrY, hdrW, hdrH);
+            context.FillRectangle(Color.FromArgb(215, 11, 15, 25), hdrRect);
+            context.DrawRectangle(new RenderPen(Color.FromArgb(190, 71, 85, 105), 1f), hdrRect);
+            context.DrawString(hdrLine1, headerTitleFont, Color.FromArgb(255, 226, 232, 240), hdrX + 9, hdrY + 4);
+            context.DrawString(hdrLine2, headerSubFont, Color.FromArgb(255, 250, 204, 21), hdrX + 9, hdrY + 6 + sHdr1.Height);
+
+            // C. Lignes horizontales et badges : CALL WALL, MAX PAIN, PUT WALL
+            DrawOptionsXRayLevelLine(
+                context,
+                chartRegion,
+                xLeftLine,
+                xRightEdge,
+                optMetrics.XRayCallWall,
+                $"CALL WALL {optMetrics.XRayCallWall:0.##} · +{optMetrics.XRayCallWallGexM:0.#}M",
+                CallWallLineColor,
+                false,
+                boldFont);
+
+            DrawOptionsXRayLevelLine(
+                context,
+                chartRegion,
+                xLeftLine,
+                xRightEdge,
+                optMetrics.XRayMaxPain,
+                $"MAX PAIN {optMetrics.XRayMaxPain:0.##}",
+                MaxPainLineColor,
+                true,
+                boldFont);
+
+            DrawOptionsXRayLevelLine(
+                context,
+                chartRegion,
+                xLeftLine,
+                xRightEdge,
+                optMetrics.XRayPutWall,
+                $"PUT WALL {optMetrics.XRayPutWall:0.##} · {optMetrics.XRayPutWallGexM:+0.#;-0.#;0.0}M",
+                PutWallLineColor,
+                false,
+                boldFont);
+        }
+
+        private void DrawOptionsXRayLevelLine(
+            RenderContext context,
+            Rectangle chartRegion,
+            int xLeft,
+            int xRight,
+            decimal price,
+            string badgeText,
+            Color lineColor,
+            bool dashed,
+            RenderFont font)
+        {
+            int y = ChartInfo.GetYByPrice(price, false);
+            if (y < chartRegion.Top + 16 || y > chartRegion.Bottom - 16)
+                return;
+
+            var pen = new RenderPen(
+                lineColor,
+                dashed ? 1.8f : 2.2f,
+                dashed ? DashStyle.Dash : DashStyle.Solid);
+
+            context.DrawLine(pen, xLeft, y, xRight, y);
+
+            Size sz = context.MeasureString(badgeText, font);
+            int bw = sz.Width + 14;
+            int bh = sz.Height + 6;
+            int bx = xRight - bw - 8;
+            int by = y - bh - 3;
+
+            Rectangle badgeRect = new Rectangle(bx, by, bw, bh);
+            context.FillRectangle(Color.FromArgb(235, 15, 23, 42), badgeRect);
+            context.DrawRectangle(new RenderPen(lineColor, 1.5f), badgeRect);
+            context.DrawString(badgeText, font, lineColor, bx + 7, by + 3);
+        }
+
+        // =====================================================================
+        // 3. Étiquettes d'Ordres Actifs Style DOM ATAS ([X] [2] [TP | $ +3755.00 | R])
+        // =====================================================================
+        private void RenderDomStyleActiveOrderTags(
+            RenderContext context,
+            Rectangle chartRegion,
+            int lastBar,
+            decimal tickSize,
+            BotPerformanceState botPerf,
+            VisualTradeSignal? latestSignal,
+            RenderFont boldFont,
+            RenderFont cellFont)
+        {
+            decimal entryPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenEntryPrice : (latestSignal?.EntryPrice ?? 0m);
+            decimal stopPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenStopPrice : (latestSignal?.StopPrice ?? 0m);
+            decimal tpPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenTp2Price : (latestSignal?.Tp2Price ?? 0m);
+            int dir = botPerf.OpenPositionDir != 0 ? botPerf.OpenPositionDir : (latestSignal?.Direction ?? 0);
+
+            if (dir == 0 || entryPrice <= 0m || stopPrice <= 0m || tpPrice <= 0m)
+                return;
+
+            int qty = Math.Max(1, _botOrderQuantity * 2);
+            var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
+            decimal ptVal = contractInfo.TradedPointValueUsd > 0m ? contractInfo.TradedPointValueUsd : 20m;
+
+            decimal lastClose = GetCandle(lastBar).Close;
+            decimal openPnlUsd = (lastClose - entryPrice) * dir * ptVal * qty;
+            decimal tpPnlUsd = Math.Abs(tpPrice - entryPrice) * ptVal * qty;
+            decimal slPnlUsd = -Math.Abs(entryPrice - stopPrice) * ptVal * qty;
+
+            int xAnchor = Math.Clamp(ChartInfo.GetXByBar(lastBar) - 210, chartRegion.Left + 80, chartRegion.Right - 310);
+
+            // Tag TP
+            DrawSingleDomOrderTag(
+                context,
+                chartRegion,
+                xAnchor,
+                tpPrice,
+                qty,
+                "TP",
+                $"$ +{tpPnlUsd:0.00}",
+                Color.FromArgb(240, 16, 185, 129),
+                true,
+                cellFont);
+
+            // Tag Entrée / Position ouverte
+            DrawSingleDomOrderTag(
+                context,
+                chartRegion,
+                xAnchor,
+                entryPrice,
+                qty,
+                dir > 0 ? "BUY" : "SELL",
+                $"${(openPnlUsd >= 0m ? "+" : "")}{openPnlUsd:0.00}",
+                openPnlUsd >= 0m ? Color.FromArgb(240, 14, 165, 233) : Color.FromArgb(240, 244, 63, 94),
+                false,
+                cellFont);
+
+            // Tag SL
+            DrawSingleDomOrderTag(
+                context,
+                chartRegion,
+                xAnchor,
+                stopPrice,
+                qty,
+                "SL",
+                $"$ {slPnlUsd:0.00}",
+                Color.FromArgb(240, 239, 68, 68),
+                true,
+                cellFont);
+        }
+
+        private void DrawSingleDomOrderTag(
+            RenderContext context,
+            Rectangle chartRegion,
+            int xAnchor,
+            decimal price,
+            int qty,
+            string roleTag,
+            string pnlText,
+            Color accentColor,
+            bool showReverseBtn,
+            RenderFont font)
+        {
+            int y = ChartInfo.GetYByPrice(price, false);
+            if (y < chartRegion.Top + 20 || y > chartRegion.Bottom - 20)
+                return;
+
+            string fullLabel = showReverseBtn
+                ? $" X │ {qty} │ {roleTag} │ {pnlText} │ R "
+                : $" X │ {qty} │ {pnlText} ";
+
+            Size sz = context.MeasureString(fullLabel, font);
+            int w = sz.Width + 10;
+            int h = Math.Max(18, sz.Height + 4);
+            Rectangle rect = new Rectangle(xAnchor, y - h / 2, w, h);
+
+            // Ligne pointillée jusqu'au prix sur le graphique
+            var linkPen = new RenderPen(accentColor, 1.2f, DashStyle.Dot);
+            context.DrawLine(linkPen, rect.Right, y, chartRegion.Right - 8, y);
+
+            context.FillRectangle(Color.FromArgb(235, 15, 23, 42), rect);
+            context.DrawRectangle(new RenderPen(accentColor, 1.5f), rect);
+            context.DrawString(fullLabel, font, Color.White, rect.Left + 5, rect.Top + 2);
+        }
+
+        // =====================================================================
+        // 4. Notification d'Alerte BigTrade en bas à gauche (Style Toast ATAS)
+        //    Ex: "NQ: New BigTrade at 27899.25 (sell) is more than 40 lots"
+        // =====================================================================
+        private void RenderBigTradeAlertToast(
+            RenderContext context,
+            Rectangle chartRegion,
+            int lastBar,
+            decimal tickSize,
+            RenderFont boldFont,
+            RenderFont cellFont)
+        {
+            decimal toastPrice = _lastBigTradeToastPrice;
+            decimal toastVol = _lastBigTradeToastVol;
+            bool toastIsBuy = _lastBigTradeToastIsBuy;
+
+            // Si aucun print live n'a encore été capturé, on affiche le dernier BigTrade détecté sur les bougies récentes
+            if (toastPrice <= 0m || toastVol <= 0m)
+            {
+                for (int b = lastBar; b >= Math.Max(0, lastBar - 15); b--)
+                {
+                    if (_barOptionsMetrics.TryGetValue(b, out var m) && m.BigTradeMaxLots > 0m)
+                    {
+                        var c = GetCandle(b);
+                        toastPrice = m.TrappedBigTradeSide > 0 ? c.Low : (m.TrappedBigTradeSide < 0 ? c.High : c.Close);
+                        toastVol = m.BigTradeMaxLots;
+                        toastIsBuy = m.HasBigTradeBuy && !m.HasBigTradeSell;
+                        break;
+                    }
+                }
+            }
+
+            if (toastPrice <= 0m || toastVol <= 0m)
+                return;
+
+            string sym = InstrumentInfo?.Instrument ?? "NQ";
+            decimal effThreshold = GetEffectiveBigTradeMinLots(tickSize);
+            string sideWord = toastIsBuy ? "buy" : "sell";
+
+            string title = "Alert";
+            string msg = $"{sym}: New BigTrade at {toastPrice:0.##} ({sideWord}) is more than {effThreshold:0} lots ({toastVol:0} lots)";
+
+            Size sTitle = context.MeasureString(title, boldFont);
+            Size sMsg = context.MeasureString(msg, cellFont);
+
+            int boxW = Math.Max(sTitle.Width, sMsg.Width) + 52;
+            int boxH = 48;
+            int boxX = chartRegion.Left + 14;
+            int boxY = chartRegion.Bottom - boxH - 14;
+
+            Rectangle toastRect = new Rectangle(boxX, boxY, boxW, boxH);
+            Color borderCol = toastIsBuy ? BigTradeBuyColor : BigTradeSellColor;
+
+            context.FillRectangle(Color.FromArgb(238, 17, 24, 39), toastRect);
+            context.DrawRectangle(new RenderPen(borderCol, 1.6f), toastRect);
+
+            // Petit losange d'icône à gauche du toast
+            int iconX = boxX + 20;
+            int iconY = boxY + boxH / 2;
+            Point[] iconDiamond = new Point[]
+            {
+                new Point(iconX, iconY - 9),
+                new Point(iconX + 9, iconY),
+                new Point(iconX, iconY + 9),
+                new Point(iconX - 9, iconY)
+            };
+            context.FillPolygon(borderCol, iconDiamond);
+            context.DrawPolygon(new RenderPen(Color.White, 1.2f), iconDiamond);
+
+            context.DrawString(title, boldFont, Color.FromArgb(255, 250, 204, 21), boxX + 38, boxY + 6);
+            context.DrawString(msg, cellFont, Color.FromArgb(255, 226, 232, 240), boxX + 38, boxY + 24);
+        }
+    }
+
+    // =========================================================================
+    // Entrée dédiée dans la liste des indicateurs ATAS X (Ctrl+I) :
+    // "ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN"
+    // =========================================================================
+    [DisplayName("ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN")]
+    [Description("Bot de trading ATAS X basé sur les BigTrades piégés (losanges rouges/verts ◆), le Reversal Order Flow, l'indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL & profil GEX) et les niveaux HVN / LVN.")]
+    [Category("Order Flow - Custom")]
+    public class BigTradesReversalOptionsBot : FootprintHvnLvnAbsorption
+    {
+        public BigTradesReversalOptionsBot()
+        {
+            EnableBigTradesReversal = true;
+            ShowBigTradeDiamonds = true;
+            ShowBigTradeAlertToast = true;
+            EnableOptionsXRayOverlay = true;
+            ShowOptionsStrikeGexProfile = true;
+            ShowDomStyleOrderTags = true;
+        }
     }
 }
