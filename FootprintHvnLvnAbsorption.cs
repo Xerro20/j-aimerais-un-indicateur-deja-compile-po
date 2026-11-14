@@ -7835,13 +7835,13 @@ namespace ATAS.Indicators.Custom
             RenderContext context,
             int bar,
             IndicatorCandle candle,
-            List<ClusterRow> rows,
+            ClusterRow[] rows,
             int xMid,
             int rowHeight,
             RenderFont boldFont,
             RenderFont cellFont)
         {
-            if (rows == null || rows.Count == 0)
+            if (ChartInfo == null || rows == null || rows.Length == 0)
                 return;
 
             decimal tickSize = InstrumentInfo != null && InstrumentInfo.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
@@ -7850,7 +7850,7 @@ namespace ATAS.Indicators.Custom
 
             // Sélection des plus gros BigTrades de la bougie (max 3 par bougie pour éviter toute surcharge visuelle)
             var bigRows = new List<ClusterRow>();
-            for (int i = 0; i < rows.Count; i++)
+            for (int i = 0; i < rows.Length; i++)
             {
                 if (rows[i].HasBigTradeBuy || rows[i].HasBigTradeSell)
                     bigRows.Add(rows[i]);
@@ -7947,7 +7947,7 @@ namespace ATAS.Indicators.Custom
             RenderFont boldFont,
             RenderFont cellFont)
         {
-            if (optMetrics.XRayCallWall <= 0m || optMetrics.XRayPutWall <= 0m || optMetrics.XRayMaxPain <= 0m)
+            if (ChartInfo == null || optMetrics.XRayCallWall <= 0m || optMetrics.XRayPutWall <= 0m || optMetrics.XRayMaxPain <= 0m)
                 return;
 
             decimal strikeStep = GetEffectiveOptionsStrikeStep(tickSize);
@@ -8073,6 +8073,9 @@ namespace ATAS.Indicators.Custom
             bool dashed,
             RenderFont font)
         {
+            if (ChartInfo == null)
+                return;
+
             int y = ChartInfo.GetYByPrice(price, false);
             if (y < chartRegion.Top + 16 || y > chartRegion.Bottom - 16)
                 return;
@@ -8109,15 +8112,18 @@ namespace ATAS.Indicators.Custom
             RenderFont boldFont,
             RenderFont cellFont)
         {
-            decimal entryPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenEntryPrice : (latestSignal?.EntryPrice ?? 0m);
-            decimal stopPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenStopPrice : (latestSignal?.StopPrice ?? 0m);
-            decimal tpPrice = botPerf.OpenPositionDir != 0 ? botPerf.OpenTp2Price : (latestSignal?.Tp2Price ?? 0m);
-            int dir = botPerf.OpenPositionDir != 0 ? botPerf.OpenPositionDir : (latestSignal?.Direction ?? 0);
+            if (ChartInfo == null)
+                return;
+
+            decimal entryPrice = botPerf.ActiveDirection != 0 ? botPerf.ActiveEntryPrice : (latestSignal?.EntryPrice ?? 0m);
+            decimal stopPrice = botPerf.ActiveDirection != 0 ? botPerf.ActiveStopPrice : (latestSignal?.StopPrice ?? 0m);
+            decimal tpPrice = botPerf.ActiveDirection != 0 ? botPerf.ActiveTp2Price : (latestSignal?.Tp2Price ?? 0m);
+            int dir = botPerf.ActiveDirection != 0 ? botPerf.ActiveDirection : (latestSignal?.Direction ?? 0);
 
             if (dir == 0 || entryPrice <= 0m || stopPrice <= 0m || tpPrice <= 0m)
                 return;
 
-            int qty = Math.Max(1, _botOrderQuantity * 2);
+            int qty = botPerf.ActiveContracts > 0 ? botPerf.ActiveContracts : Math.Max(1, _botTradeQuantity);
             var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
             decimal ptVal = contractInfo.TradedPointValueUsd > 0m ? contractInfo.TradedPointValueUsd : 20m;
 
@@ -8180,6 +8186,9 @@ namespace ATAS.Indicators.Custom
             bool showReverseBtn,
             RenderFont font)
         {
+            if (ChartInfo == null)
+                return;
+
             int y = ChartInfo.GetYByPrice(price, false);
             if (y < chartRegion.Top + 20 || y > chartRegion.Bottom - 20)
                 return;
@@ -8221,15 +8230,26 @@ namespace ATAS.Indicators.Custom
             // Si aucun print live n'a encore été capturé, on affiche le dernier BigTrade détecté sur les bougies récentes
             if (toastPrice <= 0m || toastVol <= 0m)
             {
-                for (int b = lastBar; b >= Math.Max(0, lastBar - 15); b--)
+                for (int b = lastBar; b >= Math.Max(0, lastBar - 20); b--)
                 {
-                    if (_barOptionsMetrics.TryGetValue(b, out var m) && m.BigTradeMaxLots > 0m)
+                    if (_barRowsCache.TryGetValue(b, out var bRows) && bRows != null)
                     {
-                        var c = GetCandle(b);
-                        toastPrice = m.TrappedBigTradeSide > 0 ? c.Low : (m.TrappedBigTradeSide < 0 ? c.High : c.Close);
-                        toastVol = m.BigTradeMaxLots;
-                        toastIsBuy = m.HasBigTradeBuy && !m.HasBigTradeSell;
-                        break;
+                        for (int i = 0; i < bRows.Length; i++)
+                        {
+                            var r = bRows[i];
+                            if (r.HasBigTradeBuy || r.HasBigTradeSell)
+                            {
+                                decimal v = Math.Max(r.BigTradeBuyVol, r.BigTradeSellVol);
+                                if (v > toastVol)
+                                {
+                                    toastVol = v;
+                                    toastPrice = r.Price;
+                                    toastIsBuy = r.HasBigTradeBuy && (!r.HasBigTradeSell || r.BigTradeBuyVol >= r.BigTradeSellVol);
+                                }
+                            }
+                        }
+                        if (toastVol > 0m)
+                            break;
                     }
                 }
             }
