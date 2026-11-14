@@ -4648,6 +4648,78 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
+            // 5. Détection des BigTrades (Losanges ◆) & BigTrades Piégés (Reversal Setup comme sur la photo NQ)
+            if (_enableBigTradesReversal && count >= 2)
+            {
+                decimal effBigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
+                decimal adaptiveBlockLots = isCme
+                    ? Math.Max(effBigTradeMin * 0.62m, avgLevelVol * 2.10m)
+                    : Math.Max(effBigTradeMin * 0.55m, avgLevelVol * 2.25m);
+
+                decimal midBarPrice = (candle.High + candle.Low) * 0.5m;
+                decimal lowerTrapLimit = candle.Low + barRange * 0.48m;
+                decimal upperTrapLimit = candle.High - barRange * 0.48m;
+
+                for (int i = 0; i < count; i++)
+                {
+                    if (rows[i].Volume <= 0m)
+                        continue;
+
+                    GetSymmetricPooledLow(i, out decimal pBidLow, out decimal pAskLow, out _);
+                    GetSymmetricPooledHigh(i, out decimal pBidHigh, out decimal pAskHigh, out _);
+
+                    decimal sellAggVol = isCme ? Math.Max(rows[i].Bid, pBidLow) : rows[i].Bid;
+                    decimal buyAggVol = isCme ? Math.Max(rows[i].Ask, pAskHigh) : rows[i].Ask;
+
+                    bool isSellBigTrade = sellAggVol >= effBigTradeMin ||
+                                          (sellAggVol >= adaptiveBlockLots && rows[i].Bid > rows[i].Ask * 1.32m && rows[i].VolumeZScore >= 1.05m);
+                    bool isBuyBigTrade = buyAggVol >= effBigTradeMin ||
+                                         (buyAggVol >= adaptiveBlockLots && rows[i].Ask > rows[i].Bid * 1.32m && rows[i].VolumeZScore >= 1.05m);
+
+                    if (isSellBigTrade)
+                    {
+                        rows[i].HasBigTradeSell = true;
+                        rows[i].BigTradeSellVol = Math.Round(Math.Max(rows[i].Bid, sellAggVol), 0);
+
+                        // BigTrade Vendeur (Losange Rouge ◆) Piégé en bas : vente massive dans la partie basse suivie d'un rejet / clôture au-dessus
+                        if (rows[i].Price <= lowerTrapLimit && candle.Close >= rows[i].Price + step)
+                        {
+                            rows[i].TrappedBigTradeSide = 1;
+                            if (rows[i].TrappedSide == 0)
+                            {
+                                rows[i].TrappedSide = 1;
+                                rows[i].TrappedDominantPct = rows[i].Volume > 0m
+                                    ? Math.Max(58m, Math.Round((rows[i].Bid / rows[i].Volume) * 100m, 0))
+                                    : 65m;
+                                if (bestTrappedSellersIndex < 0)
+                                    bestTrappedSellersIndex = i;
+                            }
+                        }
+                    }
+
+                    if (isBuyBigTrade)
+                    {
+                        rows[i].HasBigTradeBuy = true;
+                        rows[i].BigTradeBuyVol = Math.Round(Math.Max(rows[i].Ask, buyAggVol), 0);
+
+                        // BigTrade Acheteur (Losange Vert ◆) Piégé en haut : achat massif dans la partie haute suivi d'un rejet / clôture en dessous
+                        if (rows[i].Price >= upperTrapLimit && candle.Close <= rows[i].Price - step && rows[i].TrappedBigTradeSide == 0)
+                        {
+                            rows[i].TrappedBigTradeSide = -1;
+                            if (rows[i].TrappedSide == 0)
+                            {
+                                rows[i].TrappedSide = -1;
+                                rows[i].TrappedDominantPct = rows[i].Volume > 0m
+                                    ? Math.Max(58m, Math.Round((rows[i].Ask / rows[i].Volume) * 100m, 0))
+                                    : 65m;
+                                if (bestTrappedBuyersIndex < 0)
+                                    bestTrappedBuyersIndex = i;
+                            }
+                        }
+                    }
+                }
+            }
+
             return rows;
         }
 
