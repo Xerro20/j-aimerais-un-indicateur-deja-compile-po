@@ -1,64 +1,67 @@
-# Footprint Quant Order Flow, Flux d'Options & Bot de Trading Automatique (Max Drawdown / Max PnL) — ATAS X (.NET 10)
+# Bot ATAS X : BigTrades Piégés (Losanges ◆), Reversal, Options X-Ray & HVN / LVN — (.NET 10)
 
-Indicateur & Bot Quant Senior Order Flow **déjà compilé** (`FootprintHvnLvnAbsorption.dll`) pour **ATAS X** (Windows & macOS, `.NET 10.0`) permettant d'identifier, de filtrer statistiquement et de trader automatiquement sur le **Footprint** :
-1. **HVN (*High Volume Nodes*) & POC** — Nœuds de fort volume intra-bougie et zones HVN du profil de volume composite (session ou glissant).
-2. **LVN (*Low Volume Nodes*)** — Creux de liquidité / *single prints* intra-bougie et vallées LVN du profil composite.
-3. **Heavy Absorption (*Absorption Massive Bid / Ask*)** — Détection multi-critères des absorptions passives sur les extrêmes de bougie ou murs intra-bar, avec surbrillance néon du cluster, étiquette `ABS ▲ / ▼` et rayon Support/Résistance projeté jusqu'à mitigation.
-4. **Acheteurs & Vendeurs Piégés (*Trapped Buyers & Trapped Sellers*)** — Détection des ordres agressifs au marché piégés en perte latente dans les mèches de rejet (`V.PIÉGÉS ▲` en bas = signal haussier, `A.PIÉGÉS ▼` en haut = signal baissier, ou `ABS+PIÉGÉ ▲/▼` en cas de confluence).
-5. **Flux d'Options ATAS X (`IOptionsDataFeed`, Calls/Puts, PCR, $\Delta\text{OI}$ & Sweeps)** — Intègre le flux d'options fourni par ATAS X (`OptionTypes.Call` / `OptionTypes.Put`, `StrikePrice`, `OpenInterest` $\Delta\text{OI}$, `OnNewTrade` / `OnCumulativeTrade`) pour confirmer les signaux Achat / Vente.
-6. **Raffinement Quant Senior (`Groupe 11` : Confluence Multi-Piliers $\ge 3$, Protection Anti-Écarts de Prix, Stop-Loss Structurel Hors Bougie & Prise de Profit Dynamique)** — Validation institutionnelle de l'enchère par bougie combinant **7 piliers de confluence** (**1. HVN Support/Résistance**, **2. Rejet LVN**, **3. Heavy Absorption**, **4. Acheteurs/Vendeurs Piégés**, **5. Reprise Delta Tail / Divergence CVD**, **6. Structure Multi-Bougies & Alignement EMA 8/21/50 + VWAP**, **7. Flux d'Options ATAS X + Z-Score $\ge 1,0\sigma$**) avec exigence d'au moins **3 confluences simultanées**, absence d'absorption/piégés opposés sur la bougie, contrôle d'enchère du POC, **garde anti-écart de prix** (écart cluster $\leftrightarrow$ entrée $\le 0,58 \times \text{ATR}$, filtre de gap d'ouverture inter-bougies et contrôle du spread/dérive `BestBidPrice` / `BestAskPrice`), **Stop-Loss structurel strictement hors du corps et de la mèche de la bougie** (`anchorLow - buffer` / `anchorHigh + buffer`), **`TP1` haute probabilité (`0,90R`)** avec espace libre vérifié avant tout mur HVN composite opposé, **Early Profit-Lock**, et **`TP2` (`1,80R`)** avec **Trailing Stop dynamique tick-par-tick**.
-7. **Bot de Trading Quant Intégré, Synchronisation 100% Ordre Visuel ↔ Ordre Réel & Coupe-Circuit `Max Drawdown` / `Max PnL` (`Groupe 12`)** :
-   - **Synchronisation 100% Exacte Ordre Visuel ↔ Ordre Réel (`OnlyShowExecutedBotSignals`, `_lockedExecutedSignalsByBar`, `GetLiveExecutableChartPrice`)** : Suppression de tout décalage à `bar - 1` et ancrage direct de `EntryPrice` sur le prix d'exécution réel (`BestAskPrice` / `BestBidPrice` à l'émission puis `pos.AveragePrice` dès remplissage dans `EnsureLivePositionTrackingInitialized`, avec gestion automatique du *basis spread* en Trading Croisé). Chaque cartouche `★ QUANT ACHAT ▲ / VENTE ▼`, ligne `ACHAT @ / VENTE @ [EXÉCUTÉ]`, `SL @`, `TP1 @`, `TP2 @` et trajectoire `BOT LONG / SHORT` reflète exactement l'ordre réel du compte actif.
-   - **Risk Guard — Drawdown Max (`BotMaxDrawdownUsd`)** : Suit le *High-Water Mark* (pic d'équité) en temps réel. Si le drawdown courant atteint la limite fixée en `$`, le Bot liquide immédiatement la position et coupe toute nouvelle prise de position (`COUPE-CIRCUIT : DRAWDOWN MAX ATTEINT`).
-   - **Profit Lock — PnL Max (`BotMaxProfitTargetUsd`)** : Dès que le PnL cumulé atteint l'objectif de gain maximum en `$`, le Bot sécurise les gains et verrouille la session (`OBJECTIF PNL MAX VERROUILLÉ`).
-   - **Synchronisation Temps Réel du PnL Réel avec le Compte Actif ATAS (`SyncPnlWithActiveAccount`, `AccountPnlScope`)** :
-     - Se connecte directement à `TradingManager.Portfolio`, `TradingManager.Position`, `TradingStatisticsProvider.FilteredStatistics.HistoryMyTrades` et `TradingManager.MyTrades`, et écoute en temps réel les événements `OnPortfolioChanged`, `OnPositionChanged`, `OnNewMyTrade`, `OnOrderChanged` et `TradingManager.PortfolioSelected`.
-     - Synchronise automatiquement le **Compte Actif sélectionné dans Chart Trader** (`AccountID`), le **Solde (`Balance`)**, la **Position Réelle Ouverte (`Volume` & `AveragePrice`)**, le **PnL Réalisé (`ClosedPnL`)**, le **PnL Latent Tick-par-Tick (`UnrealizedPnL` avec repli Mark-to-Market temps réel)** et le **PnL Réel Total (`Réalisé + Latent`)**.
-     - Applique le coupe-circuit **Max Drawdown (`$`)** et **Max PnL (`$`)** directement sur le **PnL Réel du Compte Actif**, avec un 3ᵉ encadrement interactif cliquable sur la charte (`[ ● SYNC COMPTE: ... ] | [ PORTÉE: COMPTE GLOBAL / INSTRUMENT ] | PNL RÉEL: ...$`).
-   - **Bouton d'Activation Interactif directement sur la Charte (`ShowChartBotToggleButton`)** : Barre de contrôle cliquable à la souris directement sur le graphique ATAS X (`ProcessMouseClick` / `ProcessMouseMove`) avec voyant LED permettant d'activer/désactiver le Bot en un clic (`[ ● BOT QUANT : ON (ACTIF) ]` / `[ ○ BOT QUANT : OFF ]`), de basculer le mode (`[ MODE: SIM/PAPER ]` ↔ `[ MODE: LIVE ATAS ]`), de réinitialiser le coupe-circuit (`[ RESET ]`), ainsi qu'un bouton rapide `[ ● BOT : ON/OFF ]` intégré dans l'en-tête du panneau HUD.
-   - **Encadrement Interactif des Horaires sur la Charte (`EnableBotSchedule`, `BotStartTimeText`, `BotEndTimeText`, `BotFlattenAtEndTime`)** : Encadrement dessiné directement sur la charte (`[ 🕒 HORAIRES: ON/OFF ] | DÉBUT: [-] [08:00] [+] → FIN: [-] [22:00] [+]`) permettant d'activer/désactiver le filtre horaire et de régler l'**Heure de Démarrage** et l'**Heure de Fin** directement à la souris sur le graphique (par pas de 15 min ou 1 h) ou en saisissant `HH:mm` dans les paramètres, avec clôture automatique optionnelle à l'heure de fin.
-   - **Mode Simulation/Backtest ou Routage Live ATAS X (`ITradingManager`)** : Fonctionne en mode `LiveAutoTradingManager` (`OpenOrderAsync` / `ClosePositionAsync`) ou `BacktestAndPaperOnly`.
-8. **Adaptation Native Multi-Marchés (BTC Binance Futures + Futurs CME Clés `ES`, `NQ`, `GC`, `CL`, `YM`, `RTY`) & Trading Croisé ATAS X (`ICrossTradingIndicatorContext`)** :
-   - **100 % Intact sur BTC Binance Futures (`MarketProfilePreset.CryptoBinanceFutures`)** : Conserve intégralement tous les seuils et comportements d'origine lorsque le graphique est sur un contrat Crypto (`BTCUSDT`, `ETHUSDT`, etc.).
-   - **Calibrage Automatique CME (`MarketProfilePreset.AutoDetect` / `CmeSp500_ES_MES` / `CmeNasdaq_NQ_MNQ` / `CmeKeyFutures_GC_CL_YM_RTY`)** :
-     - Adapte automatiquement les seuils d'Absorption, de Traders Piégés, le Z-Score, le regroupement de micro-clusters (`EnableCmeMicroClusterPooling` pour les carnets fins `NQ` / `MNQ` / `GC` / `CL`), l'estimation synthétique d'`OpenInterest` lorsque `Candle.OI == 0` en intraday CME et les valeurs de point exactes (`ES = 50 $/pt`, `MES = 5 $/pt`, `NQ = 20 $/pt`, `MNQ = 2 $/pt`, `GC = 100 $/pt`, `MGC = 10 $/pt`, `CL = 1000 $/pt`, `MCL = 100 $/pt`, `YM = 5 $/pt`, `MYM = 0,50 $/pt`, `RTY = 50 $/pt`, `M2K = 5 $/pt`).
-   - **Support Natif du Trading Croisé ATAS X (`CrossTradingExecutionMode` + `ICrossTradingIndicatorContext`)** :
-     - Permet d'afficher l'indicateur sur la **charte du contrat normal (`ES`, `NQ`, `GC`, `CL`, `YM`, `RTY`)** pour bénéficier de la profondeur Order Flow institutionnelle, tout en exécutant les ordres (`TradingManager.Security`), en gérant **`TP1` / `Early Profit-Lock` / `Trailing Stop` / `TP2`** tick-par-tick et en synchronisant le **PnL Réel** sur le **contrat Micro (`MES`, `MNQ`, `MGC`, `MCL`, `MYM`, `M2K`)** sélectionné dans le Trading Croisé d'ATAS X.
-     - Deux nouveaux boutons interactifs cliquables directement sur la charte : **`[ PROFIL: AUTO (ES/S&P | NQ/NAS | BTC) ]`** et **`[ CROISÉ: ES➔MES / NQ➔MNQ ]`**.
+Nouveau Bot de Trading & Indicateur Order Flow **déjà compilé** ([`BigTradesReversalOptionsBot.dll`](./BigTradesReversalOptionsBot.dll) & [`FootprintHvnLvnAbsorption.dll`](./FootprintHvnLvnAbsorption.dll)) pour **ATAS X** (Windows & macOS, `.NET 10.0`) reproduisant la configuration complète **BigTrades Piégés (losanges ◆) + Reversal + Indicateur Options X-Ray + HVN / LVN** :
+
+1. **Détection des BigTrades Piégés (Losanges Concentriques Rouges/Verts `◆`) & Reversal Automatique (`Groupe 13`)** :
+   - **Capture Temps Réel & Footprint (`OnCumulativeTrade`, `OnNewTrade` & `ClusterRow`)** : Détecte tous les gros ordres agressifs au marché dépassant le seuil calibré (`BigTradeMinLots = 40 lots` par défaut sur `NQ`, auto-adapté sur `MNQ`, `ES`, `MES`, `GC`, `CL`, `BTC`) et les affiche sous forme de **doubles losanges concentriques** (Rouge = `BigTrade Sell ◆`, Vert = `BigTrade Buy ◆`).
+   - **Identification du Piégeage (`TrappedBigTradeSide` & Contour Or `◆ PIÉGÉ`)** :
+     - **Reversal ACHAT (`▲`)** : Lorsqu'un gros `BigTrade Sell ◆` (losange rouge) frappe le bas de la bougie ou une **HVN Zone / PUT WALL** mais est absorbé et que le prix clôture en retournement haussier au-dessus du losange (`hasBigTradeBullReversal`).
+     - **Reversal VENTE (`▼`)** : Lorsqu'un gros `BigTrade Buy ◆` (losange vert) frappe le haut de la bougie ou une **HVN Zone / CALL WALL** mais est rejeté et que le prix clôture en retournement baissier sous le losange (`hasBigTradeBearReversal`).
+   - **Toast d'Alerte BigTrade en bas à gauche (`RenderBigTradeAlertToast`)** : Affiche la notification temps réel style ATAS : `Alert — NQ: New BigTrade at 27899.25 (sell) is more than 40 lots`.
+2. **Indicateur Options X-Ray Intégré (`CALL WALL`, `MAX PAIN`, `PUT WALL`, `0 DTE Expected Move` & Profil GEX par Strike — `Groupe 14`)** :
+   - **Niveaux Institutionnels Options X-Ray (`ComputeOptionsXRayLevelsForBar` & `RenderOptionsXRayOverlay`)** :
+     - **`CALL WALL`** (ligne verte continue + badge `CALL WALL 28050 · +15M` / `+11.9M`) : Strike supérieur à plus forte concentration Call Gamma Exposure.
+     - **`MAX PAIN`** (ligne rouge pointillée + badge `MAX PAIN 27900`) : Strike d'équilibre gravitationnel de la session.
+     - **`PUT WALL`** (ligne violette continue + badge `PUT WALL 27850 · -69.5M` / `-82.4M`) : Strike inférieur à plus forte concentration Put Gamma Exposure.
+     - **Bandeau `Options X-Ray: SPX options data`** en haut à droite affichant le mouvement attendu `0 DTE = 1226pts · MP 27900`.
+   - **Histogramme GEX Horizontal par Strike (`ShowOptionsStrikeGexProfile`)** : Barres horizontales sur le bord droit du graphique (jaunes au-dessus du Max Pain pour le Call GEX, gris-bleu/violet en dessous pour le Put GEX).
+   - **Étiquettes d'Ordres Actifs Style DOM ATAS (`RenderDomStyleActiveOrderTags`)** : Affiche directement sur la charte les étiquettes `X │ 2 │ TP │ $ +3755.00 │ R`, `X │ 2 │ BUY │ $+5905.00` et `X │ 2 │ SL │ $ -2355.00 │ R`.
+3. **Conservation Intégrale du Code HVN (*High Volume Nodes*) & LVN (*Low Volume Nodes*)** :
+   - **HVN Zone & POC** : Nœuds de fort volume intra-bougie et bandes horizontales `HVN Zone` du profil de volume composite (session ou glissant) projetées sur la charte.
+   - **LVN Pocket** : Creux de liquidité / *single prints* intra-bougie et vallées `LVN` du profil composite servant de zones de rejet ou d'accélération vers le prochain HVN.
+4. **Heavy Absorption & Acheteurs/Vendeurs Piégés (*Order Flow Footprint*)** — Détection multi-critères des absorptions passives Bid/Ask (`ABS ▲ / ▼`) et des ordres agressifs piégés dans les mèches (`V.PIÉGÉS ▲` / `A.PIÉGÉS ▼`).
+5. **Flux d'Options ATAS X (`IOptionsDataFeed`, Calls/Puts, PCR, $\Delta\text{OI}$ & Sweeps)** — Intègre le flux d'options fourni par ATAS X pour confirmer les retournements BigTrades.
+6. **Raffinement Quant Senior (`Groupe 11` : Confluence Multi-Piliers $\ge 3$, Protection Anti-Écarts de Prix, Stop-Loss Structurel Hors Bougie & Prise de Profit Dynamique alignée sur les Murs d'Options)** — Validation institutionnelle combinant **BigTrades Piégés (`◆`)**, **HVN/LVN**, **Options X-Ray (`PUT WALL` / `CALL WALL` / `MAX PAIN`)**, **Heavy Absorption**, **Delta Tail / Divergence CVD**, **Structure Multi-Bougies & EMA 8/21/50 + VWAP** et **Z-Score**, avec **Stop-Loss structurel strictement hors de la bougie** et alignement intelligent de **`TP1` / `TP2`** devant les murs d'options (`PUT WALL` / `CALL WALL`).
+7. **Bot de Trading Automatique Intégré, Synchronisation 100% Ordre Visuel ↔ Ordre Réel & Coupe-Circuit `Max Drawdown` / `Max PnL` (`Groupe 12`)** :
+   - **Synchronisation 100% Exacte Ordre Visuel ↔ Ordre Réel (`OnlyShowExecutedBotSignals`, `_lockedExecutedSignalsByBar`, `GetLiveExecutableChartPrice`)** : Ancrage direct de `EntryPrice` sur le prix d'exécution réel (`BestAskPrice` / `BestBidPrice` puis `pos.AveragePrice`).
+   - **Risk Guard — Drawdown Max (`BotMaxDrawdownUsd`)** & **Profit Lock — PnL Max (`BotMaxProfitTargetUsd`)**.
+   - **Synchronisation Temps Réel du PnL Réel avec le Compte Actif ATAS (`SyncPnlWithActiveAccount`, `AccountPnlScope`)**.
+   - **Boutons Interactifs sur la Charte** : Activation du Bot (`[ ● BOT QUANT : ON/OFF ]`), Mode (`SIM/PAPER` ↔ `LIVE ATAS`), Horaires (`DÉBUT → FIN`), Compte Actif et Profil Marché (`NQ/MNQ`, `ES/MES`, `BTC`).
 
 ---
 
-## 📥 Fichier `.dll` déjà compilé
+## 📥 Fichiers `.dll` déjà compilés
 
-Le binaire compilé prêt à l'emploi pour ATAS X est disponible à trois emplacements dans ce dépôt :
-- [`FootprintHvnLvnAbsorption.dll`](./FootprintHvnLvnAbsorption.dll) *(racine du projet)*
-- [`dist/FootprintHvnLvnAbsorption.dll`](./dist/FootprintHvnLvnAbsorption.dll)
-- [`bin/Release/net10.0/FootprintHvnLvnAbsorption.dll`](./bin/Release/net10.0/FootprintHvnLvnAbsorption.dll)
+Deux binaires compilés prêts à l'emploi pour ATAS X sont disponibles à la racine du projet et dans `dist/` :
+- [`BigTradesReversalOptionsBot.dll`](./BigTradesReversalOptionsBot.dll) *(bot dédié avec BigTrades ◆ + Reversal + Options X-Ray + HVN/LVN activés par défaut)*
+- [`FootprintHvnLvnAbsorption.dll`](./FootprintHvnLvnAbsorption.dll) *(inclut les deux entrées dans la liste des indicateurs ATAS X)*
+- [`dist/BigTradesReversalOptionsBot.dll`](./dist/BigTradesReversalOptionsBot.dll) & [`dist/FootprintHvnLvnAbsorption.dll`](./dist/FootprintHvnLvnAbsorption.dll)
 
 | Propriété | Valeur |
 | :--- | :--- |
-| **Nom dans ATAS X** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
+| **Nom dans ATAS X (Nouveau Bot)** | `ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN` |
+| **Nom dans ATAS X (Suite Complète)** | `Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `157 696 octets` (154,0 Ko) |
-| **SHA-256** | `23929438d18b6fd26aeaf09358207d79276a9c1158c04edb434a0782c361f1ff` |
+| **Taille du binaire** | `185 344 octets` (181,0 Ko) |
+| **SHA-256** | `f85d31bb92871aec2a7d949bd8c8894c95bba1fe2d5153096b0f89122369c77c` |
 
 ---
 
 ## 🚀 Installation dans ATAS X
 
 ### Sur Windows
-1. Téléchargez le fichier [`FootprintHvnLvnAbsorption.dll`](./FootprintHvnLvnAbsorption.dll).
-2. *(Optionnel)* Si Windows bloque le fichier téléchargé depuis Internet : Clic droit sur `FootprintHvnLvnAbsorption.dll` → **Propriétés** → cochez **Débloquer** (*Unblock*) en bas → **Appliquer**.
-3. Copiez `FootprintHvnLvnAbsorption.dll` dans le dossier des indicateurs d'ATAS :
+1. Téléchargez le fichier [`BigTradesReversalOptionsBot.dll`](./BigTradesReversalOptionsBot.dll) (ou [`FootprintHvnLvnAbsorption.dll`](./FootprintHvnLvnAbsorption.dll)).
+2. *(Optionnel)* Si Windows bloque le fichier téléchargé depuis Internet : Clic droit sur le fichier `.dll` → **Propriétés** → cochez **Débloquer** (*Unblock*) en bas → **Appliquer**.
+3. Copiez le fichier `.dll` dans le dossier des indicateurs d'ATAS :
    ```text
    %USERPROFILE%\Documents\ATAS\Indicators
    ```
-4. Sur votre graphique Footprint dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I**), cherchez **`Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
+4. Sur votre graphique dans **ATAS X**, ouvrez le gestionnaire d'indicateurs (**Ctrl+I**), cherchez **`ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN`** (dans la catégorie **`Order Flow - Custom`**) et cliquez sur **Add**.
 
 ### Sur macOS (ATAS X)
-1. Copiez `FootprintHvnLvnAbsorption.dll` dans :
+1. Copiez [`BigTradesReversalOptionsBot.dll`](./BigTradesReversalOptionsBot.dll) dans :
    ```bash
    ~/Documents/ATAS/Indicators/
    ```
-2. Ajoutez **`Footprint Quant OrderFlow, Options Flow & Auto-Bot (Max DD / Max PnL)`** depuis la fenêtre des indicateurs d'ATAS X.
+2. Ajoutez **`ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN`** depuis la fenêtre des indicateurs d'ATAS X.
