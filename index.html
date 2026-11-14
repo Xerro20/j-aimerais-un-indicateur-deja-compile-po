@@ -1031,17 +1031,22 @@
     }
 
     function resetBotFromChart() {
-      document.getElementById("rngMaxDd").value = 1500;
-      document.getElementById("rngMaxPnl").value = 2500;
+      document.getElementById("rngBigTradeLots").value = 40;
+      document.getElementById("rngMaxDd").value = 2355;
+      document.getElementById("rngMaxPnl").value = 7075;
       document.getElementById("inpBotStart").value = "15:30";
       document.getElementById("inpBotEnd").value = "15:50";
       chartScheduleEnabled = true;
       chartAccountSyncEnabled = true;
       document.getElementById("chkBot").checked = true;
+      document.getElementById("chkBigTrades").checked = true;
+      document.getElementById("chkOptionsXRay").checked = true;
+      document.getElementById("chkDomTags").checked = true;
       analyzeAndRender();
     }
 
     function analyzeAndRender() {
+      const bigTradeMinLots = parseInt((document.getElementById("rngBigTradeLots") || { value: 40 }).value, 10);
       const optDom = parseInt(document.getElementById("rngOptDom").value, 10);
       const hvnPct = parseInt(document.getElementById("rngHvn").value, 10);
       const lvnPct = parseInt(document.getElementById("rngLvn").value, 10);
@@ -1050,6 +1055,9 @@
       const maxDdLimit = parseInt(document.getElementById("rngMaxDd").value, 10);
       const maxPnlLimit = parseInt(document.getElementById("rngMaxPnl").value, 10);
 
+      if (document.getElementById("valBigTradeLots")) {
+        document.getElementById("valBigTradeLots").textContent = bigTradeMinLots + " lots";
+      }
       document.getElementById("valOptDom").textContent = optDom + "%";
       document.getElementById("valHvn").textContent = hvnPct + "%";
       document.getElementById("valLvn").textContent = lvnPct + "%";
@@ -1059,6 +1067,9 @@
       document.getElementById("valMaxPnl").textContent = "+" + maxPnlLimit + "$";
 
       const showBot = document.getElementById("chkBot").checked;
+      const showBigTrades = (document.getElementById("chkBigTrades") || { checked: true }).checked;
+      const showOptionsXRay = (document.getElementById("chkOptionsXRay") || { checked: true }).checked;
+      const showDomTags = (document.getElementById("chkDomTags") || { checked: true }).checked;
       const showBuySell = document.getElementById("chkBuySell").checked;
       const showBanner = document.getElementById("chkBanner").checked;
       const showEntrySl = document.getElementById("chkEntrySl").checked;
