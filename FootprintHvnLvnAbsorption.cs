@@ -6738,9 +6738,9 @@ namespace ATAS.Indicators.Custom
 
             string mainTxt = _enableTradingBot
                 ? (botPerf.IsHaltedByMaxDrawdown
-                    ? "BOT QUANT : STOP DD MAX"
-                    : (botPerf.IsHaltedByMaxProfit ? "BOT QUANT : LOCK PNL MAX" : "BOT QUANT : ON (ACTIF)"))
-                : "BOT QUANT : OFF (CLIQUEZ)";
+                    ? "BOT BIGTRADES : STOP DD MAX"
+                    : (botPerf.IsHaltedByMaxProfit ? "BOT BIGTRADES : LOCK PNL MAX" : "BOT BIGTRADES : ON (ACTIF)"))
+                : "BOT BIGTRADES : OFF (CLIQUEZ)";
 
             string modeTxt = _botMode == BotExecutionMode.LiveAutoTradingManager
                 ? "MODE: LIVE ATAS"
@@ -7019,12 +7019,50 @@ namespace ATAS.Indicators.Custom
             decimal effMinLots = GetEffectiveBigTradeMinLots(tickSize);
             if (effMinLots <= 0m) effMinLots = 40m;
 
-            // Sélection des plus gros BigTrades de la bougie (max 3 par bougie pour éviter toute surcharge visuelle)
+            // Sélection des plus gros BigTrades de la bougie (cluster + prints live temps réel, max 3 par bougie)
             var bigRows = new List<ClusterRow>();
             for (int i = 0; i < rows.Length; i++)
             {
                 if (rows[i].HasBigTradeBuy || rows[i].HasBigTradeSell)
                     bigRows.Add(rows[i]);
+            }
+
+            if (_liveBigTradesByBar.TryGetValue(bar, out var livePrints) && livePrints != null)
+            {
+                decimal step = tickSize * Math.Max(1, _ticksPerRow);
+                decimal barRange = Math.Max(step, candle.High - candle.Low);
+                for (int i = 0; i < livePrints.Count; i++)
+                {
+                    var lp = livePrints[i];
+                    bool alreadyInRows = false;
+                    for (int j = 0; j < bigRows.Count; j++)
+                    {
+                        if (Math.Abs(bigRows[j].Price - lp.Price) <= step * 0.6m)
+                        {
+                            alreadyInRows = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyInRows)
+                    {
+                        int trapSide = 0;
+                        if (!lp.IsBuy && lp.Price <= candle.Low + barRange * 0.55m && candle.Close >= lp.Price + step)
+                            trapSide = 1;
+                        else if (lp.IsBuy && lp.Price >= candle.High - barRange * 0.55m && candle.Close <= lp.Price - step)
+                            trapSide = -1;
+
+                        bigRows.Add(new ClusterRow
+                        {
+                            Price = lp.Price,
+                            Volume = lp.Volume,
+                            HasBigTradeBuy = lp.IsBuy,
+                            HasBigTradeSell = !lp.IsBuy,
+                            BigTradeBuyVol = lp.IsBuy ? lp.Volume : 0m,
+                            BigTradeSellVol = !lp.IsBuy ? lp.Volume : 0m,
+                            TrappedBigTradeSide = trapSide
+                        });
+                    }
+                }
             }
 
             if (bigRows.Count == 0)
