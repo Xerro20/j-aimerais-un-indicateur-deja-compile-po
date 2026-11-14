@@ -60,9 +60,9 @@ using OFT.Rendering.Tools;
 
 namespace ATAS.Indicators.Custom
 {
-    [DisplayName("Footprint Quant OrderFlow, BigTrades Piégés (Losanges), Options X-Ray & Auto-Bot")]
+    [DisplayName("ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN")]
     [Category("Order Flow - Custom")]
-    [Description("Bot & Indicateur Quant ATAS X (.NET 10) : BigTrades Piégés (Losanges ◆) + Reversal, Options X-Ray (CALL WALL, MAX PAIN, PUT WALL & Profil GEX), Zones HVN/LVN, Heavy Absorption, Traders Piégés et Bot Automatique avec Max DD & Max PnL.")]
+    [Description("Nouveau Bot de Trading ATAS X (.NET 10) : ouvre uniquement des trades sur BigTrades Piégés (losanges ◆) + Reversal, avec l'indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL & Profil GEX), les zones HVN/LVN et les outils pratiques (Bouton ON/OFF, Horaires, Sync PnL Compte Actif, Trading Croisé Micro, Max DD / Max PnL).")]
     public class FootprintHvnLvnAbsorption : Indicator
     {
         // =====================================================================
