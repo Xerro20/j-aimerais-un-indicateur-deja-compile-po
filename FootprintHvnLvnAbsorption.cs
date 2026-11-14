@@ -5120,6 +5120,12 @@ namespace ATAS.Indicators.Custom
                     }
                 }
 
+                // Rendu des Losanges BigTrades (◆ Acheteurs Verts / Vendeurs Rouges) & BigTrades Piégés directement sur la bougie
+                if (_enableBigTradesReversal && ShowBigTradeDiamonds)
+                {
+                    RenderBigTradeDiamondsOnBar(context, bar, candle, rows, xMid, rowHeight, boldFont, cellFont);
+                }
+
                 // Marqueur d'absorption au sommet ou au creux de la bougie
                 if (ShowBarExtremeMarker && barBestAbsSide != 0)
                 {
@@ -5151,6 +5157,12 @@ namespace ATAS.Indicators.Custom
                         visibleTradeSignals.Add((sig, candle, xMid, cellX + cellW));
                     }
                 }
+            }
+
+            // 2bis. Rendu de l'Indicateur Options X-Ray (CALL WALL, MAX PAIN, PUT WALL, 0 DTE & Histogramme Strike GEX Jaune/Bleu-Gris)
+            if (_enableOptionsXRayOverlay)
+            {
+                RenderOptionsXRayOverlay(context, chartRegion, firstBar, lastBar, tickSize, latestBarOptMetrics, boldFont, cellFont);
             }
 
             // 3. Projection des rayons Support / Résistance des Heavy Absorptions
@@ -5242,6 +5254,18 @@ namespace ATAS.Indicators.Custom
             if (_enableTradingBot && ShowBotExecutionOnChart && botTrades.Count > 0)
             {
                 RenderBotTradesOnChart(context, botTrades, firstBar, lastBar, boldFont, cellFont);
+            }
+
+            // 6bis. Rendu des Badges d'Ordres Style DOM ATAS ([X] [2] [TP | $ +... | R] / [SL | $ +... | R])
+            if (ShowDomStyleOrderTags)
+            {
+                RenderDomStyleActiveOrderTags(context, chartRegion, lastBar, tickSize, botPerf, latestTradeSignal, boldFont, cellFont);
+            }
+
+            // 6ter. Rendu de l'Encadré de Notification BigTrade en bas à gauche ("NQ: New BigTrade at ... is more than 40 lots")
+            if (_enableBigTradesReversal && ShowBigTradeAlertToast)
+            {
+                RenderBigTradeAlertToast(context, chartRegion, lastBar, tickSize, boldFont, cellFont);
             }
 
             // 7. Rendu de la Bannière Visuelle d'Alerte Achat/Vente en haut du graphique
