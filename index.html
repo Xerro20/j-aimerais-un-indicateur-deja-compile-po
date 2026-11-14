@@ -728,30 +728,30 @@
 
     <!-- Feature & Installation Guide -->
     <section class="section">
-      <h2 class="section-title" style="margin-bottom: 16px;">Adaptation Multi-Marchés (BTC Binance + CME ES/NQ/GC/CL) &amp; Trading Croisé ATAS X</h2>
+      <h2 class="section-title" style="margin-bottom: 16px;">Fonctionnement du Bot : BigTrades Piégés (Losanges ◆), Reversal, Options X-Ray &amp; HVN / LVN</h2>
       <div class="three-col">
         <div class="card feature-card">
-          <h3>🏛 1. Calibrage Automatique CME (S&amp;P 500, NASDAQ, GC, CL) &amp; BTC</h3>
+          <h3>◆ 1. BigTrades Piégés (Losanges) &amp; Reversal</h3>
           <ul>
-            <li><strong>100 % Intact sur BTC Binance Futures :</strong> Conserve intégralement tous les réglages d'origine lorsque le graphique est sur un contrat Crypto (<code>BTCUSDT</code>, <code>ETHUSDT</code>).</li>
-            <li><strong>Adaptation Native CME :</strong> Détecte automatiquement <strong>S&amp;P 500 (<code>ES</code> / <code>MES</code>)</strong>, <strong>NASDAQ 100 (<code>NQ</code> / <code>MNQ</code>)</strong>, <strong>Gold (<code>GC</code> / <code>MGC</code>)</strong>, <strong>Crude Oil (<code>CL</code> / <code>MCL</code>)</strong>, <strong>Dow (<code>YM</code> / <code>MYM</code>)</strong> et <strong>Russell (<code>RTY</code> / <code>M2K</code>)</strong>.</li>
-            <li><strong>Agrégation Micro-Clusters CME :</strong> Regroupe automatiquement les ticks adjacents sur les contrats volatils à carnet fin (<code>NQ</code>, <code>MNQ</code>, <code>GC</code>, <code>CL</code>) et adapte l'estimation d'OI lorsque <code>Candle.OI == 0</code> en intraday CME.</li>
+            <li><strong>Détection BigTrades (&ge; 40 lots NQ) :</strong> Capte les gros ordres agressifs au marché en direct (<code>OnNewTrade</code> &amp; <code>OnCumulativeTrade</code>) ainsi que les blocs institutionnels du Footprint, et les affiche sous forme de <strong>doubles losanges concentriques rouges (Sell ◆) et verts (Buy ◆)</strong>.</li>
+            <li><strong>Piégeage &amp; Reversal Automatique :</strong> Lorsqu'un gros losange rouge (<code>Sell ◆</code>) est absorbé en bas de mèche sur une <strong>HVN Zone</strong> ou un <strong>PUT WALL</strong> et que la bougie clôture au-dessus (contour Or <code>◆ PIÉGÉ</code>), le Bot déclenche un <strong>Reversal ACHAT ▲</strong>. Inversement sur un losange vert (<code>Buy ◆</code>) piégé en haut sous un <strong>CALL WALL</strong>.</li>
+            <li><strong>Toast d'Alerte ATAS :</strong> Affiche en bas à gauche la notification exacte <code>Alert — NQ: New BigTrade at 27899.25 (sell) is more than 40 lots</code>.</li>
           </ul>
         </div>
 
         <div class="card feature-card">
-          <h3>🔀 2. Trading Croisé ATAS X (Charte Normal ➔ Exécution Micro)</h3>
+          <h3>📊 2. Indicateur Options X-Ray + HVN / LVN</h3>
           <ul>
-            <li><strong>Intégration <code>ICrossTradingIndicatorContext</code> :</strong> Analyse l'Order Flow institutionnel sur la <strong>charte du contrat normal (<code>ES</code>, <code>NQ</code>, <code>GC</code>, <code>CL</code>)</strong> tout en exécutant les ordres sur le <strong>contrat Micro (<code>MES</code>, <code>MNQ</code>, <code>MGC</code>, <code>MCL</code>)</strong> via le Trading Croisé d'ATAS X.</li>
-            <li><strong>Valeur du Point &amp; PnL Réel Micro :</strong> Ajuste automatiquement le multiplicateur en $/pt (<code>MES = 5$/pt</code>, <code>MNQ = 2$/pt</code>, <code>MGC = 10$/pt</code>, <code>MCL = 100$/pt</code>) et synchronise les positions / trades Micro sur la charte du contrat normal.</li>
-            <li><strong>Gestion Temps Réel TP1 / Trail / TP2 :</strong> Suit les niveaux du graphique normal tick-par-tick et envoie les clôtures partielles (<code>TP1 50 %</code>) et finales (<code>SL</code> / <code>Trailing</code> / <code>TP2</code>) sur la position Micro active.</li>
+            <li><strong>Options X-Ray intégré :</strong> Trace en temps réel le <strong><code>CALL WALL</code> (+15M / +11.9M en vert)</strong>, le <strong><code>MAX PAIN</code> (27900 en pointillés rouges)</strong>, le <strong><code>PUT WALL</code> (-69.5M / -82.4M en violet)</strong> et le bandeau <strong><code>0 DTE = 1226pts · MP 27900</code></strong>.</li>
+            <li><strong>Profil GEX Horizontal par Strike :</strong> Affiche sur le bord droit du graphique l'histogramme d'exposition Gamma par strike (barres <strong>jaunes Call GEX</strong> au-dessus du Max Pain et <strong>gris-bleu Put GEX</strong> en dessous).</li>
+            <li><strong>Code HVN &amp; LVN conservé à 100 % :</strong> Toutes vos zones <strong><code>HVN Zone</code></strong>, <strong><code>LVN Pocket</code></strong>, <strong>VPOC Composite</strong> et les étiquettes DOM (<code>TP $ / SL $</code>) fonctionnent en synergie avec les murs d'options.</li>
           </ul>
         </div>
 
         <div class="card feature-card">
           <h3>🪟 3. Installation Windows &amp; macOS</h3>
           <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 6px;">
-            Copiez <strong>FootprintHvnLvnAbsorption.dll</strong> dans le dossier des indicateurs ATAS :
+            Copiez <strong>BigTradesReversalOptionsBot.dll</strong> (ou <strong>FootprintHvnLvnAbsorption.dll</strong>) dans le dossier des indicateurs ATAS :
           </p>
           <div class="code-box">
             <span id="winPath">%USERPROFILE%\Documents\ATAS\Indicators</span>
@@ -762,7 +762,7 @@
             <button class="copy-btn" onclick="copyText('macPath', this)">Copier</button>
           </div>
           <ul>
-            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>Footprint Quant OrderFlow, Options Flow &amp; Auto-Bot (Max DD / Max PnL)</strong>.</li>
+            <li>Dans ATAS X : <strong>Ctrl+I (Indicators)</strong> → catégorie <strong>Order Flow - Custom</strong> → <strong>ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN</strong>.</li>
           </ul>
         </div>
       </div>
@@ -771,21 +771,21 @@
 
   <script>
     const marketProfiles = [
-      "📊 PROFIL : AUTO (CME ES/NQ & BTC)",
-      "📊 PROFIL : CME S&P 500 (ES / MES)",
+      "📊 PROFIL : AUTO (CME NQ/ES & BTC)",
       "📊 PROFIL : CME NASDAQ 100 (NQ / MNQ)",
+      "📊 PROFIL : CME S&P 500 (ES / MES)",
       "📊 PROFIL : CME CLÉS (GC / CL / YM / RTY)",
       "📊 PROFIL : BTC BINANCE FUTURES"
     ];
-    let currentMarketProfileIdx = 0;
+    let currentMarketProfileIdx = 1;
 
     const crossModes = [
-      "🔀 CROISÉ : ES ➔ MES (5$/pt)",
       "🔀 CROISÉ : NQ ➔ MNQ (2$/pt)",
-      "🔀 CROISÉ : FORCER MICRO (MES/MNQ)",
-      "🔀 CROISÉ : DIRECT CONTRAT CHARTE"
+      "🔀 CROISÉ : ES ➔ MES (5$/pt)",
+      "🔀 CROISÉ : FORCER MICRO (MNQ/MES)",
+      "🔀 CROISÉ : DIRECT CONTRAT NQ (20$/pt)"
     ];
-    let currentCrossModeIdx = 0;
+    let currentCrossModeIdx = 3;
 
     function cycleMarketProfileFromChart() {
       currentMarketProfileIdx = (currentMarketProfileIdx + 1) % marketProfiles.length;
@@ -810,39 +810,47 @@
     }
 
     const prices = [
-      5893.25, 5893.00, 5892.75, 5892.50, 5892.25, 5892.00, 5891.75,
-      5891.50, 5891.25, 5891.00, 5890.75, 5890.50, 5890.25, 5890.00
+      28050.00, 28025.00, 28000.00, 27975.00, 27950.00, 27925.00, 27900.00,
+      27875.00, 27850.00, 27825.00, 27800.00, 27775.00, 27750.00, 27713.00
     ];
 
     const bars = [
       {
         time: "15:30",
-        openIdx: 9, closeIdx: 4, highIdx: 3, lowIdx: 12,
-        oiDelta: +310, sweeps: 3, callPct: 72, putPct: 28, pcr: 0.39,
+        openIdx: 9, closeIdx: 4, highIdx: 3, lowIdx: 13,
+        oiDelta: +310, sweeps: 3, callPct: 74, putPct: 26, pcr: 0.35,
+        bigTrades: [
+          { rowIdx: 13, lots: 84, isBuy: false, trapped: true },
+          { rowIdx: 11, lots: 52, isBuy: false, trapped: true }
+        ],
         levels: {
           3:  { bid: 22,  ask: 48 },
           4:  { bid: 140, ask: 215 }, // HVN
           5:  { bid: 95,  ask: 130 },
-          6:  { bid: 18,  ask: 14 },  // LVN pocket
+          6:  { bid: 18,  ask: 14 },  // LVN pocket (27900 Max Pain)
           7:  { bid: 185, ask: 260 }, // POC
-          8:  { bid: 110, ask: 125 },
+          8:  { bid: 110, ask: 125 }, // PUT WALL 27850
           9:  { bid: 80,  ask: 90 },
-          10: { bid: 185, ask: 55 },  // Vendeurs Piégés
-          11: { bid: 420, ask: 85 },  // Heavy Absorption + Vendeurs Piégés
-          12: { bid: 240, ask: 40 }   // Vendeurs Piégés
+          10: { bid: 185, ask: 55 },
+          11: { bid: 420, ask: 85 },  // Heavy Absorption + BigTrade Sell Piégé
+          12: { bid: 210, ask: 45 },
+          13: { bid: 495, ask: 40 }   // HVN Zone 27713.00 + BigTrade Sell 84 lots Piégé
         }
       },
       {
         time: "15:35",
         openIdx: 4, closeIdx: 6, highIdx: 1, lowIdx: 8,
         oiDelta: -195, sweeps: 2, callPct: 29, putPct: 71, pcr: 2.45,
+        bigTrades: [
+          { rowIdx: 1, lots: 68, isBuy: true, trapped: true }
+        ],
         levels: {
-          1: { bid: 35,  ask: 235 }, // Acheteurs Piégés
+          1: { bid: 35,  ask: 285 }, // BigTrade Buy Piégé sous CALL WALL
           2: { bid: 75,  ask: 460 }, // Bearish Heavy Absorption + Acheteurs Piégés
-          3: { bid: 50,  ask: 210 }, // Acheteurs Piégés
-          4: { bid: 170, ask: 195 }, // HVN
+          3: { bid: 50,  ask: 210 },
+          4: { bid: 170, ask: 195 }, // HVN (27950)
           5: { bid: 20,  ask: 15 },  // LVN pocket
-          6: { bid: 210, ask: 185 },
+          6: { bid: 210, ask: 185 }, // MAX PAIN 27900
           7: { bid: 120, ask: 95 },
           8: { bid: 45,  ask: 30 }
         }
@@ -851,12 +859,15 @@
         time: "15:40",
         openIdx: 6, closeIdx: 9, highIdx: 4, lowIdx: 11,
         oiDelta: -120, sweeps: 1, callPct: 38, putPct: 62, pcr: 1.63,
+        bigTrades: [
+          { rowIdx: 4, lots: 46, isBuy: true, trapped: true }
+        ],
         levels: {
-          4:  { bid: 30,  ask: 195 }, // Acheteurs Piégés
-          5:  { bid: 45,  ask: 170 }, // Acheteurs Piégés
+          4:  { bid: 30,  ask: 225 }, // Acheteurs Piégés + BigTrade Buy
+          5:  { bid: 45,  ask: 170 },
           6:  { bid: 130, ask: 90 },
           7:  { bid: 280, ask: 240 }, // POC / HVN
-          8:  { bid: 25,  ask: 18 },  // LVN pocket
+          8:  { bid: 25,  ask: 18 },  // LVN pocket (27850 Put Wall)
           9:  { bid: 190, ask: 165 }, // HVN
           10: { bid: 115, ask: 95 },
           11: { bid: 55,  ask: 35 }
@@ -865,32 +876,40 @@
       {
         time: "15:45",
         openIdx: 10, closeIdx: 5, highIdx: 4, lowIdx: 13,
-        oiDelta: +480, sweeps: 4, callPct: 76, putPct: 24, pcr: 0.32,
+        oiDelta: +480, sweeps: 4, callPct: 78, putPct: 22, pcr: 0.28,
+        bigTrades: [
+          { rowIdx: 12, lots: 92, isBuy: false, trapped: true },
+          { rowIdx: 8,  lots: 58, isBuy: true,  trapped: false }
+        ],
         levels: {
           4:  { bid: 60,  ask: 95 },
           5:  { bid: 175, ask: 230 }, // HVN
           6:  { bid: 14,  ask: 19 },  // LVN
           7:  { bid: 210, ask: 245 }, // HVN
-          8:  { bid: 110, ask: 130 },
+          8:  { bid: 110, ask: 240 }, // PUT WALL 27850
           9:  { bid: 85,  ask: 90 },
           10: { bid: 70,  ask: 60 },
           11: { bid: 215, ask: 55 },  // Vendeurs Piégés
-          12: { bid: 490, ask: 90 },  // Bullish Heavy Absorption + Vendeurs Piégés
-          13: { bid: 265, ask: 45 }   // Vendeurs Piégés
+          12: { bid: 520, ask: 90 },  // Bullish Heavy Absorption + BigTrade Sell 92 lots Piégé !
+          13: { bid: 265, ask: 45 }   // HVN Zone 27713.00
         }
       },
       {
         time: "15:50",
         openIdx: 5, closeIdx: 3, highIdx: 0, lowIdx: 7,
         oiDelta: -260, sweeps: 3, callPct: 26, putPct: 74, pcr: 2.85,
+        bigTrades: [
+          { rowIdx: 0, lots: 76, isBuy: true,  trapped: true },
+          { rowIdx: 6, lots: 44, isBuy: false, trapped: false }
+        ],
         levels: {
-          0: { bid: 60,  ask: 410 }, // Bearish Heavy Absorption + Acheteurs Piégés
+          0: { bid: 60,  ask: 440 }, // CALL WALL 28050 + BigTrade Buy 76 lots Piégé -> Reversal Short !
           1: { bid: 45,  ask: 215 }, // Acheteurs Piégés
           2: { bid: 120, ask: 160 },
           3: { bid: 245, ask: 290 }, // POC / HVN
-          4: { bid: 190, ask: 215 }, // HVN
+          4: { bid: 190, ask: 215 }, // HVN (27950)
           5: { bid: 22,  ask: 16 },  // LVN
-          6: { bid: 95,  ask: 80 },
+          6: { bid: 195, ask: 80 },  // New BigTrade at 27899.25 (sell) > 40 lots
           7: { bid: 50,  ask: 40 }
         }
       }
@@ -907,33 +926,33 @@
     const atasActiveAccounts = {
       apex: {
         name: "Apex-PA-2049",
-        balance: 52480,
-        portfolioRealized: 1100,
-        portfolioUnrealized: 325,
-        instRealized: 850,
-        instUnrealized: 225,
+        balance: 58385,
+        portfolioRealized: 3755,
+        portfolioUnrealized: 5905,
+        instRealized: 3755,
+        instUnrealized: 5905,
         openQty: 2,
-        avgPrice: 5891.50
+        avgPrice: 27750.00
       },
       topstep: {
         name: "Topstep-XFA-881",
-        balance: 151920,
-        portfolioRealized: 1640,
-        portfolioUnrealized: -180,
-        instRealized: 1240,
-        instUnrealized: -180,
-        openQty: -1,
-        avgPrice: 5892.75
+        balance: 157075,
+        portfolioRealized: 4720,
+        portfolioUnrealized: 2355,
+        instRealized: 4720,
+        instUnrealized: 2355,
+        openQty: 2,
+        avgPrice: 27775.00
       },
       sim101: {
         name: "Sim101",
-        balance: 100675,
-        portfolioRealized: 525,
-        portfolioUnrealized: 150,
-        instRealized: 525,
-        instUnrealized: 150,
-        openQty: 1,
-        avgPrice: 5892.00
+        balance: 105905,
+        portfolioRealized: 2150,
+        portfolioUnrealized: 3755,
+        instRealized: 2150,
+        instUnrealized: 3755,
+        openQty: 2,
+        avgPrice: 27800.00
       }
     };
 
