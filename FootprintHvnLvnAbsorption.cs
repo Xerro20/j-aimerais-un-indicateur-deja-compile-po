@@ -6142,11 +6142,9 @@ namespace ATAS.Indicators.Custom
                 : ChartInfo!.GetYByPrice(candle.High, false) - baseOffset;
 
             string line1 = isBuy
-                ? $"★ QUANT ACHAT ▲ [{sig.ConfluenceScore}% | Z:{sig.ClusterZScore:0.0}σ]"
-                : $"★ QUANT VENTE ▼ [{sig.ConfluenceScore}% | Z:{sig.ClusterZScore:0.0}σ]";
-            string line2 = isBuy
-                ? $"Calls {sig.CallFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | TP1 {sig.Tp1Price} • TP2 {sig.Tp2Price}"
-                : $"Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}) | TP1 {sig.Tp1Price} • TP2 {sig.Tp2Price}";
+                ? $"◆ REVERSAL ACHAT ▲ [BigTrade {sig.BigTradeLots:0}L Piégé @ {sig.BigTradePrice}]"
+                : $"◆ REVERSAL VENTE ▼ [BigTrade {sig.BigTradeLots:0}L Piégé @ {sig.BigTradePrice}]";
+            string line2 = $"TP1: {sig.Tp1Price} • TP2: {sig.Tp2Price} | SL: {sig.StopPrice}";
 
             Size sz1 = context.MeasureString(line1, boldFont);
             Size sz2 = context.MeasureString(line2, smallFont);
@@ -6210,14 +6208,14 @@ namespace ATAS.Indicators.Custom
             var subFont = new RenderFont("Consolas", 10);
 
             string title = isBuy
-                ? $"▲ SIGNAL QUANT ACHAT @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]"
-                : $"▼ SIGNAL QUANT VENTE @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price} [{sig.ConfluenceScore}%]";
+                ? $"▲ REVERSAL ACHAT (◆ BIGTRADE {sig.BigTradeLots:0}L PIÉGÉ) @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price}"
+                : $"▼ REVERSAL VENTE (◆ BIGTRADE {sig.BigTradeLots:0}L PIÉGÉ) @ {sig.EntryPrice} | SL: {sig.StopPrice} | TP1: {sig.Tp1Price} | TP2: {sig.Tp2Price}";
 
             string acctTag = !string.IsNullOrWhiteSpace(botPerf.ActiveAccountName) ? $" [{botPerf.ActiveAccountName}]" : string.Empty;
             string botTag = (_enableTradingBot || botPerf.IsSyncedWithActiveAccount)
                 ? $" | PnL Réel{acctTag}: {botPerf.TotalPnlUsd:+0.00;-0.00;0.00}$ (Max {BotMaxProfitTargetUsd:0}$) • DD: -{botPerf.MaxObservedDrawdownUsd:0.00}$ (Max -{BotMaxDrawdownUsd:0}$)"
                 : string.Empty;
-            string detail = $"Options Flow : Calls {sig.CallFlowPct:0}% / Puts {sig.PutFlowPct:0}% (PCR {sig.PutCallRatio:0.00}, ΔOI {sig.OiDelta:+0;-0;0}) | {sig.ReasonTag}{botTag}";
+            string detail = $"Options X-Ray : {sig.XRaySummaryTag} | {sig.ReasonTag}{botTag}";
 
             Size s1 = context.MeasureString(title, headerFont);
             Size s2 = context.MeasureString(detail, subFont);
