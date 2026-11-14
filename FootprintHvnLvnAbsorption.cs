@@ -3659,9 +3659,95 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // Activation du Squeeze 2-Bougies comme signal Vendeurs/Acheteurs Piégés
-            bool effectiveTrapSellers = hasTrapSellers || hasPrevBarTrapSellersSqueeze;
-            bool effectiveTrapBuyers = hasTrapBuyers || hasPrevBarTrapBuyersSqueeze;
+            // --- Détection Multi-Bougies & Intra-Bougie des BigTrades Piégés (Losanges ◆) + Reversal (comme sur les photos NQ 5m) ---
+            bool hasBigTradeBullReversal = opt.HasTrappedBigTradeBull;
+            bool hasBigTradeBearReversal = opt.HasTrappedBigTradeBear;
+            decimal bigTradeBullPrice = opt.HasTrappedBigTradeBull ? opt.TrappedBigTradePrice : 0m;
+            decimal bigTradeBearPrice = opt.HasTrappedBigTradeBear ? opt.TrappedBigTradePrice : 0m;
+            decimal bigTradeBullLots = opt.HasTrappedBigTradeBull ? opt.TrappedBigTradeLots : 0m;
+            decimal bigTradeBearLots = opt.HasTrappedBigTradeBear ? opt.TrappedBigTradeLots : 0m;
+
+            if (_enableBigTradesReversal)
+            {
+                int btLookback = Math.Clamp(_bigTradeReversalLookbackBars, 1, 6);
+                for (int k = 0; k <= Math.Min(btLookback, bar); k++)
+                {
+                    int bCheck = bar - k;
+                    var cCheck = GetCandle(bCheck);
+                    decimal cRange = Math.Max(step, cCheck.High - cCheck.Low);
+
+                    if (_barRowsCache.TryGetValue(bCheck, out var rCheck) && rCheck != null)
+                    {
+                        for (int i = 0; i < rCheck.Length; i++)
+                        {
+                            // 1) Losange Rouge (BigTrade Sell ◆) dans le bas du mouvement suivi d'un Reversal Haussier au-dessus du losange
+                            if (rCheck[i].HasBigTradeSell &&
+                                rCheck[i].Price <= cCheck.Low + cRange * 0.50m &&
+                                candle.Close > candle.Open &&
+                                candle.Close >= rCheck[i].Price + step * 1.5m &&
+                                (k == 0 || candle.Close >= cCheck.High - cRange * 0.25m))
+                            {
+                                hasBigTradeBullReversal = true;
+                                if (rCheck[i].BigTradeSellVol >= bigTradeBullLots || bigTradeBullPrice == 0m)
+                                {
+                                    bigTradeBullLots = rCheck[i].BigTradeSellVol;
+                                    bigTradeBullPrice = rCheck[i].Price;
+                                }
+                            }
+
+                            // 2) Losange Vert (BigTrade Buy ◆) dans le haut du mouvement suivi d'un Reversal Baissier sous le losange
+                            if (rCheck[i].HasBigTradeBuy &&
+                                rCheck[i].Price >= cCheck.High - cRange * 0.50m &&
+                                candle.Close < candle.Open &&
+                                candle.Close <= rCheck[i].Price - step * 1.5m &&
+                                (k == 0 || candle.Close <= cCheck.Low + cRange * 0.25m))
+                            {
+                                hasBigTradeBearReversal = true;
+                                if (rCheck[i].BigTradeBuyVol >= bigTradeBearLots || bigTradeBearPrice == 0m)
+                                {
+                                    bigTradeBearLots = rCheck[i].BigTradeBuyVol;
+                                    bigTradeBearPrice = rCheck[i].Price;
+                                }
+                            }
+                        }
+                    }
+
+                    // Vérifie également les prints BigTrade temps réel capturés via OnCumulativeTrade / OnNewTrade
+                    if (_liveBigTradesByBar.TryGetValue(bCheck, out var liveList) && liveList != null)
+                    {
+                        for (int i = 0; i < liveList.Count; i++)
+                        {
+                            var lp = liveList[i];
+                            if (!lp.IsBuy && lp.Price <= cCheck.Low + cRange * 0.50m &&
+                                candle.Close > candle.Open && candle.Close >= lp.Price + step * 1.5m)
+                            {
+                                hasBigTradeBullReversal = true;
+                                if (lp.Volume >= bigTradeBullLots || bigTradeBullPrice == 0m)
+                                {
+                                    bigTradeBullLots = lp.Volume;
+                                    bigTradeBullPrice = lp.Price;
+                                }
+                            }
+                            else if (lp.IsBuy && lp.Price >= cCheck.High - cRange * 0.50m &&
+                                     candle.Close < candle.Open && candle.Close <= lp.Price - step * 1.5m)
+                            {
+                                hasBigTradeBearReversal = true;
+                                if (lp.Volume >= bigTradeBearLots || bigTradeBearPrice == 0m)
+                                {
+                                    bigTradeBearLots = lp.Volume;
+                                    bigTradeBearPrice = lp.Price;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Activation du Squeeze 2-Bougies et des BigTrades Piégés (Losanges ◆) + Reversal comme signal Piégé
+            bool effectiveTrapSellers = hasTrapSellers || hasPrevBarTrapSellersSqueeze || hasBigTradeBullReversal;
+            bool effectiveTrapBuyers = hasTrapBuyers || hasPrevBarTrapBuyersSqueeze || hasBigTradeBearReversal;
+
+            string xrayTag = $"CW {opt.XRayCallWall:0} ({opt.XRayCallWallGexM:+0.0;-0.0}M) • MP {opt.XRayMaxPain:0} • PW {opt.XRayPutWall:0} ({opt.XRayPutWallGexM:+0.0;-0.0}M)";
 
             // --- Pilier 3 Structurel HVN + LVN (Rebond sur Support HVN + Rejet de Poche LVN + Confirmation Imbalance / CVD) ---
             bool hasBullHvnStruct = (_enableBarHvn && hasBullBarHvnSupport) || (EnableCompositeProfile && hasCompHvnSupport);
@@ -3699,7 +3785,7 @@ namespace ATAS.Indicators.Custom
                 ? $" [CROISÉ➔{contractInfo.TradedSymbol}]"
                 : string.Empty;
 
-            // --- 1. Vérification Signal Quant ACHAT (BUY ▲) avec Confluences Multi-Piliers & Contrôle d'Écart de Prix ---
+            // --- 1. Vérification Signal Quant ACHAT (BUY ▲) avec BigTrade Piégé (◆) + Reversal + HVN/LVN + Options X-Ray ---
             if ((hasBullAbs || effectiveTrapSellers || hasBullHvnLvnSetup) && bullNoOpposingTopWall && !hasExcessiveBullGap)
             {
                 int keyIdx = hasBullAbs
@@ -3708,16 +3794,23 @@ namespace ATAS.Indicators.Custom
                         ? bestTrappedSellersIdx
                         : (lowerLvnIdx >= 0 ? lowerLvnIdx : (bestBullHvnIdx >= 0 ? bestBullHvnIdx : 0)));
                 ClusterRow keyRow = rows[Math.Clamp(keyIdx, 0, rows.Length - 1)];
-                decimal keyRefPrice = (!hasBullAbs && !hasTrapSellers && hasPrevBarTrapSellersSqueeze && prevTrapSellersPrice > 0m)
-                    ? prevTrapSellersPrice
-                    : keyRow.Price;
+                decimal keyRefPrice = hasBigTradeBullReversal && bigTradeBullPrice > 0m
+                    ? bigTradeBullPrice
+                    : ((!hasBullAbs && !hasTrapSellers && hasPrevBarTrapSellersSqueeze && prevTrapSellersPrice > 0m)
+                        ? prevTrapSellersPrice
+                        : keyRow.Price);
 
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
                 if (bestBullHvnIdx >= 0)
                     clusterZ = Math.Max(clusterZ, Math.Max(rows[bestBullHvnIdx].VolumeZScore, rows[bestBullHvnIdx].DeltaZScore));
+                if (hasBigTradeBullReversal)
+                    clusterZ = Math.Max(clusterZ, 1.25m);
 
                 bool hvnAnchored = hasBullBarHvnSupport || hasCompHvnSupport || ((keyRow.IsHvn || keyRow.IsPoc) && candle.Close >= keyRow.Price + step * 0.5m);
                 bool lvnConfirmed = hasLowerLvnRejection || hasCompLvnBullRejection;
+                bool optionsWallBullSupport = _enableOptionsXRayOverlay &&
+                    ((opt.XRayPutWall > 0m && Math.Abs(candle.Low - opt.XRayPutWall) <= atr * 1.15m && candle.Close >= opt.XRayPutWall) ||
+                     (opt.XRayMaxPain > 0m && candle.Close < opt.XRayMaxPain && (opt.XRayMaxPain - candle.Close) >= atr * 0.5m));
 
                 // Détermination du prix exécutable réel sur la charte et contrôle de l'écart de prix (Spread / Slippage / Distance au cluster)
                 decimal entryPrice = GetLiveExecutableChartPrice(
@@ -3725,28 +3818,30 @@ namespace ATAS.Indicators.Custom
                     out bool livePriceGapOk, out decimal crossBasisOffset, out decimal rawExecFillPx);
 
                 decimal clusterToEntryGap = entryPrice - keyRefPrice;
-                decimal maxAllowedClusterGap = atr * (isCme ? 0.58m : 0.68m);
+                decimal maxAllowedClusterGap = atr * (hasBigTradeBullReversal ? 0.85m : (isCme ? 0.58m : 0.68m));
                 bool priceGapOk = livePriceGapOk &&
                                   (clusterToEntryGap >= step * 0.5m || (hasBullHvnLvnSetup && entryPrice >= keyRefPrice)) &&
                                   clusterToEntryGap <= maxAllowedClusterGap &&
-                                  barRange <= atr * (isCme ? 1.45m : 1.65m);
+                                  barRange <= atr * (isCme ? 1.55m : 1.65m);
 
                 // Comptage des Confluences Institutionnelles (Exige >= 3 Piliers simultanés)
                 bool deltaOrCvdBull = opt.BullishCvdDivergence || opt.DeltaTailBullRecovery || (candle.Delta > 0m && opt.BullStackedImbalances >= 1);
                 bool pocAuctionWonBull = candle.Close >= pocPrice || (lowerWick >= barRange * 0.45m && candle.Close >= pocPrice - step);
-                bool noUpperRejectWick = upperWick <= barRange * 0.33m;
+                bool noUpperRejectWick = upperWick <= barRange * 0.35m;
 
                 int bullConfluences = 0;
+                if (hasBigTradeBullReversal) bullConfluences += 2;
                 if (hasBullAbs) bullConfluences++;
-                if (effectiveTrapSellers) bullConfluences++;
+                if (hasTrapSellers || hasPrevBarTrapSellersSqueeze) bullConfluences++;
                 if (hvnAnchored) bullConfluences++;
                 if (lvnConfirmed) bullConfluences++;
+                if (optionsWallBullSupport) bullConfluences++;
                 if (deltaOrCvdBull) bullConfluences++;
                 if (opt.TrendBias > 0 && opt.MultiBarStructureBull) bullConfluences++;
                 if (opt.CallFlowPct >= 53m && (opt.OiDelta > 0m || opt.SweepCount > 0 || opt.BullStackedImbalances >= 1)) bullConfluences++;
 
-                // Un signal valide exige au moins 2 piliers Order Flow (ex: ABS+PIÉGÉ, ou ABS+HVN/LVN, ou PIÉGÉ+HVN/LVN, ou HVN+LVN+CVD) et >= 3 confluences totales
                 bool multiPillarOrderFlowOk =
+                    (hasBigTradeBullReversal && (hvnAnchored || lvnConfirmed || hasBullAbs || deltaOrCvdBull || optionsWallBullSupport)) ||
                     (hasBullAbs && effectiveTrapSellers) ||
                     (hasBullAbs && (hvnAnchored || lvnConfirmed || deltaOrCvdBull)) ||
                     (effectiveTrapSellers && (hvnAnchored || lvnConfirmed || deltaOrCvdBull)) ||
@@ -3755,9 +3850,10 @@ namespace ATAS.Indicators.Custom
                 bool strongBullCandle = (candle.Close > candle.Open && candle.Close >= candle.Low + barRange * 0.52m) ||
                                         (lowerWick >= barRange * 0.42m && candle.Close >= candle.Low + barRange * 0.55m && candle.Close >= candle.Open - step * 0.5m);
 
-                // Régime directionnel : en tendance (EMA8 >= EMA21 & VWAP) OU retournement majeur sur excès statistique avec Triple Confluence
+                // Régime directionnel : en tendance OU retournement majeur sur BigTrade Piégé (Losange ◆) / Triple Confluence
                 bool isWithTrendBull = opt.TrendBias > 0 && opt.MultiBarStructureBull && candle.Close >= opt.EmaFast - atr * 0.25m && opt.VwapZScore <= 1.55m;
-                bool isMajorReversalBull = (hasBullAbs && effectiveTrapSellers && (lvnConfirmed || hvnAnchored || opt.BullishCvdDivergence)) ||
+                bool isMajorReversalBull = (hasBigTradeBullReversal && (hvnAnchored || lvnConfirmed || hasBullAbs || opt.BullishCvdDivergence)) ||
+                                           (hasBullAbs && effectiveTrapSellers && (lvnConfirmed || hvnAnchored || opt.BullishCvdDivergence)) ||
                                            ((hasBullAbs || effectiveTrapSellers) && (hvnAnchored && lvnConfirmed) && opt.BullishCvdDivergence && opt.MultiBarStructureBull);
                 bool notFightingCrash = !(opt.TrendBias < 0 && candle.Close < opt.EmaFast - atr * 0.30m && !isMajorReversalBull);
 
@@ -3772,19 +3868,22 @@ namespace ATAS.Indicators.Custom
 
                 bool quantZOk = !_enableQuantFilter
                                 || clusterZ >= effMinClusterZ
+                                || hasBigTradeBullReversal
                                 || (hasBullAbs && effectiveTrapSellers && clusterZ >= 0.55m)
                                 || (effectiveTrapSellers && (hvnAnchored || lvnConfirmed) && keyRow.TrappedDominantPct >= 60m);
 
                 bool optionsOk = !_enableAtasOptionsFlow
                                  || !_requireOptionsFlowConfirmation
                                  || (opt.CallFlowPct >= (isCme ? 52.0m : 52.5m))
+                                 || (hasBigTradeBullReversal && opt.CallFlowPct >= 50.0m)
                                  || (hasBullAbs && effectiveTrapSellers && opt.CallFlowPct >= 50.5m)
                                  || (opt.BullishCvdDivergence && opt.CallFlowPct >= 51.0m && (hvnAnchored || lvnConfirmed));
 
                 if (bullRejectionOk && quantZOk && optionsOk)
                 {
                     int score = 54;
-                    if (hasBullAbs && effectiveTrapSellers) score += 18;
+                    if (hasBigTradeBullReversal) score += 16;
+                    if (hasBullAbs && effectiveTrapSellers) score += 16;
                     else if ((hasBullAbs || effectiveTrapSellers) && (hvnAnchored && lvnConfirmed)) score += 15;
                     else if ((hasBullAbs || effectiveTrapSellers) && (hvnAnchored || lvnConfirmed)) score += 13;
                     else if (hasBullAbs || effectiveTrapSellers) score += 10;
@@ -3792,10 +3891,11 @@ namespace ATAS.Indicators.Custom
 
                     if (hvnAnchored) score += 5;
                     if (lvnConfirmed) score += 5;
+                    if (optionsWallBullSupport) score += 4;
                     if (hasCompHvnSupport || hasCompLvnBullRejection) score += 4;
                     if (candle.Close >= pocPrice) score += 4;
                     if (isWithTrendBull) score += 6;
-                    else if (isMajorReversalBull) score += 4;
+                    else if (isMajorReversalBull) score += 5;
                     if (opt.BullStackedImbalances >= 1) score += 4;
                     if (opt.DeltaTailBullRecovery) score += 3;
                     if (opt.CallFlowPct >= 51m)
@@ -3808,7 +3908,7 @@ namespace ATAS.Indicators.Custom
                         score += Math.Min(4, opt.SweepCount * 2);
 
                     score = Math.Clamp(score, 50, 99);
-                    int requiredScore = isWithTrendBull ? effMinConfScore : Math.Max(effMinConfScore + 5, 77);
+                    int requiredScore = (isWithTrendBull || hasBigTradeBullReversal) ? effMinConfScore : Math.Max(effMinConfScore + 5, 77);
 
                     if (!_enableQuantFilter || score >= requiredScore)
                     {
@@ -3828,11 +3928,10 @@ namespace ATAS.Indicators.Custom
                             anchorLow = Math.Min(anchorLow, compSupportPrice - structuralPad);
 
                         decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.32m, tickSize));
-                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * (isCme ? 0.82m : Math.Max(0.85m, _quantAtrStopMultiplier)), tickSize));
+                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * (hasBigTradeBullReversal ? 0.92m : (isCme ? 0.82m : Math.Max(0.85m, _quantAtrStopMultiplier))), tickSize));
                         decimal rawStopDist = Math.Max(minStopDist, entryPrice - anchorLow);
 
                         // Règle Critique Anti-Perte : ne JAMAIS placer le Stop-Loss à l'intérieur de la bougie au-dessus de candle.Low !
-                        // Si l'invalidation structurelle réelle (anchorLow) est trop éloignée (> maxAllowedStopDist), on rejette le trade.
                         if (rawStopDist <= maxAllowedStopDist)
                         {
                             decimal stopPrice = RoundToTick(entryPrice - rawStopDist, tickSize);
@@ -3850,6 +3949,16 @@ namespace ATAS.Indicators.Custom
                             decimal maxTp2Pts = Math.Max(tp1Dist + step * 3m, RoundToTick(atr * (isCme ? 1.35m : 1.20m), tickSize));
                             decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * effTp2Rr, tickSize), tp1Dist + step * 3m, maxTp2Pts);
 
+                            // Alignement intelligent du TP2 avec les murs Options X-Ray (ex: juste sous PUT WALL 27850 à 27835 comme sur la Photo 2, ou vers MAX PAIN / CALL WALL)
+                            if (_enableOptionsXRayOverlay)
+                            {
+                                decimal candidateTp2 = entryPrice + tp2Dist;
+                                if (opt.XRayPutWall > entryPrice + tp1Dist + step * 4m && opt.XRayPutWall <= candidateTp2 + atr * 0.35m)
+                                    tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(opt.XRayPutWall - entryPrice - step * 3m, tickSize));
+                                else if (opt.XRayCallWall > entryPrice + tp1Dist + step * 4m && opt.XRayCallWall <= candidateTp2 + atr * 0.35m)
+                                    tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(opt.XRayCallWall - entryPrice - step * 3m, tickSize));
+                            }
+
                             // Vérification du dégagement vers TP1 : aucun mur HVN Composite ne doit bloquer le chemin avant 80% de TP1
                             bool roomToTp1Ok = opposingCompHvnAbove == 0m || (opposingCompHvnAbove - entryPrice) >= tp1Dist * 0.80m;
                             if (roomToTp1Ok)
@@ -3860,10 +3969,14 @@ namespace ATAS.Indicators.Custom
                                 string structTag = (hasCompHvnSupport || hasCompLvnBullRejection)
                                     ? (lvnConfirmed ? "HVN+LVN COMP▲" : "HVN COMP▲")
                                     : (lvnConfirmed ? "HVN+LVN▲" : "HVN/POC▲");
-                                string trapTag = hasPrevBarTrapSellersSqueeze && !hasTrapSellers ? "V.PIÉGÉS 2B▲" : "V.PIÉGÉS▲";
+                                string trapTag = hasBigTradeBullReversal
+                                    ? $"◆ BIGTRADE PIÉGÉ ({bigTradeBullLots:0}L) + REVERSAL▲"
+                                    : (hasPrevBarTrapSellersSqueeze && !hasTrapSellers ? "V.PIÉGÉS 2B▲" : "V.PIÉGÉS▲");
 
                                 string coreSetup;
-                                if (hasBullAbs && effectiveTrapSellers)
+                                if (hasBigTradeBullReversal)
+                                    coreSetup = $"{trapTag} + {structTag}";
+                                else if (hasBullAbs && effectiveTrapSellers)
                                     coreSetup = $"ABS▲+{trapTag} + {structTag}";
                                 else if (effectiveTrapSellers)
                                     coreSetup = $"{trapTag} + {structTag}";
@@ -3894,7 +4007,11 @@ namespace ATAS.Indicators.Custom
                                     PutCallRatio = opt.PutCallRatio,
                                     OiDelta = opt.OiDelta,
                                     SweepCount = opt.SweepCount,
-                                    ReasonTag = reason
+                                    IsBigTradeReversal = hasBigTradeBullReversal,
+                                    BigTradePrice = bigTradeBullPrice,
+                                    BigTradeLots = bigTradeBullLots,
+                                    ReasonTag = reason,
+                                    XRaySummaryTag = xrayTag
                                 };
                             }
                         }
@@ -3902,7 +4019,7 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // --- 2. Vérification Signal Quant VENTE (SELL ▼) avec Confluences Multi-Piliers & Contrôle d'Écart de Prix ---
+            // --- 2. Vérification Signal Quant VENTE (SELL ▼) avec BigTrade Piégé (◆) + Reversal + HVN/LVN + Options X-Ray ---
             if ((hasBearAbs || effectiveTrapBuyers || hasBearHvnLvnSetup) && bearNoOpposingBottomWall && !hasExcessiveBearGap)
             {
                 int keyIdx = hasBearAbs
@@ -3911,16 +4028,23 @@ namespace ATAS.Indicators.Custom
                         ? bestTrappedBuyersIdx
                         : (upperLvnIdx >= 0 ? upperLvnIdx : (bestBearHvnIdx >= 0 ? bestBearHvnIdx : rows.Length - 1)));
                 ClusterRow keyRow = rows[Math.Clamp(keyIdx, 0, rows.Length - 1)];
-                decimal keyRefPrice = (!hasBearAbs && !hasTrapBuyers && hasPrevBarTrapBuyersSqueeze && prevTrapBuyersPrice > 0m)
-                    ? prevTrapBuyersPrice
-                    : keyRow.Price;
+                decimal keyRefPrice = hasBigTradeBearReversal && bigTradeBearPrice > 0m
+                    ? bigTradeBearPrice
+                    : ((!hasBearAbs && !hasTrapBuyers && hasPrevBarTrapBuyersSqueeze && prevTrapBuyersPrice > 0m)
+                        ? prevTrapBuyersPrice
+                        : keyRow.Price);
 
                 decimal clusterZ = Math.Max(keyRow.VolumeZScore, keyRow.DeltaZScore);
                 if (bestBearHvnIdx >= 0)
                     clusterZ = Math.Max(clusterZ, Math.Max(rows[bestBearHvnIdx].VolumeZScore, rows[bestBearHvnIdx].DeltaZScore));
+                if (hasBigTradeBearReversal)
+                    clusterZ = Math.Max(clusterZ, 1.25m);
 
                 bool hvnAnchored = hasBearBarHvnResistance || hasCompHvnResistance || ((keyRow.IsHvn || keyRow.IsPoc) && candle.Close <= keyRow.Price - step * 0.5m);
                 bool lvnConfirmed = hasUpperLvnRejection || hasCompLvnBearRejection;
+                bool optionsWallBearResist = _enableOptionsXRayOverlay &&
+                    ((opt.XRayCallWall > 0m && Math.Abs(candle.High - opt.XRayCallWall) <= atr * 1.15m && candle.Close <= opt.XRayCallWall) ||
+                     (opt.XRayMaxPain > 0m && candle.Close > opt.XRayMaxPain && (candle.Close - opt.XRayMaxPain) >= atr * 0.5m));
 
                 // Détermination du prix exécutable réel sur la charte et contrôle de l'écart de prix (Spread / Slippage / Distance au cluster)
                 decimal entryPrice = GetLiveExecutableChartPrice(
@@ -3928,27 +4052,30 @@ namespace ATAS.Indicators.Custom
                     out bool livePriceGapOk, out decimal crossBasisOffset, out decimal rawExecFillPx);
 
                 decimal clusterToEntryGap = keyRefPrice - entryPrice;
-                decimal maxAllowedClusterGap = atr * (isCme ? 0.58m : 0.68m);
+                decimal maxAllowedClusterGap = atr * (hasBigTradeBearReversal ? 0.85m : (isCme ? 0.58m : 0.68m));
                 bool priceGapOk = livePriceGapOk &&
                                   (clusterToEntryGap >= step * 0.5m || (hasBearHvnLvnSetup && entryPrice <= keyRefPrice)) &&
                                   clusterToEntryGap <= maxAllowedClusterGap &&
-                                  barRange <= atr * (isCme ? 1.45m : 1.65m);
+                                  barRange <= atr * (isCme ? 1.55m : 1.65m);
 
                 // Comptage des Confluences Institutionnelles (Exige >= 3 Piliers simultanés)
                 bool deltaOrCvdBear = opt.BearishCvdDivergence || opt.DeltaTailBearRejection || (candle.Delta < 0m && opt.BearStackedImbalances >= 1);
                 bool pocAuctionWonBear = candle.Close <= pocPrice || (upperWick >= barRange * 0.45m && candle.Close <= pocPrice + step);
-                bool noLowerRejectWick = lowerWick <= barRange * 0.33m;
+                bool noLowerRejectWick = lowerWick <= barRange * 0.35m;
 
                 int bearConfluences = 0;
+                if (hasBigTradeBearReversal) bearConfluences += 2;
                 if (hasBearAbs) bearConfluences++;
-                if (effectiveTrapBuyers) bearConfluences++;
+                if (hasTrapBuyers || hasPrevBarTrapBuyersSqueeze) bearConfluences++;
                 if (hvnAnchored) bearConfluences++;
                 if (lvnConfirmed) bearConfluences++;
+                if (optionsWallBearResist) bearConfluences++;
                 if (deltaOrCvdBear) bearConfluences++;
                 if (opt.TrendBias < 0 && opt.MultiBarStructureBear) bearConfluences++;
                 if (opt.PutFlowPct >= 53m && (opt.OiDelta < 0m || opt.SweepCount > 0 || opt.BearStackedImbalances >= 1)) bearConfluences++;
 
                 bool multiPillarOrderFlowOk =
+                    (hasBigTradeBearReversal && (hvnAnchored || lvnConfirmed || hasBearAbs || deltaOrCvdBear || optionsWallBearResist)) ||
                     (hasBearAbs && effectiveTrapBuyers) ||
                     (hasBearAbs && (hvnAnchored || lvnConfirmed || deltaOrCvdBear)) ||
                     (effectiveTrapBuyers && (hvnAnchored || lvnConfirmed || deltaOrCvdBear)) ||
@@ -3958,7 +4085,8 @@ namespace ATAS.Indicators.Custom
                                         (upperWick >= barRange * 0.42m && candle.Close <= candle.High - barRange * 0.55m && candle.Close <= candle.Open + step * 0.5m);
 
                 bool isWithTrendBear = opt.TrendBias < 0 && opt.MultiBarStructureBear && candle.Close <= opt.EmaFast + atr * 0.25m && opt.VwapZScore >= -1.55m;
-                bool isMajorReversalBear = (hasBearAbs && effectiveTrapBuyers && (lvnConfirmed || hvnAnchored || opt.BearishCvdDivergence)) ||
+                bool isMajorReversalBear = (hasBigTradeBearReversal && (hvnAnchored || lvnConfirmed || hasBearAbs || opt.BearishCvdDivergence)) ||
+                                           (hasBearAbs && effectiveTrapBuyers && (lvnConfirmed || hvnAnchored || opt.BearishCvdDivergence)) ||
                                            ((hasBearAbs || effectiveTrapBuyers) && (hvnAnchored && lvnConfirmed) && opt.BearishCvdDivergence && opt.MultiBarStructureBear);
                 bool notFightingSqueeze = !(opt.TrendBias > 0 && candle.Close > opt.EmaFast + atr * 0.30m && !isMajorReversalBear);
 
@@ -3973,19 +4101,22 @@ namespace ATAS.Indicators.Custom
 
                 bool quantZOk = !_enableQuantFilter
                                 || clusterZ >= effMinClusterZ
+                                || hasBigTradeBearReversal
                                 || (hasBearAbs && effectiveTrapBuyers && clusterZ >= 0.55m)
                                 || (effectiveTrapBuyers && (hvnAnchored || lvnConfirmed) && keyRow.TrappedDominantPct >= 60m);
 
                 bool optionsOk = !_enableAtasOptionsFlow
                                  || !_requireOptionsFlowConfirmation
                                  || (opt.PutFlowPct >= (isCme ? 52.0m : 52.5m))
+                                 || (hasBigTradeBearReversal && opt.PutFlowPct >= 50.0m)
                                  || (hasBearAbs && effectiveTrapBuyers && opt.PutFlowPct >= 50.5m)
                                  || (opt.BearishCvdDivergence && opt.PutFlowPct >= 51.0m && (hvnAnchored || lvnConfirmed));
 
                 if (bearRejectionOk && quantZOk && optionsOk)
                 {
                     int score = 54;
-                    if (hasBearAbs && effectiveTrapBuyers) score += 18;
+                    if (hasBigTradeBearReversal) score += 16;
+                    if (hasBearAbs && effectiveTrapBuyers) score += 16;
                     else if ((hasBearAbs || effectiveTrapBuyers) && (hvnAnchored && lvnConfirmed)) score += 15;
                     else if ((hasBearAbs || effectiveTrapBuyers) && (hvnAnchored || lvnConfirmed)) score += 13;
                     else if (hasBearAbs || effectiveTrapBuyers) score += 10;
@@ -3993,10 +4124,11 @@ namespace ATAS.Indicators.Custom
 
                     if (hvnAnchored) score += 5;
                     if (lvnConfirmed) score += 5;
+                    if (optionsWallBearResist) score += 4;
                     if (hasCompHvnResistance || hasCompLvnBearRejection) score += 4;
                     if (candle.Close <= pocPrice) score += 4;
                     if (isWithTrendBear) score += 6;
-                    else if (isMajorReversalBear) score += 4;
+                    else if (isMajorReversalBear) score += 5;
                     if (opt.BearStackedImbalances >= 1) score += 4;
                     if (opt.DeltaTailBearRejection) score += 3;
                     if (opt.PutFlowPct >= 51m)
@@ -4009,7 +4141,7 @@ namespace ATAS.Indicators.Custom
                         score += Math.Min(4, opt.SweepCount * 2);
 
                     score = Math.Clamp(score, 50, 99);
-                    int requiredScore = isWithTrendBear ? effMinConfScore : Math.Max(effMinConfScore + 5, 77);
+                    int requiredScore = (isWithTrendBear || hasBigTradeBearReversal) ? effMinConfScore : Math.Max(effMinConfScore + 5, 77);
 
                     if (!_enableQuantFilter || score >= requiredScore)
                     {
@@ -4029,7 +4161,7 @@ namespace ATAS.Indicators.Custom
                             anchorHigh = Math.Max(anchorHigh, compResistancePrice + structuralPad);
 
                         decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.32m, tickSize));
-                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * (isCme ? 0.82m : Math.Max(0.85m, _quantAtrStopMultiplier)), tickSize));
+                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 2m, RoundToTick(atr * (hasBigTradeBearReversal ? 0.92m : (isCme ? 0.82m : Math.Max(0.85m, _quantAtrStopMultiplier))), tickSize));
                         decimal rawStopDist = Math.Max(minStopDist, anchorHigh - entryPrice);
 
                         // Règle Critique Anti-Perte : ne JAMAIS placer le Stop-Loss à l'intérieur de la bougie sous candle.High !
@@ -4050,6 +4182,15 @@ namespace ATAS.Indicators.Custom
                             decimal maxTp2Pts = Math.Max(tp1Dist + step * 3m, RoundToTick(atr * (isCme ? 1.35m : 1.20m), tickSize));
                             decimal tp2Dist = Math.Clamp(RoundToTick(riskPts * effTp2Rr, tickSize), tp1Dist + step * 3m, maxTp2Pts);
 
+                            if (_enableOptionsXRayOverlay)
+                            {
+                                decimal candidateTp2 = entryPrice - tp2Dist;
+                                if (opt.XRayPutWall > 0m && opt.XRayPutWall < entryPrice - tp1Dist - step * 4m && opt.XRayPutWall >= candidateTp2 - atr * 0.35m)
+                                    tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(entryPrice - opt.XRayPutWall - step * 3m, tickSize));
+                                else if (opt.XRayMaxPain > 0m && opt.XRayMaxPain < entryPrice - tp1Dist - step * 4m && opt.XRayMaxPain >= candidateTp2 - atr * 0.35m)
+                                    tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(entryPrice - opt.XRayMaxPain - step * 3m, tickSize));
+                            }
+
                             // Vérification du dégagement vers TP1 : aucun mur HVN Composite ne doit bloquer le chemin avant 80% de TP1
                             bool roomToTp1Ok = opposingCompHvnBelow == 0m || (entryPrice - opposingCompHvnBelow) >= tp1Dist * 0.80m;
                             if (roomToTp1Ok)
@@ -4060,10 +4201,14 @@ namespace ATAS.Indicators.Custom
                                 string structTag = (hasCompHvnResistance || hasCompLvnBearRejection)
                                     ? (lvnConfirmed ? "HVN+LVN COMP▼" : "HVN COMP▼")
                                     : (lvnConfirmed ? "HVN+LVN▼" : "HVN/POC▼");
-                                string trapTag = hasPrevBarTrapBuyersSqueeze && !hasTrapBuyers ? "A.PIÉGÉS 2B▼" : "A.PIÉGÉS▼";
+                                string trapTag = hasBigTradeBearReversal
+                                    ? $"◆ BIGTRADE PIÉGÉ ({bigTradeBearLots:0}L) + REVERSAL▼"
+                                    : (hasPrevBarTrapBuyersSqueeze && !hasTrapBuyers ? "A.PIÉGÉS 2B▼" : "A.PIÉGÉS▼");
 
                                 string coreSetup;
-                                if (hasBearAbs && effectiveTrapBuyers)
+                                if (hasBigTradeBearReversal)
+                                    coreSetup = $"{trapTag} + {structTag}";
+                                else if (hasBearAbs && effectiveTrapBuyers)
                                     coreSetup = $"ABS▼+{trapTag} + {structTag}";
                                 else if (effectiveTrapBuyers)
                                     coreSetup = $"{trapTag} + {structTag}";
@@ -4094,7 +4239,11 @@ namespace ATAS.Indicators.Custom
                                     PutCallRatio = opt.PutCallRatio,
                                     OiDelta = opt.OiDelta,
                                     SweepCount = opt.SweepCount,
-                                    ReasonTag = reason
+                                    IsBigTradeReversal = hasBigTradeBearReversal,
+                                    BigTradePrice = bigTradeBearPrice,
+                                    BigTradeLots = bigTradeBearLots,
+                                    ReasonTag = reason,
+                                    XRaySummaryTag = xrayTag
                                 };
                             }
                         }
