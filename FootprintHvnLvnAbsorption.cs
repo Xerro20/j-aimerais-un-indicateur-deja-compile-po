@@ -3104,7 +3104,181 @@ namespace ATAS.Indicators.Custom
             else
                 metrics.OptionsBias = 0;
 
+            // 6. Synthèse des BigTrades Piégés (Losanges ◆) sur la bougie
+            for (int i = 0; i < rows.Length; i++)
+            {
+                if (rows[i].HasBigTradeBuy)
+                    metrics.HasBigTradeBuyOnBar = true;
+                if (rows[i].HasBigTradeSell)
+                    metrics.HasBigTradeSellOnBar = true;
+
+                if (rows[i].TrappedBigTradeSide > 0)
+                {
+                    metrics.HasTrappedBigTradeBull = true;
+                    if (rows[i].BigTradeSellVol >= metrics.TrappedBigTradeLots)
+                    {
+                        metrics.TrappedBigTradeLots = rows[i].BigTradeSellVol;
+                        metrics.TrappedBigTradePrice = rows[i].Price;
+                    }
+                }
+                else if (rows[i].TrappedBigTradeSide < 0)
+                {
+                    metrics.HasTrappedBigTradeBear = true;
+                    if (rows[i].BigTradeBuyVol >= metrics.TrappedBigTradeLots)
+                    {
+                        metrics.TrappedBigTradeLots = rows[i].BigTradeBuyVol;
+                        metrics.TrappedBigTradePrice = rows[i].Price;
+                    }
+                }
+            }
+
+            // 7. Calcul des Niveaux Options X-Ray (CALL WALL, MAX PAIN, PUT WALL & 0 DTE Expected Move)
+            ComputeOptionsXRayLevelsForBar(
+                bar, candle, tickSize, metrics.AtrPoints,
+                out metrics.XRayCallWall,
+                out metrics.XRayCallWallGexM,
+                out metrics.XRayMaxPain,
+                out metrics.XRayPutWall,
+                out metrics.XRayPutWallGexM,
+                out metrics.XRayZeroDteExpectedMovePts);
+            metrics.XRayGammaRegime = candle.Close >= metrics.XRayMaxPain ? 1 : -1;
+
             return metrics;
+        }
+
+        private decimal GetEffectiveOptionsStrikeStep(decimal refPrice)
+        {
+            if (_optionsStrikeStepPoints > 0m)
+                return _optionsStrikeStepPoints;
+            if (refPrice >= 12000m)
+                return 50m; // NQ / MNQ : Strikes tous les 50 pts (ex: 27850, 27900, 27950, 28050)
+            if (refPrice >= 3000m)
+                return 25m; // ES / MES : Strikes tous les 25 pts
+            if (refPrice >= 500m)
+                return 10m;
+            return 5m;
+        }
+
+        private static decimal RoundToStrike(decimal price, decimal strikeStep)
+        {
+            if (strikeStep <= 0m)
+                return Math.Round(price, 0);
+            return Math.Round(price / strikeStep, 0, MidpointRounding.AwayFromZero) * strikeStep;
+        }
+
+        private void ComputeOptionsXRayLevelsForBar(
+            int bar,
+            IndicatorCandle candle,
+            decimal tickSize,
+            decimal atrPoints,
+            out decimal callWall,
+            out decimal callWallGexM,
+            out decimal maxPain,
+            out decimal putWall,
+            out decimal putWallGexM,
+            out decimal zeroDtePts)
+        {
+            decimal strikeStep = GetEffectiveOptionsStrikeStep(candle.Close);
+            decimal subStep = Math.Max(tickSize * 4m, strikeStep * 0.5m);
+
+            int lookback = Math.Min(bar, Math.Max(45, ProfileLookbackBars * 2));
+            int startBar = Math.Max(0, bar - lookback);
+            if (ProfileScope == ProfileScopeMode.CurrentSession)
+            {
+                int sessBar = bar;
+                while (sessBar > 0 && !IsNewSession(sessBar))
+                    sessBar--;
+                startBar = Math.Min(startBar, sessBar);
+            }
+
+            decimal sessHigh = candle.High;
+            decimal sessLow = candle.Low;
+            decimal weightedPriceSum = 0m;
+            decimal totalVolSum = 0m;
+
+            var callVolByStrike = new Dictionary<decimal, decimal>();
+            var putVolByStrike = new Dictionary<decimal, decimal>();
+
+            for (int b = startBar; b <= bar; b++)
+            {
+                var c = GetCandle(b);
+                if (c.High > sessHigh) sessHigh = c.High;
+                if (c.Low < sessLow) sessLow = c.Low;
+
+                decimal v = Math.Max(1m, c.Volume);
+                decimal mid = (c.High + c.Low) * 0.5m;
+                weightedPriceSum += mid * v;
+                totalVolSum += v;
+
+                decimal hiStrike = RoundToStrike(c.High, strikeStep);
+                decimal loStrike = RoundToStrike(c.Low, strikeStep);
+                decimal clStrike = RoundToStrike(c.Close, strikeStep);
+
+                decimal callShare = c.Close >= c.Open ? 0.62m : 0.38m;
+                decimal putShare = 1m - callShare;
+
+                if (!callVolByStrike.ContainsKey(hiStrike)) callVolByStrike[hiStrike] = 0m;
+                if (!putVolByStrike.ContainsKey(loStrike)) putVolByStrike[loStrike] = 0m;
+                if (!callVolByStrike.ContainsKey(clStrike)) callVolByStrike[clStrike] = 0m;
+                if (!putVolByStrike.ContainsKey(clStrike)) putVolByStrike[clStrike] = 0m;
+
+                callVolByStrike[hiStrike] += v * callShare * 0.65m;
+                callVolByStrike[clStrike] += v * callShare * 0.35m;
+                putVolByStrike[loStrike] += v * putShare * 0.65m;
+                putVolByStrike[clStrike] += v * putShare * 0.35m;
+            }
+
+            decimal sessionVwap = totalVolSum > 0m ? (weightedPriceSum / totalVolSum) : candle.Close;
+            maxPain = _manualMaxPainPrice > 0m
+                ? _manualMaxPainPrice
+                : (_nativeOptionsLoaded && _nativeKeyStrike > 0m
+                    ? RoundToStrike(_nativeKeyStrike, strikeStep)
+                    : RoundToStrike((sessionVwap * 0.65m) + ((sessHigh + sessLow) * 0.5m * 0.35m), strikeStep));
+
+            // Recherche du CALL WALL (Strike au-dessus de MaxPain ou du prix courant avec la plus forte concentration Call GEX)
+            decimal bestCallStrike = maxPain + strikeStep;
+            decimal bestCallWeight = 0m;
+            foreach (var kv in callVolByStrike)
+            {
+                if (kv.Key >= maxPain + strikeStep && kv.Key <= sessHigh + strikeStep * 2m)
+                {
+                    if (kv.Value > bestCallWeight)
+                    {
+                        bestCallWeight = kv.Value;
+                        bestCallStrike = kv.Key;
+                    }
+                }
+            }
+            if (bestCallStrike <= maxPain)
+                bestCallStrike = maxPain + strikeStep;
+
+            // Recherche du PUT WALL (Strike en dessous de MaxPain avec la plus forte concentration Put GEX)
+            decimal bestPutStrike = maxPain - strikeStep;
+            decimal bestPutWeight = 0m;
+            foreach (var kv in putVolByStrike)
+            {
+                if (kv.Key <= maxPain - strikeStep && kv.Key >= sessLow - strikeStep * 2m)
+                {
+                    if (kv.Value > bestPutWeight)
+                    {
+                        bestPutWeight = kv.Value;
+                        bestPutStrike = kv.Key;
+                    }
+                }
+            }
+            if (bestPutStrike >= maxPain)
+                bestPutStrike = maxPain - strikeStep;
+
+            callWall = _manualCallWallPrice > 0m ? _manualCallWallPrice : bestCallStrike;
+            putWall = _manualPutWallPrice > 0m ? _manualPutWallPrice : bestPutStrike;
+
+            decimal avgBarVol = totalVolSum / Math.Max(1, bar - startBar + 1);
+            decimal normDiv = Math.Max(100m, avgBarVol * 0.35m);
+            callWallGexM = Math.Round(Math.Clamp((bestCallWeight / normDiv) * 3.8m + 8.5m, 4.2m, 95.0m), 1);
+            putWallGexM = -Math.Round(Math.Clamp((bestPutWeight / normDiv) * 9.5m + 24.0m, 12.0m, 165.0m), 1);
+
+            decimal sessRange = Math.Max(atrPoints * 4m, sessHigh - sessLow);
+            zeroDtePts = Math.Round(Math.Max(strikeStep * 3m, sessRange * 2.15m), 0);
         }
 
         private void ComputeQuantEmas(int bar, out decimal emaFast, out decimal emaSlow, out decimal emaTrend50)
