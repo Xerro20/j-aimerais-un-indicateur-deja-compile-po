@@ -523,16 +523,24 @@
     <section class="section">
       <div class="section-header">
         <div>
-          <h2 class="section-title">Aperçu Interactif : Alertes Visuelles Achat/Vente &amp; Flux d'Options ATAS X</h2>
+          <h2 class="section-title">Aperçu Interactif (NQ 5m) : BigTrades Piégés (◆), Reversal, Options X-Ray &amp; HVN / LVN</h2>
           <p style="color: var(--muted); font-size: 0.92rem;">
-            Ajustez la dominance <strong>Flux d'Options (Calls / Puts)</strong> et les seuils Order Flow pour visualiser les cartouches <strong>★ ACHAT ▲</strong> / <strong>★ VENTE ▼</strong>, la <strong>Bannière Visuelle d'Alerte</strong> et les niveaux <strong>Entrée / Stop-Loss</strong>.
+            Visualisez en direct la détection des <strong>BigTrades Piégés (losanges ◆ &ge; 40 lots)</strong>, le déclenchement des <strong>Reversals Achat/Vente</strong>, l'indicateur <strong>Options X-Ray (<code>CALL WALL 28050 · +15M</code>, <code>MAX PAIN 27900</code>, <code>PUT WALL 27850 · -69.5M</code> &amp; profil GEX)</strong>, les zones <strong>HVN / LVN</strong> et les étiquettes <strong>DOM TP/SL $</strong>.
           </p>
         </div>
       </div>
 
       <div class="sim-grid">
         <div class="card">
-          <h3 style="font-size: 1rem; margin-bottom: 13px; color: #fff;">Paramètres de l'Indicateur</h3>
+          <h3 style="font-size: 1rem; margin-bottom: 13px; color: #fff;">Paramètres du Bot BigTrades &amp; Options X-Ray</h3>
+
+          <div class="control-group">
+            <div class="control-label">
+              <span style="color: #fbbf24;">Seuil Min BigTrades (Lots NQ ◆)</span>
+              <span class="control-val" id="valBigTradeLots">40 lots</span>
+            </div>
+            <input type="range" id="rngBigTradeLots" min="20" max="100" step="5" value="40" />
+          </div>
 
           <div class="control-group">
             <div class="control-label">
@@ -577,27 +585,39 @@
           <div class="control-group">
             <div class="control-label">
               <span style="color: #ff6b8b;">Bot — Drawdown Max ($ Kill-Switch)</span>
-              <span class="control-val" id="valMaxDd">-1500$</span>
+              <span class="control-val" id="valMaxDd">-2355$</span>
             </div>
-            <input type="range" id="rngMaxDd" min="200" max="3000" step="100" value="1500" />
+            <input type="range" id="rngMaxDd" min="500" max="5000" step="100" value="2355" />
           </div>
 
           <div class="control-group">
             <div class="control-label">
               <span style="color: #00ff88;">Bot — PnL Max ($ Objectif Lock)</span>
-              <span class="control-val" id="valMaxPnl">+2500$</span>
+              <span class="control-val" id="valMaxPnl">+7075$</span>
             </div>
-            <input type="range" id="rngMaxPnl" min="300" max="5000" step="100" value="2500" />
+            <input type="range" id="rngMaxPnl" min="1000" max="10000" step="250" value="7075" />
           </div>
 
           <div class="toggle-list">
             <label class="toggle-item">
               <input type="checkbox" id="chkBot" checked />
-              <span style="color: #38bdf8; font-weight: 700;">🤖 Activer Bot de Trading Quant (Max DD / Max PnL)</span>
+              <span style="color: #38bdf8; font-weight: 700;">🤖 Activer Bot BigTrades Reversal + Options X-Ray</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkBigTrades" checked />
+              <span style="color: #fbbf24; font-weight: 700;">◆ Afficher Losanges BigTrades Piégés &amp; Toast Alerte</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkOptionsXRay" checked />
+              <span style="color: #10b981; font-weight: 700;">📊 Afficher Options X-Ray (CALL WALL, MAX PAIN, PUT WALL &amp; GEX)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="chkDomTags" checked />
+              <span style="color: #38bdf8; font-weight: 700;">🏷 Afficher Étiquettes d'Ordres Style DOM (TP / SL $)</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBuySell" checked />
-              <span style="color: #00ff88; font-weight: 700;">★ Signaux Quant ACHAT ▲ / VENTE ▼ (Options + Z-Score)</span>
+              <span style="color: #00ff88; font-weight: 700;">★ Signaux Reversal ACHAT ▲ / VENTE ▼</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBanner" checked />
@@ -617,7 +637,7 @@
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkRays" checked />
-              <span>Projeter Rayons S/R &amp; Liquidation</span>
+              <span>Projeter Rayons HVN Zone &amp; LVN Pocket</span>
             </label>
             <label class="toggle-item">
               <input type="checkbox" id="chkBarHvn" checked />
@@ -632,14 +652,13 @@
 
         <div class="card" style="padding: 16px;">
           <div class="legend-pills">
-            <span class="pill" style="border-color: rgba(0,255,136,0.5);"><span class="dot" style="background: #00ff88;"></span> ★ Alerte ACHAT ▲ (Call Flow + Footprint)</span>
-            <span class="pill" style="border-color: rgba(255,42,85,0.5);"><span class="dot" style="background: #ff2a55;"></span> ★ Alerte VENTE ▼ (Put Flow + Footprint)</span>
-            <span class="pill"><span class="dot" style="background: #00f0ff;"></span> Bull Heavy Abs</span>
-            <span class="pill"><span class="dot" style="background: #ff2d87;"></span> Bear Heavy Abs</span>
-            <span class="pill"><span class="dot" style="background: #10f596;"></span> Vendeurs Piégés ▲</span>
-            <span class="pill"><span class="dot" style="background: #ff5a36;"></span> Acheteurs Piégés ▼</span>
-            <span class="pill"><span class="dot" style="background: #ff8c00;"></span> POC / HVN</span>
-            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN</span>
+            <span class="pill" style="border-color: rgba(251,191,36,0.65);"><span class="dot" style="background: #ef4444; border: 2px solid #fbbf24; transform: rotate(45deg);"></span> ◆ BigTrade Sell Piégé (Reversal Achat ▲)</span>
+            <span class="pill" style="border-color: rgba(251,191,36,0.65);"><span class="dot" style="background: #10b981; border: 2px solid #fbbf24; transform: rotate(45deg);"></span> ◆ BigTrade Buy Piégé (Reversal Vente ▼)</span>
+            <span class="pill" style="border-color: rgba(16,185,129,0.55);"><span class="dot" style="background: #10b981;"></span> CALL WALL (+15M)</span>
+            <span class="pill" style="border-color: rgba(239,68,68,0.55);"><span class="dot" style="background: #ef4444;"></span> MAX PAIN (27900)</span>
+            <span class="pill" style="border-color: rgba(139,92,246,0.55);"><span class="dot" style="background: #8b5cf6;"></span> PUT WALL (-69.5M)</span>
+            <span class="pill"><span class="dot" style="background: #ff8c00;"></span> HVN Zone / POC</span>
+            <span class="pill"><span class="dot" style="background: #a855f7;"></span> LVN Pocket</span>
           </div>
           <div class="canvas-wrap">
             <div class="chart-bot-bar">
