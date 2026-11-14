@@ -4423,333 +4423,79 @@ namespace ATAS.Indicators.Custom
             }
             decimal nonHvnAvgVol = nonHvnCount > 0 ? (nonHvnVolSum / nonHvnCount) : (avgLevelVol * 0.65m);
 
-            // Paramètres effectifs (BTC Binance vs Calibration Institutionnelle CME)
-            decimal effAbsZonePct = isCme ? Math.Max(_absZonePct, 38m) : _absZonePct;
-            int effAbsLocTicks = isCme
-                ? Math.Max(_absLocationTicks, Math.Max(2, (int)Math.Ceiling(count * 0.35m)))
-                : _absLocationTicks;
-            decimal effAbsMinVol = isCme
-                ? Math.Min(_absMinVolume, prof == MarketProfilePreset.CmeSp500_ES_MES ? 10m : 4m)
-                : _absMinVolume;
-            decimal effAbsVolMult = isCme ? Math.Min(1.25m, _absVolumeMultiplier * 0.85m) : _absVolumeMultiplier;
-            decimal effAbsMinDelta = isCme
-                ? Math.Min(_absMinAbsDelta, prof == MarketProfilePreset.CmeSp500_ES_MES ? 4m : 2m)
-                : _absMinAbsDelta;
-            decimal effAbsDomPct = isCme
-                ? Math.Min(_absMinDominantPct, 57m)
-                : _absMinDominantPct;
-            decimal effAbsDiag = isCme
-                ? Math.Min(_absDiagonalRatio, 1.38m)
-                : _absDiagonalRatio;
-
-            // 3. Détection Heavy Absorption sur le Footprint
-            if (_enableAbsorption)
-            {
-                decimal lowerZoneLimit = candle.Low + barRange * (effAbsZonePct / 100m);
-                decimal upperZoneLimit = candle.High - barRange * (effAbsZonePct / 100m);
-                decimal minVolRequired = Math.Max(effAbsMinVol, avgLevelVol * effAbsVolMult);
-                decimal wallVolRequired = Math.Max(effAbsMinVol, avgLevelVol * Math.Max(isCme ? 1.85m : 2.2m, effAbsVolMult * 1.35m));
-
-                decimal bestBullVol = 0m;
-                decimal bestBearVol = 0m;
-
-                for (int i = 0; i < count; i++)
-                {
-                    decimal rawVol = rows[i].Volume;
-                    GetSymmetricPooledLow(i, out decimal pBidLow, out decimal pAskLow, out decimal pVolLow);
-                    GetSymmetricPooledHigh(i, out decimal pBidHigh, out decimal pAskHigh, out decimal pVolHigh);
-
-                    decimal evalVolBull = isCme ? Math.Max(rawVol, pVolLow) : rawVol;
-                    decimal evalVolBear = isCme ? Math.Max(rawVol, pVolHigh) : rawVol;
-
-                    if (rawVol <= 0m || (evalVolBull < minVolRequired && evalVolBear < minVolRequired))
-                        continue;
-
-                    decimal evalDeltaBull = isCme ? Math.Max(Math.Abs(rows[i].Delta), Math.Abs(pAskLow - pBidLow)) : Math.Abs(rows[i].Delta);
-                    decimal evalDeltaBear = isCme ? Math.Max(Math.Abs(rows[i].Delta), Math.Abs(pAskHigh - pBidHigh)) : Math.Abs(rows[i].Delta);
-
-                    decimal price = rows[i].Price;
-                    decimal bid = rows[i].Bid;
-                    decimal ask = rows[i].Ask;
-
-                    // --- Test Bullish Heavy Absorption (Vendeurs agressifs au Bid absorbés) ---
-                    bool inLowerExtreme = price <= lowerZoneLimit || (i <= effAbsLocTicks);
-                    bool isMidWallBull = _allowMidBarWallAbsorption && evalVolBull >= wallVolRequired && candle.Close > price + step;
-
-                    if (evalVolBull >= minVolRequired && evalDeltaBull >= effAbsMinDelta && (inLowerExtreme || isMidWallBull) && (bid > ask || (isCme && pBidLow > pAskLow)))
-                    {
-                        decimal bidPct = rawVol > 0m ? (bid / rawVol) * 100m : 0m;
-                        decimal pooledBidPct = pVolLow > 0m ? (pBidLow / pVolLow) * 100m : bidPct;
-                        decimal domPct = isCme ? Math.Max(bidPct, pooledBidPct) : bidPct;
-                        rows[i].DominantPct = domPct;
-
-                        bool passesDom = domPct >= effAbsDomPct;
-                        bool passesRejection = !_requirePriceRejection || (candle.Close >= price + (isCme ? step * 0.5m : 0m) && candle.Close > candle.Low);
-                        bool passesDiag = true;
-
-                        if (effAbsDiag > 1.0m && i + 1 < count)
-                        {
-                            if (!isCme)
-                            {
-                                if (rows[i + 1].Ask > 0m)
-                                    passesDiag = (bid / rows[i + 1].Ask) >= effAbsDiag;
-                            }
-                            else
-                            {
-                                decimal diagDenom = Math.Max(1m, rows[i + 1].Ask);
-                                passesDiag = (Math.Max(bid, pBidLow) / diagDenom) >= effAbsDiag || domPct >= 66m;
-                            }
-                        }
-
-                        if (passesDom && passesRejection && passesDiag)
-                        {
-                            rows[i].AbsorptionSide = 1;
-                            rows[i].VolumeZScore = Math.Max(rows[i].VolumeZScore, Math.Round((evalVolBull - avgLevelVol) / stdVol, 2));
-                            if (evalVolBull > bestBullVol)
-                            {
-                                bestBullVol = evalVolBull;
-                                bestBullAbsIndex = i;
-                            }
-                            continue;
-                        }
-                    }
-
-                    // --- Test Bearish Heavy Absorption (Acheteurs agressifs à l'Ask absorbés) ---
-                    bool inUpperExtreme = price >= upperZoneLimit || ((count - 1 - i) <= effAbsLocTicks);
-                    bool isMidWallBear = _allowMidBarWallAbsorption && evalVolBear >= wallVolRequired && candle.Close < price - step;
-
-                    if (evalVolBear >= minVolRequired && evalDeltaBear >= effAbsMinDelta && (inUpperExtreme || isMidWallBear) && (ask > bid || (isCme && pAskHigh > pBidHigh)))
-                    {
-                        decimal askPct = rawVol > 0m ? (ask / rawVol) * 100m : 0m;
-                        decimal pooledAskPct = pVolHigh > 0m ? (pAskHigh / pVolHigh) * 100m : askPct;
-                        decimal domPct = isCme ? Math.Max(askPct, pooledAskPct) : askPct;
-                        rows[i].DominantPct = domPct;
-
-                        bool passesDom = domPct >= effAbsDomPct;
-                        bool passesRejection = !_requirePriceRejection || (candle.Close <= price - (isCme ? step * 0.5m : 0m) && candle.Close < candle.High);
-                        bool passesDiag = true;
-
-                        if (effAbsDiag > 1.0m && i - 1 >= 0)
-                        {
-                            if (!isCme)
-                            {
-                                if (rows[i - 1].Bid > 0m)
-                                    passesDiag = (ask / rows[i - 1].Bid) >= effAbsDiag;
-                            }
-                            else
-                            {
-                                decimal diagDenom = Math.Max(1m, rows[i - 1].Bid);
-                                passesDiag = (Math.Max(ask, pAskHigh) / diagDenom) >= effAbsDiag || domPct >= 66m;
-                            }
-                        }
-
-                        if (passesDom && passesRejection && passesDiag)
-                        {
-                            rows[i].AbsorptionSide = -1;
-                            rows[i].VolumeZScore = Math.Max(rows[i].VolumeZScore, Math.Round((evalVolBear - avgLevelVol) / stdVol, 2));
-                            if (evalVolBear > bestBearVol)
-                            {
-                                bestBearVol = evalVolBear;
-                                bestBearAbsIndex = i;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Détection des Acheteurs Piégés (Trapped Buyers ▼) & Vendeurs Piégés (Trapped Sellers ▲)
-            if (_enableTrappedTraders && count >= 2)
-            {
-                decimal effTrapZonePct = isCme ? Math.Max(_trappedWickZonePct, 42m) : _trappedWickZonePct;
-                decimal effTrapMinVol = isCme
-                    ? Math.Min(_trappedMinVolume, prof == MarketProfilePreset.CmeSp500_ES_MES ? 6m : 3m)
-                    : _trappedMinVolume;
-                decimal effTrapVolMult = isCme
-                    ? Math.Min(0.55m, _trappedVolumeMultiplier)
-                    : Math.Min(0.65m, _trappedVolumeMultiplier);
-                decimal effTrapDomPct = isCme
-                    ? Math.Min(_trappedMinDominantPct, 56m)
-                    : _trappedMinDominantPct;
-                decimal effTrapDiag = isCme
-                    ? Math.Min(_trappedImbalanceRatio, 1.35m)
-                    : _trappedImbalanceRatio;
-
-                decimal trapLowerZone = candle.Low + barRange * (effTrapZonePct / 100m);
-                decimal trapUpperZone = candle.High - barRange * (effTrapZonePct / 100m);
-                // Référence de volume de mèche non biaisée par le POC central
-                decimal refWickVol = Math.Min(avgLevelVol * effTrapVolMult, nonHvnAvgVol * 0.72m);
-                decimal trapMinVol = Math.Max(effTrapMinVol, refWickVol);
-                decimal bodyHigh = Math.Max(candle.Open, candle.Close);
-                decimal bodyLow = Math.Min(candle.Open, candle.Close);
-                decimal minRejectDist = Math.Max(1, _trappedMinRejectionLevels) * step;
-
-                decimal bestTrapSellersDelta = 0m;
-                decimal bestTrapBuyersDelta = 0m;
-
-                for (int i = 0; i < count; i++)
-                {
-                    decimal rawVol = rows[i].Volume;
-                    GetSymmetricPooledLow(i, out decimal pBidLow, out decimal pAskLow, out decimal pVolLow);
-                    GetSymmetricPooledHigh(i, out decimal pBidHigh, out decimal pAskHigh, out decimal pVolHigh);
-                    decimal evalVol = isCme ? Math.Max(rawVol, Math.Max(pVolLow, pVolHigh)) : rawVol;
-
-                    if (rawVol <= 0m || evalVol < trapMinVol)
-                        continue;
-
-                    decimal price = rows[i].Price;
-                    decimal bid = rows[i].Bid;
-                    decimal ask = rows[i].Ask;
-
-                    // --- A. Vendeurs Piégés en bas de bougie (Trapped Sellers ▲ -> Signal Haussier) ---
-                    bool inLowerTrapZone = (price <= trapLowerZone || price <= bodyLow || i <= Math.Max(2, count / 3));
-                    bool closedAboveSellers = candle.Close >= price + minRejectDist;
-                    bool inLowerWickOrBullClose = !_requireStrictWickOrOppositeClose || (price <= bodyLow || candle.Close >= candle.Open);
-
-                    if (inLowerTrapZone && closedAboveSellers && inLowerWickOrBullClose && (bid > ask || (isCme && pBidLow > pAskLow)))
-                    {
-                        decimal bidPct = rawVol > 0m ? (bid / rawVol) * 100m : 0m;
-                        decimal pooledPct = pVolLow > 0m ? (pBidLow / pVolLow) * 100m : bidPct;
-                        decimal domPct = isCme ? Math.Max(bidPct, pooledPct) : bidPct;
-                        bool passesDom = domPct >= effTrapDomPct;
-                        bool passesDiag = true;
-
-                        if (effTrapDiag > 1.0m && i + 1 < count)
-                        {
-                            if (!isCme)
-                            {
-                                if (rows[i + 1].Ask > 0m)
-                                    passesDiag = (bid / rows[i + 1].Ask) >= effTrapDiag || domPct >= 66m;
-                            }
-                            else
-                            {
-                                decimal diagDenom = Math.Max(1m, rows[i + 1].Ask);
-                                passesDiag = (Math.Max(bid, pBidLow) / diagDenom) >= effTrapDiag || domPct >= 64m;
-                            }
-                        }
-
-                        if (passesDom && passesDiag)
-                        {
-                            rows[i].TrappedSide = 1;
-                            rows[i].TrappedDominantPct = domPct;
-                            decimal sellDeltaAbs = Math.Max(bid - ask, pBidLow - pAskLow);
-                            if (sellDeltaAbs > bestTrapSellersDelta)
-                            {
-                                bestTrapSellersDelta = sellDeltaAbs;
-                                bestTrappedSellersIndex = i;
-                            }
-                            continue;
-                        }
-                    }
-
-                    // --- B. Acheteurs Piégés en haut de bougie (Trapped Buyers ▼ -> Signal Baissier) ---
-                    bool inUpperTrapZone = (price >= trapUpperZone || price >= bodyHigh || (count - 1 - i) <= Math.Max(2, count / 3));
-                    bool closedBelowBuyers = candle.Close <= price - minRejectDist;
-                    bool inUpperWickOrBearClose = !_requireStrictWickOrOppositeClose || (price >= bodyHigh || candle.Close <= candle.Open);
-
-                    if (inUpperTrapZone && closedBelowBuyers && inUpperWickOrBearClose && (ask > bid || (isCme && pAskHigh > pBidHigh)))
-                    {
-                        decimal askPct = rawVol > 0m ? (ask / rawVol) * 100m : 0m;
-                        decimal pooledPct = pVolHigh > 0m ? (pAskHigh / pVolHigh) * 100m : askPct;
-                        decimal domPct = isCme ? Math.Max(askPct, pooledPct) : askPct;
-                        bool passesDom = domPct >= effTrapDomPct;
-                        bool passesDiag = true;
-
-                        if (effTrapDiag > 1.0m && i - 1 >= 0)
-                        {
-                            if (!isCme)
-                            {
-                                if (rows[i - 1].Bid > 0m)
-                                    passesDiag = (ask / rows[i - 1].Bid) >= effTrapDiag || domPct >= 66m;
-                            }
-                            else
-                            {
-                                decimal diagDenom = Math.Max(1m, rows[i - 1].Bid);
-                                passesDiag = (Math.Max(ask, pAskHigh) / diagDenom) >= effTrapDiag || domPct >= 64m;
-                            }
-                        }
-
-                        if (passesDom && passesDiag)
-                        {
-                            rows[i].TrappedSide = -1;
-                            rows[i].TrappedDominantPct = domPct;
-                            decimal buyDeltaAbs = Math.Max(ask - bid, pAskHigh - pBidHigh);
-                            if (buyDeltaAbs > bestTrapBuyersDelta)
-                            {
-                                bestTrapBuyersDelta = buyDeltaAbs;
-                                bestTrappedBuyersIndex = i;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 5. Détection des BigTrades (Losanges ◆) & BigTrades Piégés (Reversal Setup comme sur la photo NQ)
+            // 3. Détection des BigTrades (Losanges ◆) & BigTrades Piégés (Seul déclencheur de Reversal du Bot)
             if (_enableBigTradesReversal && count >= 2)
             {
                 decimal effBigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
                 decimal adaptiveBlockLots = isCme
-                    ? Math.Max(effBigTradeMin * 0.62m, avgLevelVol * 2.10m)
-                    : Math.Max(effBigTradeMin * 0.55m, avgLevelVol * 2.25m);
+                    ? Math.Max(effBigTradeMin * 0.60m, avgLevelVol * 2.05m)
+                    : Math.Max(effBigTradeMin * 0.55m, avgLevelVol * 2.15m);
 
-                decimal midBarPrice = (candle.High + candle.Low) * 0.5m;
-                decimal lowerTrapLimit = candle.Low + barRange * 0.48m;
-                decimal upperTrapLimit = candle.High - barRange * 0.48m;
+                decimal lowerTrapLimit = candle.Low + barRange * 0.55m;
+                decimal upperTrapLimit = candle.High - barRange * 0.55m;
 
                 for (int i = 0; i < count; i++)
                 {
                     if (rows[i].Volume <= 0m)
                         continue;
 
-                    GetSymmetricPooledLow(i, out decimal pBidLow, out decimal pAskLow, out _);
-                    GetSymmetricPooledHigh(i, out decimal pBidHigh, out decimal pAskHigh, out _);
+                    // Agrégation d'un balayage agressif BigTrade sur 1 à 3 ticks contigus (ex: 40 lots balayant 2-3 niveaux sur NQ)
+                    decimal sellSweepVol = rows[i].Bid;
+                    if (isCme && _ticksPerRow == 1)
+                    {
+                        if (i + 1 < count && rows[i + 1].Bid > rows[i + 1].Ask)
+                            sellSweepVol += rows[i + 1].Bid * 0.85m;
+                        if (i > 0 && rows[i - 1].Bid > rows[i - 1].Ask)
+                            sellSweepVol += rows[i - 1].Bid * 0.65m;
+                    }
 
-                    decimal sellAggVol = isCme ? Math.Max(rows[i].Bid, pBidLow) : rows[i].Bid;
-                    decimal buyAggVol = isCme ? Math.Max(rows[i].Ask, pAskHigh) : rows[i].Ask;
+                    decimal buySweepVol = rows[i].Ask;
+                    if (isCme && _ticksPerRow == 1)
+                    {
+                        if (i - 1 >= 0 && rows[i - 1].Ask > rows[i - 1].Bid)
+                            buySweepVol += rows[i - 1].Ask * 0.85m;
+                        if (i + 1 < count && rows[i + 1].Ask > rows[i + 1].Bid)
+                            buySweepVol += rows[i + 1].Ask * 0.65m;
+                    }
 
-                    bool isSellBigTrade = sellAggVol >= effBigTradeMin ||
-                                          (sellAggVol >= adaptiveBlockLots && rows[i].Bid > rows[i].Ask * 1.32m && rows[i].VolumeZScore >= 1.05m);
-                    bool isBuyBigTrade = buyAggVol >= effBigTradeMin ||
-                                         (buyAggVol >= adaptiveBlockLots && rows[i].Ask > rows[i].Bid * 1.32m && rows[i].VolumeZScore >= 1.05m);
+                    bool isLocalSellPeak = (i == 0 || rows[i].Bid >= rows[i - 1].Bid) && (i == count - 1 || rows[i].Bid >= rows[i + 1].Bid);
+                    bool isLocalBuyPeak = (i == 0 || rows[i].Ask >= rows[i - 1].Ask) && (i == count - 1 || rows[i].Ask >= rows[i + 1].Ask);
+
+                    bool isSellBigTrade = isLocalSellPeak &&
+                                          (rows[i].Bid >= effBigTradeMin ||
+                                           (sellSweepVol >= effBigTradeMin && rows[i].Bid > rows[i].Ask * 1.25m) ||
+                                           (sellSweepVol >= adaptiveBlockLots && rows[i].Bid > rows[i].Ask * 1.35m && rows[i].VolumeZScore >= 1.0m));
+
+                    bool isBuyBigTrade = isLocalBuyPeak &&
+                                         (rows[i].Ask >= effBigTradeMin ||
+                                          (buySweepVol >= effBigTradeMin && rows[i].Ask > rows[i].Bid * 1.25m) ||
+                                          (buySweepVol >= adaptiveBlockLots && rows[i].Ask > rows[i].Bid * 1.35m && rows[i].VolumeZScore >= 1.0m));
 
                     if (isSellBigTrade)
                     {
                         rows[i].HasBigTradeSell = true;
-                        rows[i].BigTradeSellVol = Math.Round(Math.Max(rows[i].Bid, sellAggVol), 0);
+                        rows[i].BigTradeSellVol = Math.Round(Math.Max(rows[i].Bid, sellSweepVol), 0);
 
                         // BigTrade Vendeur (Losange Rouge ◆) Piégé en bas : vente massive dans la partie basse suivie d'un rejet / clôture au-dessus
                         if (rows[i].Price <= lowerTrapLimit && candle.Close >= rows[i].Price + step)
                         {
                             rows[i].TrappedBigTradeSide = 1;
-                            if (rows[i].TrappedSide == 0)
-                            {
-                                rows[i].TrappedSide = 1;
-                                rows[i].TrappedDominantPct = rows[i].Volume > 0m
-                                    ? Math.Max(58m, Math.Round((rows[i].Bid / rows[i].Volume) * 100m, 0))
-                                    : 65m;
-                                if (bestTrappedSellersIndex < 0)
-                                    bestTrappedSellersIndex = i;
-                            }
+                            if (bestTrappedSellersIndex < 0 || rows[i].BigTradeSellVol > rows[bestTrappedSellersIndex].BigTradeSellVol)
+                                bestTrappedSellersIndex = i;
                         }
                     }
 
                     if (isBuyBigTrade)
                     {
                         rows[i].HasBigTradeBuy = true;
-                        rows[i].BigTradeBuyVol = Math.Round(Math.Max(rows[i].Ask, buyAggVol), 0);
+                        rows[i].BigTradeBuyVol = Math.Round(Math.Max(rows[i].Ask, buySweepVol), 0);
 
                         // BigTrade Acheteur (Losange Vert ◆) Piégé en haut : achat massif dans la partie haute suivi d'un rejet / clôture en dessous
                         if (rows[i].Price >= upperTrapLimit && candle.Close <= rows[i].Price - step && rows[i].TrappedBigTradeSide == 0)
                         {
                             rows[i].TrappedBigTradeSide = -1;
-                            if (rows[i].TrappedSide == 0)
-                            {
-                                rows[i].TrappedSide = -1;
-                                rows[i].TrappedDominantPct = rows[i].Volume > 0m
-                                    ? Math.Max(58m, Math.Round((rows[i].Ask / rows[i].Volume) * 100m, 0))
-                                    : 65m;
-                                if (bestTrappedBuyersIndex < 0)
-                                    bestTrappedBuyersIndex = i;
-                            }
+                            if (bestTrappedBuyersIndex < 0 || rows[i].BigTradeBuyVol > rows[bestTrappedBuyersIndex].BigTradeBuyVol)
+                                bestTrappedBuyersIndex = i;
                         }
                     }
                 }
