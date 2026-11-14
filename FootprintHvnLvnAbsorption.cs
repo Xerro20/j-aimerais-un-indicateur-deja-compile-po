@@ -307,227 +307,127 @@ namespace ATAS.Indicators.Custom
         public int CompositeBandAlpha { get; set; } = 35;
 
         // =====================================================================
-        // 5. HEAVY ABSORPTION (DÉTECTION SUR FOOTPRINT)
+        // 5 & 6. ANCIENNE HEAVY ABSORPTION DÉSACTIVÉE (REMPLACÉE PAR BIGTRADES ◆)
         // =====================================================================
-        private bool _enableAbsorption = true;
-        [Display(Name = "Activer Heavy Absorption", GroupName = GrpAbsorption, Order = 10)]
+        private bool _enableAbsorption = false;
+        [Browsable(false)]
         public bool EnableAbsorption
         {
-            get => _enableAbsorption;
-            set { _enableAbsorption = value; RecalculateValues(); }
+            get => false;
+            set { _enableAbsorption = false; }
         }
 
         private int _absMinVolume = 0;
-        [Display(Name = "Volume Minimum du Niveau Absorbé", GroupName = GrpAbsorption, Order = 20,
-            Description = "Volume minimum (Bid+Ask) sur le prix pour qualifier une Heavy Absorption (0 = utilise uniquement le multiplicateur relatif).")]
-        [Range(0, 1000000)]
-        public int AbsMinVolume
-        {
-            get => _absMinVolume;
-            set { _absMinVolume = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int AbsMinVolume { get => _absMinVolume; set => _absMinVolume = value; }
 
         private decimal _absVolumeMultiplier = 1.5m;
-        [Display(Name = "Multiplicateur de Volume vs Moyenne Bougie", GroupName = GrpAbsorption, Order = 30,
-            Description = "Le volume du cluster doit être au moins X fois supérieur au volume moyen par niveau de la bougie (ex: 1.5x).")]
-        [Range(1.0, 10.0)]
-        public decimal AbsVolumeMultiplier
-        {
-            get => _absVolumeMultiplier;
-            set { _absVolumeMultiplier = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public decimal AbsVolumeMultiplier { get => _absVolumeMultiplier; set => _absVolumeMultiplier = value; }
 
         private int _absMinDominantPct = 60;
-        [Display(Name = "Dominance Minimale Bid ou Ask (%)", GroupName = GrpAbsorption, Order = 40,
-            Description = "Pourcentage minimum du côté agressif absorbé : Bid/(Bid+Ask) en bas ou Ask/(Bid+Ask) en haut.")]
-        [Range(50, 99)]
-        public int AbsMinDominantPct
-        {
-            get => _absMinDominantPct;
-            set { _absMinDominantPct = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int AbsMinDominantPct { get => _absMinDominantPct; set => _absMinDominantPct = value; }
 
         private int _absMinAbsDelta = 0;
-        [Display(Name = "|Delta| Minimum sur le Niveau", GroupName = GrpAbsorption, Order = 50)]
-        [Range(0, 500000)]
-        public int AbsMinAbsDelta
-        {
-            get => _absMinAbsDelta;
-            set { _absMinAbsDelta = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int AbsMinAbsDelta { get => _absMinAbsDelta; set => _absMinAbsDelta = value; }
 
         private decimal _absDiagonalRatio = 1.6m;
-        [Display(Name = "Ratio d'Imbalance Diagonale Min", GroupName = GrpAbsorption, Order = 60,
-            Description = "Ratio diagonal Bid vs Ask supérieur (ou Ask vs Bid inférieur). Mettre 1.0 pour désactiver ce filtre.")]
-        [Range(1.0, 20.0)]
-        public decimal AbsDiagonalRatio
-        {
-            get => _absDiagonalRatio;
-            set { _absDiagonalRatio = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public decimal AbsDiagonalRatio { get => _absDiagonalRatio; set => _absDiagonalRatio = value; }
 
         private int _absZonePct = 35;
-        [Display(Name = "Zone d'Extrême de la Bougie (% du Range)", GroupName = GrpAbsorption, Order = 70,
-            Description = "Position du cluster absorbé : dans les X% inférieurs de la bougie (absorption acheteuse) ou X% supérieurs (absorption vendeuse).")]
-        [Range(10, 100)]
-        public int AbsZonePct
-        {
-            get => _absZonePct;
-            set { _absZonePct = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int AbsZonePct { get => _absZonePct; set => _absZonePct = value; }
 
         private int _absLocationTicks = 3;
-        [Display(Name = "OU Distance Max de l'Extrême (en niveaux)", GroupName = GrpAbsorption, Order = 80,
-            Description = "Qualifie aussi le niveau s'il est à moins de N niveaux du High ou du Low de la bougie.")]
-        [Range(0, 25)]
-        public int AbsLocationTicks
-        {
-            get => _absLocationTicks;
-            set { _absLocationTicks = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int AbsLocationTicks { get => _absLocationTicks; set => _absLocationTicks = value; }
 
         private bool _requirePriceRejection = true;
-        [Display(Name = "Exiger Rejet du Prix (Clôture opposée)", GroupName = GrpAbsorption, Order = 90,
-            Description = "Pour une absorption basse (Bullish), la clôture doit être au-dessus du niveau absorbé. Pour une absorption haute (Bearish), la clôture doit être en dessous.")]
-        public bool RequirePriceRejection
-        {
-            get => _requirePriceRejection;
-            set { _requirePriceRejection = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public bool RequirePriceRejection { get => _requirePriceRejection; set => _requirePriceRejection = value; }
 
-        private bool _allowMidBarWallAbsorption = true;
-        [Display(Name = "Détecter aussi les Murs d'Absorption Intra-Bar", GroupName = GrpAbsorption, Order = 100,
-            Description = "Détecte une absorption massive même au cœur de la bougie si le volume dépasse 2.4x la moyenne avec fort rejet du prix.")]
-        public bool AllowMidBarWallAbsorption
-        {
-            get => _allowMidBarWallAbsorption;
-            set { _allowMidBarWallAbsorption = value; RecalculateValues(); }
-        }
+        private bool _allowMidBarWallAbsorption = false;
+        [Browsable(false)]
+        public bool AllowMidBarWallAbsorption { get => false; set => _allowMidBarWallAbsorption = false; }
 
-        // =====================================================================
-        // 6. HEAVY ABSORPTION (VISUEL & RAYONS)
-        // =====================================================================
-        [Display(Name = "Couleur Heavy Absorption Bullish (Bid absorbé)", GroupName = GrpAbsVisual, Order = 10)]
-        public Color BullishAbsorptionColor { get; set; } = Color.FromArgb(255, 0, 240, 255); // Cyan Néon
+        [Browsable(false)]
+        public Color BullishAbsorptionColor { get; set; } = Color.FromArgb(255, 0, 240, 255);
 
-        [Display(Name = "Couleur Heavy Absorption Bearish (Ask absorbé)", GroupName = GrpAbsVisual, Order = 20)]
-        public Color BearishAbsorptionColor { get; set; } = Color.FromArgb(255, 255, 45, 135); // Magenta / Rose Néon
+        [Browsable(false)]
+        public Color BearishAbsorptionColor { get; set; } = Color.FromArgb(255, 255, 45, 135);
 
-        [Display(Name = "Opacité surbrillance Absorption (0-255)", GroupName = GrpAbsVisual, Order = 30)]
-        [Range(30, 255)]
+        [Browsable(false)]
         public int AbsHighlightAlpha { get; set; } = 135;
 
-        [Display(Name = "Épaisseur bordure cellule absorbée (px)", GroupName = GrpAbsVisual, Order = 40)]
-        [Range(1, 6)]
+        [Browsable(false)]
         public int AbsBorderThickness { get; set; } = 2;
 
-        [Display(Name = "Afficher marqueur au-dessus/sous la bougie", GroupName = GrpAbsVisual, Order = 50)]
-        public bool ShowBarExtremeMarker { get; set; } = true;
+        [Browsable(false)]
+        public bool ShowBarExtremeMarker { get => false; set { } }
 
-        [Display(Name = "Style du marqueur de bougie", GroupName = GrpAbsVisual, Order = 60)]
+        [Browsable(false)]
         public AbsorptionMarkerType BarMarkerStyle { get; set; } = AbsorptionMarkerType.Diamond;
 
-        [Display(Name = "Taille du marqueur (px)", GroupName = GrpAbsVisual, Order = 70)]
-        [Range(4, 24)]
+        [Browsable(false)]
         public int BarMarkerSize { get; set; } = 9;
 
-        [Display(Name = "Projeter Rayon S/R d'Absorption vers la droite", GroupName = GrpAbsVisual, Order = 80)]
-        public bool ProjectAbsorptionRays { get; set; } = true;
+        [Browsable(false)]
+        public bool ProjectAbsorptionRays { get => false; set { } }
 
-        [Display(Name = "Longueur max du rayon d'absorption (bougies)", GroupName = GrpAbsVisual, Order = 90)]
-        [Range(2, 200)]
+        [Browsable(false)]
         public int AbsorptionRayMaxBars { get; set; } = 25;
 
-        [Display(Name = "Arrêter le rayon dès que le niveau est cassé", GroupName = GrpAbsVisual, Order = 100)]
+        [Browsable(false)]
         public bool StopRayWhenMitigated { get; set; } = true;
 
         // =====================================================================
-        // 7. ACHETEURS & VENDEURS PIÉGÉS (DÉTECTION)
+        // 7. ANCIENS CLUSTERS PIÉGÉS DÉSACTIVÉS (SEULS LES BIGTRADES ◆ SONT UTILISÉS)
         // =====================================================================
-        private bool _enableTrappedTraders = true;
-        [Display(Name = "Activer Acheteurs & Vendeurs Piégés", GroupName = GrpTrappedDetect, Order = 10,
-            Description = "Détecte les acheteurs agressifs piégés en haut de bougie (signal baissier) et les vendeurs agressifs piégés en bas de bougie (signal haussier).")]
+        private bool _enableTrappedTraders = false;
+        [Browsable(false)]
         public bool EnableTrappedTraders
         {
-            get => _enableTrappedTraders;
-            set { _enableTrappedTraders = value; RecalculateValues(); }
+            get => false;
+            set { _enableTrappedTraders = false; }
         }
 
         private int _trappedMinVolume = 0;
-        [Display(Name = "Volume Minimum du Niveau Piégé", GroupName = GrpTrappedDetect, Order = 20,
-            Description = "Volume minimum (Bid+Ask) sur le niveau pour valider un cluster d'acheteurs ou vendeurs piégés (0 = utilise le multiplicateur relatif).")]
-        [Range(0, 1000000)]
-        public int TrappedMinVolume
-        {
-            get => _trappedMinVolume;
-            set { _trappedMinVolume = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int TrappedMinVolume { get => _trappedMinVolume; set => _trappedMinVolume = value; }
 
         private decimal _trappedVolumeMultiplier = 0.65m;
-        [Display(Name = "Multiplicateur de Volume Min vs Moyenne Bougie", GroupName = GrpTrappedDetect, Order = 30,
-            Description = "Le volume du niveau piégé dans la mèche doit atteindre au moins X fois le volume moyen hors-POC de la bougie (ex: 0.65x).")]
-        [Range(0.2, 10.0)]
-        public decimal TrappedVolumeMultiplier
-        {
-            get => _trappedVolumeMultiplier;
-            set { _trappedVolumeMultiplier = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public decimal TrappedVolumeMultiplier { get => _trappedVolumeMultiplier; set => _trappedVolumeMultiplier = value; }
 
         private int _trappedMinDominantPct = 58;
-        [Display(Name = "Dominance Agressive Min Bid ou Ask (%)", GroupName = GrpTrappedDetect, Order = 40,
-            Description = "Pourcentage minimum d'acheteurs agressifs (Ask%) en haut ou de vendeurs agressifs (Bid%) en bas pour qualifier le piège.")]
-        [Range(50, 99)]
-        public int TrappedMinDominantPct
-        {
-            get => _trappedMinDominantPct;
-            set { _trappedMinDominantPct = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int TrappedMinDominantPct { get => _trappedMinDominantPct; set => _trappedMinDominantPct = value; }
 
         private decimal _trappedImbalanceRatio = 1.45m;
-        [Display(Name = "Ratio d'Imbalance Diagonale Min (Piégés)", GroupName = GrpTrappedDetect, Order = 50,
-            Description = "Imbalance diagonale Ask[i]/Bid[i-1] pour acheteurs piégés ou Bid[i]/Ask[i+1] pour vendeurs piégés (1.0 = désactivé).")]
-        [Range(1.0, 20.0)]
-        public decimal TrappedImbalanceRatio
-        {
-            get => _trappedImbalanceRatio;
-            set { _trappedImbalanceRatio = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public decimal TrappedImbalanceRatio { get => _trappedImbalanceRatio; set => _trappedImbalanceRatio = value; }
 
         private int _trappedWickZonePct = 42;
-        [Display(Name = "Zone de Piégeage Extrême (% du Range)", GroupName = GrpTrappedDetect, Order = 60,
-            Description = "Le cluster piégé doit se situer dans la mèche ou dans les X% supérieurs (acheteurs piégés) / inférieurs (vendeurs piégés) de la bougie.")]
-        [Range(10, 100)]
-        public int TrappedWickZonePct
-        {
-            get => _trappedWickZonePct;
-            set { _trappedWickZonePct = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int TrappedWickZonePct { get => _trappedWickZonePct; set => _trappedWickZonePct = value; }
 
         private bool _requireStrictWickOrOppositeClose = true;
-        [Display(Name = "Exiger niveau dans la mèche (hors corps) ou clôture opposée", GroupName = GrpTrappedDetect, Order = 70,
-            Description = "Garantit que les acheteurs piégés sont au-dessus de la clôture (en perte latente immédiate) et les vendeurs piégés en dessous de la clôture.")]
-        public bool RequireStrictWickOrOppositeClose
-        {
-            get => _requireStrictWickOrOppositeClose;
-            set { _requireStrictWickOrOppositeClose = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public bool RequireStrictWickOrOppositeClose { get => _requireStrictWickOrOppositeClose; set => _requireStrictWickOrOppositeClose = value; }
 
         private int _trappedMinRejectionLevels = 1;
-        [Display(Name = "Recul Minimum de Clôture (en niveaux)", GroupName = GrpTrappedDetect, Order = 80,
-            Description = "Nombre minimum de niveaux d'écart entre le cluster piégé et la clôture de la bougie confirmant que ces traders sont sous l'eau.")]
-        [Range(1, 20)]
-        public int TrappedMinRejectionLevels
-        {
-            get => _trappedMinRejectionLevels;
-            set { _trappedMinRejectionLevels = value; RecalculateValues(); }
-        }
+        [Browsable(false)]
+        public int TrappedMinRejectionLevels { get => _trappedMinRejectionLevels; set => _trappedMinRejectionLevels = value; }
 
         // =====================================================================
-        // 7b. BIGTRADES PIÉGÉS (LOSANGES ◆) & REVERSAL (COMME SUR LA PHOTO NQ)
+        // 5. BIGTRADES PIÉGÉS (LOSANGES ◆) & REVERSAL (SEUL MOTEUR D'OUVERTURE)
         // =====================================================================
         private bool _enableBigTradesReversal = true;
         [Display(Name = "Activer BigTrades Piégés (Losanges ◆) + Reversal", GroupName = GrpBigTrades, Order = 10,
-            Description = "Détecte les BigTrades institutionnels (losanges rouges/verts ◆ sur le Footprint ou le Tape > 40 lots sur NQ) qui se retrouvent piégés en mèche/extrême et déclenche un trade Reversal avec HVN/LVN et Options X-Ray.")]
+            Description = "Détecte les BigTrades (losanges rouges/verts ◆ sur le Footprint ou le Tape >= 40 lots sur NQ) qui se retrouvent piégés et ouvre uniquement des trades Reversal confirmés avec HVN/LVN et Options X-Ray.")]
         public bool EnableBigTradesReversal
         {
             get => _enableBigTradesReversal;
@@ -536,7 +436,7 @@ namespace ATAS.Indicators.Custom
 
         private int _bigTradeMinLots = 40;
         [Display(Name = "Seuil Minimum BigTrade (Lots — ex: 40 lots sur NQ)", GroupName = GrpBigTrades, Order = 20,
-            Description = "Seuil de volume agressif (ex: 40 lots sur NQ comme l'alerte 'New BigTrade at ... is more than 40 lots' de la capture) pour afficher un losange BigTrade ◆ et qualifier un BigTrade Piégé.")]
+            Description = "Seuil de volume agressif (ex: 40 lots sur NQ comme l'alerte 'New BigTrade at ... is more than 40 lots') pour afficher un losange BigTrade ◆ et qualifier un BigTrade Piégé.")]
         [Range(1, 50000)]
         public int BigTradeMinLots
         {
@@ -546,7 +446,7 @@ namespace ATAS.Indicators.Custom
 
         private bool _bigTradeAutoScaleByMarket = true;
         [Display(Name = "Calibrer automatiquement le seuil BigTrade selon le contrat", GroupName = GrpBigTrades, Order = 30,
-            Description = "Adapte automatiquement le seuil BigTrade aux différents contrats (NQ = 40 lots, ES = 85 lots, MNQ = 120 lots, MES = 150 lots, GC/CL = 25 lots) tout en respectant le seuil personnalisé sur NQ.")]
+            Description = "Adapte automatiquement le seuil BigTrade aux différents contrats (NQ = 40 lots, ES = 80 lots, MNQ/MES/BTC) tout en respectant le seuil personnalisé sur NQ.")]
         public bool BigTradeAutoScaleByMarket
         {
             get => _bigTradeAutoScaleByMarket;
@@ -555,7 +455,7 @@ namespace ATAS.Indicators.Custom
 
         private int _bigTradeReversalLookbackBars = 3;
         [Display(Name = "Fenêtre Multi-Bougies pour Reversal sur BigTrade Piégé (bougies)", GroupName = GrpBigTrades, Order = 40,
-            Description = "Permet de déclencher le Reversal lorsque le losange BigTrade apparaît sur la bougie courante OU sur les 1 à 3 bougies précédentes et que la bougie actuelle confirme le retournement au-delà du losange piégé.")]
+            Description = "Permet de déclencher le Reversal lorsque le losange BigTrade ◆ apparaît sur la bougie courante OU sur les 1 à 3 bougies précédentes et que la bougie actuelle se retourne et clôture au-delà du losange piégé.")]
         [Range(1, 6)]
         public int BigTradeReversalLookbackBars
         {
@@ -564,7 +464,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Afficher les Losanges BigTrades (◆) sur les bougies", GroupName = GrpBigTrades, Order = 50,
-            Description = "Dessine les losanges doubles ATAS BigTrades (◆ Vert = BigTrade Buy, ◆ Rouge = BigTrade Sell) proportionnels au volume directement sur les bougies.")]
+            Description = "Dessine les losanges doubles ATAS BigTrades (◆ Vert = BigTrade Buy, ◆ Rouge = BigTrade Sell, contour Or = ◆ PIÉGÉ) directement sur les bougies.")]
         public bool ShowBigTradeDiamonds { get; set; } = true;
 
         [Display(Name = "Taille de base des Losanges BigTrades (px)", GroupName = GrpBigTrades, Order = 60)]
@@ -572,7 +472,7 @@ namespace ATAS.Indicators.Custom
         public int BigTradeDiamondBaseSize { get; set; } = 13;
 
         [Display(Name = "Afficher l'encadré d'alerte BigTrade en bas à gauche (style ATAS Alerts)", GroupName = GrpBigTrades, Order = 70,
-            Description = "Affiche la notification temps réel 'New BigTrade at ... (sell/buy) is more than 40 lots' en bas à gauche du graphique comme sur la capture d'écran.")]
+            Description = "Affiche la notification temps réel 'New BigTrade at ... (sell/buy) is more than 40 lots' en bas à gauche du graphique.")]
         public bool ShowBigTradeAlertToast { get; set; } = true;
 
         [Display(Name = "Couleur Losange BigTrade Achat (Buy ◆)", GroupName = GrpBigTrades, Order = 80)]
@@ -581,36 +481,30 @@ namespace ATAS.Indicators.Custom
         [Display(Name = "Couleur Losange BigTrade Vente (Sell ◆)", GroupName = GrpBigTrades, Order = 90)]
         public Color BigTradeSellColor { get; set; } = Color.FromArgb(255, 239, 68, 68); // Rouge Corail Vif
 
-        // =====================================================================
-        // 8. ACHETEURS & VENDEURS PIÉGÉS (VISUEL & RAYONS)
-        // =====================================================================
-        [Display(Name = "Couleur Vendeurs Piégés (Signal Bullish ▲)", GroupName = GrpTrappedVisual, Order = 10)]
-        public Color TrappedSellersBullColor { get; set; } = Color.FromArgb(255, 16, 245, 150); // Vert Émeraude Néon
+        [Browsable(false)]
+        public Color TrappedSellersBullColor { get; set; } = Color.FromArgb(255, 16, 245, 150);
 
-        [Display(Name = "Couleur Acheteurs Piégés (Signal Bearish ▼)", GroupName = GrpTrappedVisual, Order = 20)]
-        public Color TrappedBuyersBearColor { get; set; } = Color.FromArgb(255, 255, 90, 54); // Rouge / Orange Corail Vif
+        [Browsable(false)]
+        public Color TrappedBuyersBearColor { get; set; } = Color.FromArgb(255, 255, 90, 54);
 
-        [Display(Name = "Opacité surbrillance Traders Piégés (0-255)", GroupName = GrpTrappedVisual, Order = 30)]
-        [Range(30, 255)]
+        [Browsable(false)]
         public int TrappedHighlightAlpha { get; set; } = 120;
 
-        [Display(Name = "Afficher marqueur bougie Traders Piégés", GroupName = GrpTrappedVisual, Order = 40)]
-        public bool ShowTrappedBarMarker { get; set; } = true;
+        [Browsable(false)]
+        public bool ShowTrappedBarMarker { get => false; set { } }
 
-        [Display(Name = "Projeter Rayon de Liquidation (Trapped Zone)", GroupName = GrpTrappedVisual, Order = 50,
-            Description = "Projette une ligne pointillée depuis le prix des acheteurs/vendeurs piégés (zone de stop-loss / rachat forcé).")]
-        public bool ProjectTrappedRays { get; set; } = true;
+        [Browsable(false)]
+        public bool ProjectTrappedRays { get => false; set { } }
 
-        [Display(Name = "Longueur max du rayon Traders Piégés (bougies)", GroupName = GrpTrappedVisual, Order = 60)]
-        [Range(2, 150)]
+        [Browsable(false)]
         public int TrappedRayMaxBars { get; set; } = 20;
 
         // =====================================================================
-        // 9. ALERTE VISUELLE ACHAT / VENTE & FLUX D'OPTIONS ATAS X
+        // 6. SIGNAUX VISUELS REVERSAL ACHAT / VENTE
         // =====================================================================
         private bool _enableVisualBuySellAlerts = true;
-        [Display(Name = "Activer Alertes Visuelles ACHAT ▲ / VENTE ▼", GroupName = GrpOptionsAlerts, Order = 10,
-            Description = "Affiche un signal visuel ACHAT (BUY ▲) ou VENTE (SELL ▼) haute visibilité lorsque le Footprint (Absorption / Traders Piégés) entre en confluence avec le Flux d'Options ATAS X.")]
+        [Display(Name = "Afficher les Signaux Reversal ACHAT ◆▲ / VENTE ◆▼", GroupName = GrpOptionsAlerts, Order = 10,
+            Description = "Affiche le signal d'ouverture uniquement lorsqu'un BigTrade Piégé (losange ◆) déclenche un Reversal.")]
         public bool EnableVisualBuySellAlerts
         {
             get => _enableVisualBuySellAlerts;
@@ -618,31 +512,27 @@ namespace ATAS.Indicators.Custom
         }
 
         private bool _enableAtasOptionsFlow = true;
-        [Display(Name = "Prendre en compte le Flux d'Options ATAS X", GroupName = GrpOptionsAlerts, Order = 20,
-            Description = "Analyse le flux d'options fourni par ATAS X (IOptionsDataFeed Call/Put, StrikePrice, OpenInterest ΔOI, Sweeps & Block Trades) pour filtrer et scorer les signaux Achat/Vente.")]
+        [Browsable(false)]
         public bool EnableAtasOptionsFlow
         {
             get => _enableAtasOptionsFlow;
-            set { _enableAtasOptionsFlow = value; RecalculateValues(); }
+            set { _enableAtasOptionsFlow = value; }
         }
 
-        private bool _requireOptionsFlowConfirmation = true;
-        [Display(Name = "Exiger confirmation du Flux d'Options (Calls / Puts)", GroupName = GrpOptionsAlerts, Order = 30,
-            Description = "Un signal ACHAT exige un biais Call Flow haussier (PCR < 1 / Dominance Calls), et un signal VENTE exige un biais Put Flow baissier (PCR > 1 / Dominance Puts).")]
+        private bool _requireOptionsFlowConfirmation = false;
+        [Browsable(false)]
         public bool RequireOptionsFlowConfirmation
         {
-            get => _requireOptionsFlowConfirmation;
-            set { _requireOptionsFlowConfirmation = value; RecalculateValues(); }
+            get => false;
+            set { _requireOptionsFlowConfirmation = false; }
         }
 
-        private int _optionsMinDominancePct = 53;
-        [Display(Name = "Dominance Min du Flux Calls ou Puts (%)", GroupName = GrpOptionsAlerts, Order = 40,
-            Description = "Pourcentage minimum de flux Call (pour Achat) ou de flux Put (pour Vente) requis pour valider l'alerte visuelle.")]
-        [Range(50, 95)]
+        private int _optionsMinDominancePct = 50;
+        [Browsable(false)]
         public int OptionsMinDominancePct
         {
             get => _optionsMinDominancePct;
-            set { _optionsMinDominancePct = value; RecalculateValues(); }
+            set { _optionsMinDominancePct = value; }
         }
 
         private decimal _optionsSweepMultiplier = 1.7m;
