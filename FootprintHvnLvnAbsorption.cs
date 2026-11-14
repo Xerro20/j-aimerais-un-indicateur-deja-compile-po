@@ -2306,8 +2306,71 @@ namespace ATAS.Indicators.Custom
         }
 
         // =====================================================================
-        // Réception temps réel des prints & blocks ATAS X (OnNewTrade / OnCumulativeTrade)
+        // Calibration & Réception temps réel des BigTrades (Losanges ◆) & Sweeps ATAS X
         // =====================================================================
+        private decimal GetEffectiveBigTradeMinLots(decimal tickSize)
+        {
+            decimal baseLots = Math.Max(1, _bigTradeMinLots);
+            if (!_bigTradeAutoScaleByMarket)
+                return baseLots;
+
+            var info = ResolveContractAndCrossTradingInfo(tickSize);
+            if (info.BaseFamily == "NQ")
+                return baseLots; // 40 lots par défaut sur NQ comme sur la photo ("more than 40 lots")
+            if (info.BaseFamily == "ES")
+                return Math.Max(baseLots, 80m);
+            if (info.EffectiveProfile == MarketProfilePreset.CryptoBinanceFutures)
+                return Math.Max(1m, baseLots * 0.25m);
+            return baseLots;
+        }
+
+        private void RecordLiveBigTradePrint(int bar, decimal price, decimal volume, bool isBuy)
+        {
+            if (bar < 0 || price <= 0m || volume <= 0m)
+                return;
+
+            decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            decimal roundedPx = RoundToTick(price, tickSize);
+
+            if (!_liveBigTradesByBar.TryGetValue(bar, out var list))
+            {
+                list = new List<LiveBigTradePrint>();
+                _liveBigTradesByBar[bar] = list;
+            }
+
+            // Fusionne si un print du même côté existe déjà sur ce prix dans la même bougie
+            bool merged = false;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].IsBuy == isBuy && Math.Abs(list[i].Price - roundedPx) <= tickSize * 0.5m)
+                {
+                    var updated = list[i];
+                    if (volume > updated.Volume)
+                        updated.Volume = volume;
+                    updated.TimeUtc = DateTime.UtcNow;
+                    list[i] = updated;
+                    merged = true;
+                    break;
+                }
+            }
+
+            if (!merged)
+            {
+                list.Add(new LiveBigTradePrint
+                {
+                    Price = roundedPx,
+                    Volume = volume,
+                    IsBuy = isBuy,
+                    TimeUtc = DateTime.UtcNow
+                });
+            }
+
+            _lastBigTradeToastPrice = roundedPx;
+            _lastBigTradeToastVol = volume;
+            _lastBigTradeToastIsBuy = isBuy;
+            _lastBigTradeToastTime = DateTime.Now;
+        }
+
         protected override void OnNewTrade(MarketDataArg trade)
         {
             base.OnNewTrade(trade);
@@ -2320,10 +2383,22 @@ namespace ATAS.Indicators.Custom
                 CheckLivePositionTargetsOnTick(trade.Price);
             }
 
+            int curBar = CurrentBar - 1;
+            decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            decimal bigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
+            if (_enableBigTradesReversal && trade.Volume >= bigTradeMin && trade.Price > 0m)
+            {
+                bool isBuy = trade.IsAsk || trade.Direction == TradeDirection.Buy;
+                bool isSell = trade.IsBid || trade.Direction == TradeDirection.Sell;
+                if (isBuy || isSell)
+                {
+                    RecordLiveBigTradePrint(curBar, trade.Price, trade.Volume, isBuy);
+                }
+            }
+
             if (!_enableAtasOptionsFlow)
                 return;
 
-            int curBar = CurrentBar - 1;
             if (_lastLiveSweepBar != curBar)
             {
                 _lastLiveSweepBar = curBar;
@@ -2369,10 +2444,21 @@ namespace ATAS.Indicators.Custom
         protected override void OnCumulativeTrade(CumulativeTrade trade)
         {
             base.OnCumulativeTrade(trade);
-            if (!_enableAtasOptionsFlow || trade == null || CurrentBar <= 0)
+            if (trade == null || CurrentBar <= 0)
                 return;
 
             int curBar = CurrentBar - 1;
+            decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
+            decimal bigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
+            if (_enableBigTradesReversal && trade.Volume >= bigTradeMin && trade.Price > 0m &&
+                (trade.Direction == TradeDirection.Buy || trade.Direction == TradeDirection.Sell))
+            {
+                RecordLiveBigTradePrint(curBar, trade.Price, trade.Volume, trade.Direction == TradeDirection.Buy);
+            }
+
+            if (!_enableAtasOptionsFlow)
+                return;
+
             if (_lastLiveSweepBar != curBar)
             {
                 _lastLiveSweepBar = curBar;
