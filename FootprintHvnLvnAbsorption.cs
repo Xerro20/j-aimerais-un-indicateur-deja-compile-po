@@ -3309,10 +3309,11 @@ namespace ATAS.Indicators.Custom
             decimal atr = Math.Max(step * 2m, opt.AtrPoints);
             decimal barRange = Math.Max(step, candle.High - candle.Low);
 
-            // Garde de maturité sur la bougie en cours de formation (CurrentBar - 1)
+            // Garde de maturité stricte sur la bougie en cours de formation (CurrentBar - 1) :
+            // évite les entrées prématurées intra-bougie avant que le Reversal ne soit réellement confirmé par le volume (80%+)
             if (bar == CurrentBar - 1 && bar > 2)
             {
-                if (rows.Length < 3)
+                if (rows.Length < 4)
                     return sig;
 
                 int lb = Math.Min(10, bar);
@@ -3320,7 +3321,7 @@ namespace ATAS.Indicators.Custom
                 for (int k = 1; k <= lb; k++)
                     sumVol += GetCandle(bar - k).Volume;
                 decimal avgBarVol = lb > 0 ? sumVol / lb : candle.Volume;
-                if (avgBarVol > 0m && candle.Volume < avgBarVol * 0.35m)
+                if (avgBarVol > 0m && candle.Volume < avgBarVol * 0.80m)
                     return sig;
             }
 
@@ -3329,6 +3330,39 @@ namespace ATAS.Indicators.Custom
             decimal bodyLow = Math.Min(candle.Open, candle.Close);
             decimal upperWick = candle.High - bodyHigh;
             decimal lowerWick = bodyLow - candle.Low;
+
+            // --- 0. Contexte de Structure Swing Multi-Bougies & Filtre Anti-Couteau Qui Tombe (Momentum Cascade) ---
+            decimal swingLow5 = candle.Low;
+            decimal swingHigh5 = candle.High;
+            decimal swingLow8 = candle.Low;
+            decimal swingHigh8 = candle.High;
+            int consecutiveBearImpulse = 0;
+            int consecutiveBullImpulse = 0;
+
+            for (int m = 1; m <= Math.Min(8, bar); m++)
+            {
+                var prevC = GetCandle(bar - m);
+                if (m <= 5)
+                {
+                    if (prevC.Low < swingLow5) swingLow5 = prevC.Low;
+                    if (prevC.High > swingHigh5) swingHigh5 = prevC.High;
+                }
+                if (prevC.Low < swingLow8) swingLow8 = prevC.Low;
+                if (prevC.High > swingHigh8) swingHigh8 = prevC.High;
+
+                if (m <= 3)
+                {
+                    decimal pRange = prevC.High - prevC.Low;
+                    decimal pBody = Math.Abs(prevC.Close - prevC.Open);
+                    if (prevC.Close < prevC.Open && pRange >= atr * 1.15m && pBody >= pRange * 0.55m)
+                        consecutiveBearImpulse++;
+                    if (prevC.Close > prevC.Open && pRange >= atr * 1.15m && pBody >= pRange * 0.55m)
+                        consecutiveBullImpulse++;
+                }
+            }
+
+            bool isWaterfallCrash = consecutiveBearImpulse >= 3;
+            bool isVerticalRocket = consecutiveBullImpulse >= 3;
 
             // --- 1. Contexte HVN / LVN (Intra-Bougie & Profil Composite Multi-Bougies) ---
             bool hasBullBarHvnSupport = false;
@@ -3359,9 +3393,9 @@ namespace ATAS.Indicators.Custom
                 }
                 if (rows[i].IsLvn)
                 {
-                    if (rows[i].Price <= midPrice + step && candle.Close > rows[i].Price + step * 0.5m)
+                    if (rows[i].Price <= midPrice + step && candle.Close > rows[i].Price + step)
                         hasLowerLvnRejection = true;
-                    if (rows[i].Price >= midPrice - step && candle.Close < rows[i].Price - step * 0.5m)
+                    if (rows[i].Price >= midPrice - step && candle.Close < rows[i].Price - step)
                         hasUpperLvnRejection = true;
                 }
             }
@@ -3440,7 +3474,7 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // --- 2. Détection EXCLUSIVE des BigTrades Piégés (Losanges ◆) + Reversal ---
+            // --- 2. Détection EXCLUSIVE des BigTrades Piégés (Losanges ◆) + Reversal Swing Confirmé ---
             bool hasBigTradeBullReversal = false;
             bool hasBigTradeBearReversal = false;
             decimal bigTradeBullPrice = 0m;
@@ -3449,14 +3483,24 @@ namespace ATAS.Indicators.Custom
             decimal bigTradeBearLots = 0m;
             decimal bullTrapLow = candle.Low;
             decimal bearTrapHigh = candle.High;
+            int bullTrapBarOffset = 0;
+            int bearTrapBarOffset = 0;
 
-            // Bougie de Reversal Haussier : clôture verte OU mèche basse de rejet >= 40% clôturant dans la moitié haute
-            bool isBullReversalCandle = (candle.Close > candle.Open && candle.Close >= candle.Low + barRange * 0.48m) ||
-                                        (lowerWick >= barRange * 0.40m && candle.Close >= midPrice && candle.Close >= candle.Open - step * 0.5m);
+            decimal minRevClearance = Math.Max(step * 2m, RoundToTick(atr * 0.16m, tickSize));
 
-            // Bougie de Reversal Baissier : clôture rouge OU mèche haute de rejet >= 40% clôturant dans la moitié basse
-            bool isBearReversalCandle = (candle.Close < candle.Open && candle.Close <= candle.High - barRange * 0.48m) ||
-                                        (upperWick >= barRange * 0.40m && candle.Close <= midPrice && candle.Close <= candle.Open + step * 0.5m);
+            // Bougie de Reversal Haussier Confirmé : clôture franche dans le haut de la bougie + reprise du POC / shift de Delta
+            bool bullOrderFlowShift = candle.Delta > 0m || opt.DeltaTailBullRecovery || opt.BullishCvdDivergence;
+            bool bullPocReclaimed = opt.BarPocPrice <= 0m || candle.Close >= opt.BarPocPrice - step;
+            bool isBullReversalCandle = bullOrderFlowShift && bullPocReclaimed &&
+                                        ((candle.Close > candle.Open && candle.Close >= candle.Low + barRange * 0.58m) ||
+                                         (lowerWick >= barRange * 0.45m && candle.Close >= candle.Low + barRange * 0.60m && candle.Close >= candle.Open));
+
+            // Bougie de Reversal Baissier Confirmé : clôture franche dans le bas de la bougie + cassure du POC / shift de Delta
+            bool bearOrderFlowShift = candle.Delta < 0m || opt.DeltaTailBearRejection || opt.BearishCvdDivergence;
+            bool bearPocReclaimed = opt.BarPocPrice <= 0m || candle.Close <= opt.BarPocPrice + step;
+            bool isBearReversalCandle = bearOrderFlowShift && bearPocReclaimed &&
+                                        ((candle.Close < candle.Open && candle.Close <= candle.High - barRange * 0.58m) ||
+                                         (upperWick >= barRange * 0.45m && candle.Close <= candle.High - barRange * 0.60m && candle.Close <= candle.Open));
 
             int btLookback = Math.Clamp(_bigTradeReversalLookbackBars, 1, 6);
             for (int k = 0; k <= Math.Min(btLookback, bar); k++)
@@ -3464,6 +3508,11 @@ namespace ATAS.Indicators.Custom
                 int bCheck = bar - k;
                 var cCheck = GetCandle(bCheck);
                 decimal cRange = Math.Max(step, cCheck.High - cCheck.Low);
+                decimal cMid = (cCheck.High + cCheck.Low) * 0.5m;
+
+                // En multi-bougies (k >= 1), la bougie actuelle doit confirmer le retournement en clôturant au-dessus du milieu de la bougie de piégeage
+                bool multiBarBullConfirm = k == 0 || (candle.Close > candle.Open && candle.Close > cMid && candle.Close >= cCheck.Close);
+                bool multiBarBearConfirm = k == 0 || (candle.Close < candle.Open && candle.Close < cMid && candle.Close <= cCheck.Close);
 
                 ClusterRow[]? rCheck = (k == 0)
                     ? rows
@@ -3473,12 +3522,12 @@ namespace ATAS.Indicators.Custom
                 {
                     for (int i = 0; i < rCheck.Length; i++)
                     {
-                        // A) Losange Rouge (BigTrade Sell ◆) dans le bas de la bougie bCheck suivi d'un Reversal Haussier au-dessus du losange
+                        // A) Losange Rouge (BigTrade Sell ◆) piégé dans les 45% bas de la bougie bCheck suivi d'un Reversal Haussier franc
                         if (rCheck[i].HasBigTradeSell &&
-                            rCheck[i].Price <= cCheck.Low + cRange * 0.55m &&
+                            rCheck[i].Price <= cCheck.Low + cRange * 0.45m &&
                             isBullReversalCandle &&
-                            candle.Close >= rCheck[i].Price + step &&
-                            (k == 0 || (candle.Close > candle.Open && candle.Close >= (cCheck.High + cCheck.Low) * 0.5m)))
+                            multiBarBullConfirm &&
+                            candle.Close >= rCheck[i].Price + minRevClearance)
                         {
                             hasBigTradeBullReversal = true;
                             if (rCheck[i].BigTradeSellVol >= bigTradeBullLots || bigTradeBullPrice == 0m)
@@ -3486,15 +3535,16 @@ namespace ATAS.Indicators.Custom
                                 bigTradeBullLots = rCheck[i].BigTradeSellVol;
                                 bigTradeBullPrice = rCheck[i].Price;
                                 bullTrapLow = Math.Min(candle.Low, cCheck.Low);
+                                bullTrapBarOffset = k;
                             }
                         }
 
-                        // B) Losange Vert (BigTrade Buy ◆) dans le haut de la bougie bCheck suivi d'un Reversal Baissier sous le losange
+                        // B) Losange Vert (BigTrade Buy ◆) piégé dans les 45% hauts de la bougie bCheck suivi d'un Reversal Baissier franc
                         if (rCheck[i].HasBigTradeBuy &&
-                            rCheck[i].Price >= cCheck.High - cRange * 0.55m &&
+                            rCheck[i].Price >= cCheck.High - cRange * 0.45m &&
                             isBearReversalCandle &&
-                            candle.Close <= rCheck[i].Price - step &&
-                            (k == 0 || (candle.Close < candle.Open && candle.Close <= (cCheck.High + cCheck.Low) * 0.5m)))
+                            multiBarBearConfirm &&
+                            candle.Close <= rCheck[i].Price - minRevClearance)
                         {
                             hasBigTradeBearReversal = true;
                             if (rCheck[i].BigTradeBuyVol >= bigTradeBearLots || bigTradeBearPrice == 0m)
@@ -3502,6 +3552,7 @@ namespace ATAS.Indicators.Custom
                                 bigTradeBearLots = rCheck[i].BigTradeBuyVol;
                                 bigTradeBearPrice = rCheck[i].Price;
                                 bearTrapHigh = Math.Max(candle.High, cCheck.High);
+                                bearTrapBarOffset = k;
                             }
                         }
                     }
@@ -3514,10 +3565,10 @@ namespace ATAS.Indicators.Custom
                     {
                         var lp = liveList[i];
                         if (!lp.IsBuy &&
-                            lp.Price <= cCheck.Low + cRange * 0.55m &&
+                            lp.Price <= cCheck.Low + cRange * 0.45m &&
                             isBullReversalCandle &&
-                            candle.Close >= lp.Price + step &&
-                            (k == 0 || (candle.Close > candle.Open && candle.Close >= (cCheck.High + cCheck.Low) * 0.5m)))
+                            multiBarBullConfirm &&
+                            candle.Close >= lp.Price + minRevClearance)
                         {
                             hasBigTradeBullReversal = true;
                             if (lp.Volume >= bigTradeBullLots || bigTradeBullPrice == 0m)
@@ -3525,13 +3576,14 @@ namespace ATAS.Indicators.Custom
                                 bigTradeBullLots = lp.Volume;
                                 bigTradeBullPrice = lp.Price;
                                 bullTrapLow = Math.Min(candle.Low, cCheck.Low);
+                                bullTrapBarOffset = k;
                             }
                         }
                         else if (lp.IsBuy &&
-                                 lp.Price >= cCheck.High - cRange * 0.55m &&
+                                 lp.Price >= cCheck.High - cRange * 0.45m &&
                                  isBearReversalCandle &&
-                                 candle.Close <= lp.Price - step &&
-                                 (k == 0 || (candle.Close < candle.Open && candle.Close <= (cCheck.High + cCheck.Low) * 0.5m)))
+                                 multiBarBearConfirm &&
+                                 candle.Close <= lp.Price - minRevClearance)
                         {
                             hasBigTradeBearReversal = true;
                             if (lp.Volume >= bigTradeBearLots || bigTradeBearPrice == 0m)
@@ -3539,6 +3591,7 @@ namespace ATAS.Indicators.Custom
                                 bigTradeBearLots = lp.Volume;
                                 bigTradeBearPrice = lp.Price;
                                 bearTrapHigh = Math.Max(candle.High, cCheck.High);
+                                bearTrapBarOffset = k;
                             }
                         }
                     }
@@ -3558,6 +3611,7 @@ namespace ATAS.Indicators.Custom
                     hasBigTradeBullReversal = false;
             }
 
+            decimal effBigTradeThreshold = GetEffectiveBigTradeMinLots(tickSize);
             string xrayTag = $"CW {opt.XRayCallWall:0} ({opt.XRayCallWallGexM:+0.0;-0.0}M) • MP {opt.XRayMaxPain:0} • PW {opt.XRayPutWall:0} ({opt.XRayPutWallGexM:+0.0;-0.0}M)";
 
             decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
@@ -3577,110 +3631,140 @@ namespace ATAS.Indicators.Custom
 
                 if (livePriceGapOk)
                 {
-                    // Garde Options X-Ray : éviter d'acheter immédiatement sous le CALL WALL s'il bloque le chemin à moins de 4 pas
-                    bool blockedByCallWall = _enableOptionsXRayOverlay &&
-                                             opt.XRayCallWall > entryPrice &&
-                                             (opt.XRayCallWall - entryPrice) < step * 4m;
+                    bool hvnAnchored = hasBullBarHvnSupport || hasCompHvnSupport;
+                    bool lvnConfirmed = hasLowerLvnRejection || hasCompLvnBullRejection;
+                    bool optionsWallSupport = _enableOptionsXRayOverlay &&
+                        ((opt.XRayPutWall > 0m && Math.Abs(bullTrapLow - opt.XRayPutWall) <= atr * 1.15m) ||
+                         (opt.XRayMaxPain > 0m && Math.Abs(bullTrapLow - opt.XRayMaxPain) <= atr * 0.90m));
 
-                    if (!blockedByCallWall)
+                    // Validation d'extrême de Swing : le piégeage doit se produire sur un creux de Swing (et non au milieu d'un range)
+                    bool atSwingLow = bullTrapLow <= swingLow5 + atr * 0.15m ||
+                                      (bullTrapLow <= swingLow8 + atr * 0.25m && (hvnAnchored || lvnConfirmed || optionsWallSupport));
+
+                    // Protection Anti-Couteau Qui Tombe : bloque l'achat face à une chute libre de 3 grosses bougies rouges sans base multi-bougies
+                    bool waterfallBlocked = isWaterfallCrash && (bullTrapBarOffset == 0 || (bar > 0 && candle.Close < GetCandle(bar - 1).High));
+
+                    // Filtre Anti-Entrée Tardive : ne jamais acheter en haut d'une bougie géante déjà épuisée (évite les gros Stop-Loss pour peu de gain restant)
+                    decimal distFromTrapLow = entryPrice - bullTrapLow;
+                    bool overExtendedEntry = barRange > atr * 1.65m || distFromTrapLow > atr * 1.05m;
+
+                    if (atSwingLow && !waterfallBlocked && !overExtendedEntry)
                     {
-                        bool hvnAnchored = hasBullBarHvnSupport || hasCompHvnSupport;
-                        bool lvnConfirmed = hasLowerLvnRejection || hasCompLvnBullRejection;
-                        bool optionsWallSupport = _enableOptionsXRayOverlay &&
-                            ((opt.XRayPutWall > 0m && Math.Abs(bullTrapLow - opt.XRayPutWall) <= atr * 1.25m) ||
-                             (opt.XRayMaxPain > 0m && Math.Abs(bullTrapLow - opt.XRayMaxPain) <= atr * 1.00m));
-
                         decimal clusterZ = 1.50m;
                         if (bestTrappedSellersIdx >= 0 && bestTrappedSellersIdx < rows.Length)
                             clusterZ = Math.Max(clusterZ, Math.Max(rows[bestTrappedSellersIdx].VolumeZScore, rows[bestTrappedSellersIdx].DeltaZScore));
                         if (bestBullHvnIdx >= 0 && bestBullHvnIdx < rows.Length)
                             clusterZ = Math.Max(clusterZ, rows[bestBullHvnIdx].VolumeZScore);
 
-                        int score = 82;
-                        if (hvnAnchored) score += 5;
-                        if (lvnConfirmed) score += 5;
-                        if (optionsWallSupport) score += 4;
-                        if (candle.Delta > 0m) score += 3;
-                        score = Math.Clamp(score, 80, 99);
+                        // Calcul réel du Score de Confluence Institutionnel (60..99)
+                        int score = 62;
+                        if (opt.TrendBias > 0) score += 9;
+                        else if (opt.TrendBias == 0) score += 4;
+                        if (hvnAnchored) score += 7;
+                        if (lvnConfirmed) score += 6;
+                        if (optionsWallSupport) score += 7;
+                        if (candle.Delta > 0m && candle.Close > candle.Open) score += 6;
+                        if (bigTradeBullLots >= effBigTradeThreshold * 1.35m) score += 5;
+                        if (bullTrapBarOffset >= 1) score += 3;
+                        score = Math.Clamp(score, 60, 99);
 
-                        int baseMinStopSteps = isCme
-                            ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 6 : 4)
-                            : 3;
-                        int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 2);
-                        int baseMinTp1Steps = isCme
-                            ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 6 : 4)
-                            : 3;
-                        int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 3);
-
-                        decimal structuralPad = (isCme && prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ) ? step * 2m : step;
-                        decimal anchorLow = Math.Min(bullTrapLow - structuralPad, bigTradeBullPrice - structuralPad);
-                        if (hasCompHvnSupport && compSupportPrice > 0m && compSupportPrice < entryPrice && (entryPrice - compSupportPrice) <= atr * 0.70m)
-                            anchorLow = Math.Min(anchorLow, compSupportPrice - structuralPad);
-
-                        decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.30m, tickSize));
-                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 4m, RoundToTick(atr * 1.25m, tickSize));
-                        decimal rawStopDist = Math.Clamp(entryPrice - anchorLow, minStopDist, maxAllowedStopDist);
-
-                        decimal stopPrice = RoundToTick(entryPrice - rawStopDist, tickSize);
-                        if (stopPrice >= candle.Low)
-                            stopPrice = RoundToTick(candle.Low - structuralPad, tickSize);
-
-                        decimal riskPts = Math.Max(minStopDist, entryPrice - stopPrice);
-                        decimal effTp1Rr = Math.Max(0.85m, _quantTp1RiskReward);
-                        decimal effTp2Rr = Math.Max(1.60m, _quantTp2RiskReward);
-
-                        decimal tp1Dist = Math.Max(step * minTp1Steps, RoundToTick(riskPts * effTp1Rr, tickSize));
-                        decimal tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(riskPts * effTp2Rr, tickSize));
-
-                        // Alignement intelligent du TP2 avec les murs Options X-Ray (PUT WALL / MAX PAIN / CALL WALL)
-                        if (_enableOptionsXRayOverlay)
+                        int minRequiredScore = opt.TrendBias < 0 ? 80 : 74;
+                        if (score >= minRequiredScore)
                         {
-                            decimal candidateTp2 = entryPrice + tp2Dist;
-                            if (opt.XRayPutWall > entryPrice + tp1Dist + step * 4m && opt.XRayPutWall <= candidateTp2 + atr * 0.40m)
-                                tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(opt.XRayPutWall - entryPrice - step * 3m, tickSize));
-                            else if (opt.XRayMaxPain > entryPrice + tp1Dist + step * 4m && opt.XRayMaxPain <= candidateTp2 + atr * 0.40m)
-                                tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(opt.XRayMaxPain - entryPrice - step * 2m, tickSize));
-                            else if (opt.XRayCallWall > entryPrice + tp1Dist + step * 4m && opt.XRayCallWall <= candidateTp2 + atr * 0.40m)
-                                tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(opt.XRayCallWall - entryPrice - step * 3m, tickSize));
+                            // Calibrage Anti-Microscalping : Stop-Loss structurel maîtrisé + Objectifs Swing TP1 (1.8R) & TP2 (3.2R+)
+                            int baseMinStopSteps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 6)
+                                : 5;
+                            int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 4);
+
+                            int baseMinTp1Steps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 16 : 10)
+                                : 8;
+                            int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 8);
+
+                            int baseMinTp2Steps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 32 : 20)
+                                : 16;
+
+                            decimal structuralPad = (isCme && prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ) ? step * 3m : step * 2m;
+                            decimal anchorLow = Math.Min(bullTrapLow - structuralPad, bigTradeBullPrice - structuralPad);
+                            if (hasCompHvnSupport && compSupportPrice > 0m && compSupportPrice < entryPrice && (entryPrice - compSupportPrice) <= atr * 0.65m)
+                                anchorLow = Math.Min(anchorLow, compSupportPrice - structuralPad);
+
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.48m, tickSize));
+                            decimal maxAllowedStopDist = Math.Max(minStopDist + step * 4m, RoundToTick(atr * Math.Clamp(_quantAtrStopMultiplier, 0.55m, 1.05m), tickSize));
+                            decimal rawStopDist = Math.Clamp(entryPrice - anchorLow, minStopDist, maxAllowedStopDist);
+
+                            decimal stopPrice = RoundToTick(entryPrice - rawStopDist, tickSize);
+                            if (stopPrice >= candle.Low)
+                                stopPrice = RoundToTick(candle.Low - structuralPad, tickSize);
+
+                            decimal riskPts = Math.Max(minStopDist, entryPrice - stopPrice);
+                            decimal effTp1Rr = Math.Max(1.50m, _quantTp1RiskReward);
+                            decimal effTp2Rr = Math.Max(2.60m, _quantTp2RiskReward);
+
+                            decimal minTp1Floor = Math.Max(step * minTp1Steps, RoundToTick(atr * 1.15m, tickSize));
+                            decimal minTp2Floor = Math.Max(step * baseMinTp2Steps, RoundToTick(atr * 2.25m, tickSize));
+
+                            decimal tp1Dist = Math.Max(minTp1Floor, RoundToTick(riskPts * effTp1Rr, tickSize));
+                            decimal tp2Dist = Math.Max(Math.Max(minTp2Floor, tp1Dist + step * 8m), RoundToTick(riskPts * effTp2Rr, tickSize));
+
+                            // Garde Options X-Ray : s'assurer que le CALL WALL ne bloque pas le potentiel vers TP1
+                            bool blockedByCallWall = _enableOptionsXRayOverlay &&
+                                                     opt.XRayCallWall > entryPrice &&
+                                                     (opt.XRayCallWall - entryPrice) < tp1Dist * 0.85m;
+
+                            if (!blockedByCallWall)
+                            {
+                                // Alignement / Extension intelligente du TP2 vers les aimants de liquidité Options X-Ray (CALL WALL / MAX PAIN)
+                                if (_enableOptionsXRayOverlay)
+                                {
+                                    if (opt.XRayCallWall > entryPrice + tp1Dist * 1.35m && opt.XRayCallWall <= entryPrice + riskPts * 4.20m)
+                                        tp2Dist = Math.Max(tp1Dist * 1.45m, RoundToTick(opt.XRayCallWall - entryPrice - step * 3m, tickSize));
+                                    else if (opt.XRayMaxPain > entryPrice + tp1Dist * 1.45m && opt.XRayMaxPain <= entryPrice + riskPts * 3.80m && opt.XRayMaxPain > entryPrice + tp2Dist * 0.85m)
+                                        tp2Dist = Math.Max(tp1Dist * 1.45m, RoundToTick(opt.XRayMaxPain - entryPrice - step * 2m, tickSize));
+                                }
+
+                                decimal tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
+                                decimal tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
+                                decimal actualRr = riskPts > 0m ? Math.Round(tp2Dist / riskPts, 2) : effTp2Rr;
+
+                                string structTag = lvnConfirmed && hvnAnchored
+                                    ? "HVN+LVN▲"
+                                    : (lvnConfirmed ? "Rejet LVN▲" : (hvnAnchored ? "Support HVN▲" : "Swing Low▲"));
+                                if (optionsWallSupport)
+                                    structTag += " + X-Ray Wall";
+
+                                string reason = $"◆ BIGTRADE PIÉGÉ ({bigTradeBullLots:0}L @ {bigTradeBullPrice}) + REVERSAL SWING▲ ({actualRr:0.0}R) | {structTag}{crossSuffix}";
+
+                                return new VisualTradeSignal
+                                {
+                                    Bar = bar,
+                                    Direction = 1,
+                                    TriggerPrice = entryPrice,
+                                    EntryPrice = entryPrice,
+                                    RealAccountFillPrice = rawExecFillPx,
+                                    IsLiveFillSynced = false,
+                                    StopPrice = stopPrice,
+                                    Tp1Price = tp1Price,
+                                    Tp2Price = tp2Price,
+                                    RiskRewardRatio = actualRr,
+                                    ClusterZScore = clusterZ,
+                                    AtrValue = atr,
+                                    ConfluenceScore = score,
+                                    CallFlowPct = opt.CallFlowPct,
+                                    PutFlowPct = opt.PutFlowPct,
+                                    PutCallRatio = opt.PutCallRatio,
+                                    OiDelta = opt.OiDelta,
+                                    SweepCount = opt.SweepCount,
+                                    IsBigTradeReversal = true,
+                                    BigTradePrice = bigTradeBullPrice,
+                                    BigTradeLots = bigTradeBullLots,
+                                    ReasonTag = reason,
+                                    XRaySummaryTag = xrayTag
+                                };
+                            }
                         }
-
-                        decimal tp1Price = RoundToTick(entryPrice + tp1Dist, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice + tp2Dist, tickSize);
-
-                        string structTag = lvnConfirmed && hvnAnchored
-                            ? "HVN+LVN▲"
-                            : (lvnConfirmed ? "Rejet LVN▲" : (hvnAnchored ? "Support HVN▲" : "OrderFlow▲"));
-                        if (optionsWallSupport)
-                            structTag += " + X-Ray Wall";
-
-                        string reason = $"◆ BIGTRADE PIÉGÉ ({bigTradeBullLots:0}L @ {bigTradeBullPrice}) + REVERSAL▲ | {structTag}{crossSuffix}";
-
-                        return new VisualTradeSignal
-                        {
-                            Bar = bar,
-                            Direction = 1,
-                            TriggerPrice = entryPrice,
-                            EntryPrice = entryPrice,
-                            RealAccountFillPrice = rawExecFillPx,
-                            IsLiveFillSynced = false,
-                            StopPrice = stopPrice,
-                            Tp1Price = tp1Price,
-                            Tp2Price = tp2Price,
-                            RiskRewardRatio = effTp2Rr,
-                            ClusterZScore = clusterZ,
-                            AtrValue = atr,
-                            ConfluenceScore = score,
-                            CallFlowPct = opt.CallFlowPct,
-                            PutFlowPct = opt.PutFlowPct,
-                            PutCallRatio = opt.PutCallRatio,
-                            OiDelta = opt.OiDelta,
-                            SweepCount = opt.SweepCount,
-                            IsBigTradeReversal = true,
-                            BigTradePrice = bigTradeBullPrice,
-                            BigTradeLots = bigTradeBullLots,
-                            ReasonTag = reason,
-                            XRaySummaryTag = xrayTag
-                        };
                     }
                 }
             }
@@ -3694,109 +3778,141 @@ namespace ATAS.Indicators.Custom
 
                 if (livePriceGapOk)
                 {
-                    // Garde Options X-Ray : éviter de vendre immédiatement sur le PUT WALL s'il bloque le chemin à moins de 4 pas
-                    bool blockedByPutWall = _enableOptionsXRayOverlay &&
-                                            opt.XRayPutWall > 0m &&
-                                            opt.XRayPutWall < entryPrice &&
-                                            (entryPrice - opt.XRayPutWall) < step * 4m;
+                    bool hvnAnchored = hasBearBarHvnResistance || hasCompHvnResistance;
+                    bool lvnConfirmed = hasUpperLvnRejection || hasCompLvnBearRejection;
+                    bool optionsWallResist = _enableOptionsXRayOverlay &&
+                        ((opt.XRayCallWall > 0m && Math.Abs(bearTrapHigh - opt.XRayCallWall) <= atr * 1.15m) ||
+                         (opt.XRayMaxPain > 0m && Math.Abs(bearTrapHigh - opt.XRayMaxPain) <= atr * 0.90m));
 
-                    if (!blockedByPutWall)
+                    // Validation d'extrême de Swing : le piégeage doit se produire sur un sommet de Swing (et non au milieu d'un range)
+                    bool atSwingHigh = bearTrapHigh >= swingHigh5 - atr * 0.15m ||
+                                       (bearTrapHigh >= swingHigh8 - atr * 0.25m && (hvnAnchored || lvnConfirmed || optionsWallResist));
+
+                    // Protection Anti-Fusée Haussière : bloque la vente face à 3 grosses bougies vertes impulsives sans cassure structurelle
+                    bool rocketBlocked = isVerticalRocket && (bearTrapBarOffset == 0 || (bar > 0 && candle.Close > GetCandle(bar - 1).Low));
+
+                    // Filtre Anti-Entrée Tardive : ne jamais vendre tout en bas d'une bougie géante déjà épuisée
+                    decimal distFromTrapHigh = bearTrapHigh - entryPrice;
+                    bool overExtendedEntry = barRange > atr * 1.65m || distFromTrapHigh > atr * 1.05m;
+
+                    if (atSwingHigh && !rocketBlocked && !overExtendedEntry)
                     {
-                        bool hvnAnchored = hasBearBarHvnResistance || hasCompHvnResistance;
-                        bool lvnConfirmed = hasUpperLvnRejection || hasCompLvnBearRejection;
-                        bool optionsWallResist = _enableOptionsXRayOverlay &&
-                            ((opt.XRayCallWall > 0m && Math.Abs(bearTrapHigh - opt.XRayCallWall) <= atr * 1.25m) ||
-                             (opt.XRayMaxPain > 0m && Math.Abs(bearTrapHigh - opt.XRayMaxPain) <= atr * 1.00m));
-
                         decimal clusterZ = 1.50m;
                         if (bestTrappedBuyersIdx >= 0 && bestTrappedBuyersIdx < rows.Length)
                             clusterZ = Math.Max(clusterZ, Math.Max(rows[bestTrappedBuyersIdx].VolumeZScore, rows[bestTrappedBuyersIdx].DeltaZScore));
                         if (bestBearHvnIdx >= 0 && bestBearHvnIdx < rows.Length)
                             clusterZ = Math.Max(clusterZ, rows[bestBearHvnIdx].VolumeZScore);
 
-                        int score = 82;
-                        if (hvnAnchored) score += 5;
-                        if (lvnConfirmed) score += 5;
-                        if (optionsWallResist) score += 4;
-                        if (candle.Delta < 0m) score += 3;
-                        score = Math.Clamp(score, 80, 99);
+                        // Calcul réel du Score de Confluence Institutionnel (60..99)
+                        int score = 62;
+                        if (opt.TrendBias < 0) score += 9;
+                        else if (opt.TrendBias == 0) score += 4;
+                        if (hvnAnchored) score += 7;
+                        if (lvnConfirmed) score += 6;
+                        if (optionsWallResist) score += 7;
+                        if (candle.Delta < 0m && candle.Close < candle.Open) score += 6;
+                        if (bigTradeBearLots >= effBigTradeThreshold * 1.35m) score += 5;
+                        if (bearTrapBarOffset >= 1) score += 3;
+                        score = Math.Clamp(score, 60, 99);
 
-                        int baseMinStopSteps = isCme
-                            ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 6 : 4)
-                            : 3;
-                        int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 2);
-                        int baseMinTp1Steps = isCme
-                            ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 6 : 4)
-                            : 3;
-                        int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 3);
-
-                        decimal structuralPad = (isCme && prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ) ? step * 2m : step;
-                        decimal anchorHigh = Math.Max(bearTrapHigh + structuralPad, bigTradeBearPrice + structuralPad);
-                        if (hasCompHvnResistance && compResistancePrice > 0m && compResistancePrice > entryPrice && (compResistancePrice - entryPrice) <= atr * 0.70m)
-                            anchorHigh = Math.Max(anchorHigh, compResistancePrice + structuralPad);
-
-                        decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.30m, tickSize));
-                        decimal maxAllowedStopDist = Math.Max(minStopDist + step * 4m, RoundToTick(atr * 1.25m, tickSize));
-                        decimal rawStopDist = Math.Clamp(anchorHigh - entryPrice, minStopDist, maxAllowedStopDist);
-
-                        decimal stopPrice = RoundToTick(entryPrice + rawStopDist, tickSize);
-                        if (stopPrice <= candle.High)
-                            stopPrice = RoundToTick(candle.High + structuralPad, tickSize);
-
-                        decimal riskPts = Math.Max(minStopDist, stopPrice - entryPrice);
-                        decimal effTp1Rr = Math.Max(0.85m, _quantTp1RiskReward);
-                        decimal effTp2Rr = Math.Max(1.60m, _quantTp2RiskReward);
-
-                        decimal tp1Dist = Math.Max(step * minTp1Steps, RoundToTick(riskPts * effTp1Rr, tickSize));
-                        decimal tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(riskPts * effTp2Rr, tickSize));
-
-                        // Alignement intelligent du TP2 avec les murs Options X-Ray (PUT WALL / MAX PAIN)
-                        if (_enableOptionsXRayOverlay)
+                        int minRequiredScore = opt.TrendBias > 0 ? 80 : 74;
+                        if (score >= minRequiredScore)
                         {
-                            decimal candidateTp2 = entryPrice - tp2Dist;
-                            if (opt.XRayPutWall > 0m && opt.XRayPutWall < entryPrice - tp1Dist - step * 4m && opt.XRayPutWall >= candidateTp2 - atr * 0.40m)
-                                tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(entryPrice - opt.XRayPutWall - step * 3m, tickSize));
-                            else if (opt.XRayMaxPain > 0m && opt.XRayMaxPain < entryPrice - tp1Dist - step * 4m && opt.XRayMaxPain >= candidateTp2 - atr * 0.40m)
-                                tp2Dist = Math.Max(tp1Dist + step * 3m, RoundToTick(entryPrice - opt.XRayMaxPain - step * 2m, tickSize));
+                            // Calibrage Anti-Microscalping : Stop-Loss structurel maîtrisé + Objectifs Swing TP1 (1.8R) & TP2 (3.2R+)
+                            int baseMinStopSteps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 6)
+                                : 5;
+                            int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 4);
+
+                            int baseMinTp1Steps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 16 : 10)
+                                : 8;
+                            int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 8);
+
+                            int baseMinTp2Steps = isCme
+                                ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 32 : 20)
+                                : 16;
+
+                            decimal structuralPad = (isCme && prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ) ? step * 3m : step * 2m;
+                            decimal anchorHigh = Math.Max(bearTrapHigh + structuralPad, bigTradeBearPrice + structuralPad);
+                            if (hasCompHvnResistance && compResistancePrice > 0m && compResistancePrice > entryPrice && (compResistancePrice - entryPrice) <= atr * 0.65m)
+                                anchorHigh = Math.Max(anchorHigh, compResistancePrice + structuralPad);
+
+                            decimal minStopDist = Math.Max(step * minStopSteps, RoundToTick(atr * 0.48m, tickSize));
+                            decimal maxAllowedStopDist = Math.Max(minStopDist + step * 4m, RoundToTick(atr * Math.Clamp(_quantAtrStopMultiplier, 0.55m, 1.05m), tickSize));
+                            decimal rawStopDist = Math.Clamp(anchorHigh - entryPrice, minStopDist, maxAllowedStopDist);
+
+                            decimal stopPrice = RoundToTick(entryPrice + rawStopDist, tickSize);
+                            if (stopPrice <= candle.High)
+                                stopPrice = RoundToTick(candle.High + structuralPad, tickSize);
+
+                            decimal riskPts = Math.Max(minStopDist, stopPrice - entryPrice);
+                            decimal effTp1Rr = Math.Max(1.50m, _quantTp1RiskReward);
+                            decimal effTp2Rr = Math.Max(2.60m, _quantTp2RiskReward);
+
+                            decimal minTp1Floor = Math.Max(step * minTp1Steps, RoundToTick(atr * 1.15m, tickSize));
+                            decimal minTp2Floor = Math.Max(step * baseMinTp2Steps, RoundToTick(atr * 2.25m, tickSize));
+
+                            decimal tp1Dist = Math.Max(minTp1Floor, RoundToTick(riskPts * effTp1Rr, tickSize));
+                            decimal tp2Dist = Math.Max(Math.Max(minTp2Floor, tp1Dist + step * 8m), RoundToTick(riskPts * effTp2Rr, tickSize));
+
+                            // Garde Options X-Ray : s'assurer que le PUT WALL ne bloque pas le potentiel vers TP1
+                            bool blockedByPutWall = _enableOptionsXRayOverlay &&
+                                                    opt.XRayPutWall > 0m &&
+                                                    opt.XRayPutWall < entryPrice &&
+                                                    (entryPrice - opt.XRayPutWall) < tp1Dist * 0.85m;
+
+                            if (!blockedByPutWall)
+                            {
+                                // Alignement / Extension intelligente du TP2 vers les aimants de liquidité Options X-Ray (PUT WALL / MAX PAIN)
+                                if (_enableOptionsXRayOverlay)
+                                {
+                                    if (opt.XRayPutWall > 0m && opt.XRayPutWall < entryPrice - tp1Dist * 1.35m && opt.XRayPutWall >= entryPrice - riskPts * 4.20m)
+                                        tp2Dist = Math.Max(tp1Dist * 1.45m, RoundToTick(entryPrice - opt.XRayPutWall - step * 3m, tickSize));
+                                    else if (opt.XRayMaxPain > 0m && opt.XRayMaxPain < entryPrice - tp1Dist * 1.45m && opt.XRayMaxPain >= entryPrice - riskPts * 3.80m && opt.XRayMaxPain < entryPrice - tp2Dist * 0.85m)
+                                        tp2Dist = Math.Max(tp1Dist * 1.45m, RoundToTick(entryPrice - opt.XRayMaxPain - step * 2m, tickSize));
+                                }
+
+                                decimal tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
+                                decimal tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
+                                decimal actualRr = riskPts > 0m ? Math.Round(tp2Dist / riskPts, 2) : effTp2Rr;
+
+                                string structTag = lvnConfirmed && hvnAnchored
+                                    ? "HVN+LVN▼"
+                                    : (lvnConfirmed ? "Rejet LVN▼" : (hvnAnchored ? "Résist. HVN▼" : "Swing High▼"));
+                                if (optionsWallResist)
+                                    structTag += " + X-Ray Wall";
+
+                                string reason = $"◆ BIGTRADE PIÉGÉ ({bigTradeBearLots:0}L @ {bigTradeBearPrice}) + REVERSAL SWING▼ ({actualRr:0.0}R) | {structTag}{crossSuffix}";
+
+                                return new VisualTradeSignal
+                                {
+                                    Bar = bar,
+                                    Direction = -1,
+                                    TriggerPrice = entryPrice,
+                                    EntryPrice = entryPrice,
+                                    RealAccountFillPrice = rawExecFillPx,
+                                    IsLiveFillSynced = false,
+                                    StopPrice = stopPrice,
+                                    Tp1Price = tp1Price,
+                                    Tp2Price = tp2Price,
+                                    RiskRewardRatio = actualRr,
+                                    ClusterZScore = clusterZ,
+                                    AtrValue = atr,
+                                    ConfluenceScore = score,
+                                    CallFlowPct = opt.CallFlowPct,
+                                    PutFlowPct = opt.PutFlowPct,
+                                    PutCallRatio = opt.PutCallRatio,
+                                    OiDelta = opt.OiDelta,
+                                    SweepCount = opt.SweepCount,
+                                    IsBigTradeReversal = true,
+                                    BigTradePrice = bigTradeBearPrice,
+                                    BigTradeLots = bigTradeBearLots,
+                                    ReasonTag = reason,
+                                    XRaySummaryTag = xrayTag
+                                };
+                            }
                         }
-
-                        decimal tp1Price = RoundToTick(entryPrice - tp1Dist, tickSize);
-                        decimal tp2Price = RoundToTick(entryPrice - tp2Dist, tickSize);
-
-                        string structTag = lvnConfirmed && hvnAnchored
-                            ? "HVN+LVN▼"
-                            : (lvnConfirmed ? "Rejet LVN▼" : (hvnAnchored ? "Résist. HVN▼" : "OrderFlow▼"));
-                        if (optionsWallResist)
-                            structTag += " + X-Ray Wall";
-
-                        string reason = $"◆ BIGTRADE PIÉGÉ ({bigTradeBearLots:0}L @ {bigTradeBearPrice}) + REVERSAL▼ | {structTag}{crossSuffix}";
-
-                        return new VisualTradeSignal
-                        {
-                            Bar = bar,
-                            Direction = -1,
-                            TriggerPrice = entryPrice,
-                            EntryPrice = entryPrice,
-                            RealAccountFillPrice = rawExecFillPx,
-                            IsLiveFillSynced = false,
-                            StopPrice = stopPrice,
-                            Tp1Price = tp1Price,
-                            Tp2Price = tp2Price,
-                            RiskRewardRatio = effTp2Rr,
-                            ClusterZScore = clusterZ,
-                            AtrValue = atr,
-                            ConfluenceScore = score,
-                            CallFlowPct = opt.CallFlowPct,
-                            PutFlowPct = opt.PutFlowPct,
-                            PutCallRatio = opt.PutCallRatio,
-                            OiDelta = opt.OiDelta,
-                            SweepCount = opt.SweepCount,
-                            IsBigTradeReversal = true,
-                            BigTradePrice = bigTradeBearPrice,
-                            BigTradeLots = bigTradeBearLots,
-                            ReasonTag = reason,
-                            XRaySummaryTag = xrayTag
-                        };
                     }
                 }
             }
