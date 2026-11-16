@@ -4177,56 +4177,56 @@ namespace ATAS.Indicators.Custom
             {
                 decimal effBigTradeMin = GetEffectiveBigTradeMinLots(tickSize);
                 decimal adaptiveBlockLots = isCme
-                    ? Math.Max(effBigTradeMin * 0.60m, avgLevelVol * 2.05m)
-                    : Math.Max(effBigTradeMin * 0.55m, avgLevelVol * 2.15m);
+                    ? Math.Max(effBigTradeMin * 0.85m, avgLevelVol * 2.55m)
+                    : Math.Max(effBigTradeMin * 0.80m, avgLevelVol * 2.65m);
 
-                decimal lowerTrapLimit = candle.Low + barRange * 0.55m;
-                decimal upperTrapLimit = candle.High - barRange * 0.55m;
+                decimal lowerTrapLimit = candle.Low + barRange * 0.45m;
+                decimal upperTrapLimit = candle.High - barRange * 0.45m;
 
                 for (int i = 0; i < count; i++)
                 {
                     if (rows[i].Volume <= 0m)
                         continue;
 
-                    // Agrégation d'un balayage agressif BigTrade sur 1 à 3 ticks contigus (ex: 40 lots balayant 2-3 niveaux sur NQ)
+                    // Agrégation stricte d'un balayage agressif BigTrade uniquement sur le tick contigu si fortement déséquilibré
                     decimal sellSweepVol = rows[i].Bid;
                     if (isCme && _ticksPerRow == 1)
                     {
-                        if (i + 1 < count && rows[i + 1].Bid > rows[i + 1].Ask)
-                            sellSweepVol += rows[i + 1].Bid * 0.85m;
-                        if (i > 0 && rows[i - 1].Bid > rows[i - 1].Ask)
-                            sellSweepVol += rows[i - 1].Bid * 0.65m;
+                        if (i + 1 < count && rows[i + 1].Bid >= rows[i + 1].Ask * 1.50m)
+                            sellSweepVol += rows[i + 1].Bid * 0.55m;
+                        else if (i > 0 && rows[i - 1].Bid >= rows[i - 1].Ask * 1.50m)
+                            sellSweepVol += rows[i - 1].Bid * 0.50m;
                     }
 
                     decimal buySweepVol = rows[i].Ask;
                     if (isCme && _ticksPerRow == 1)
                     {
-                        if (i - 1 >= 0 && rows[i - 1].Ask > rows[i - 1].Bid)
-                            buySweepVol += rows[i - 1].Ask * 0.85m;
-                        if (i + 1 < count && rows[i + 1].Ask > rows[i + 1].Bid)
-                            buySweepVol += rows[i + 1].Ask * 0.65m;
+                        if (i - 1 >= 0 && rows[i - 1].Ask >= rows[i - 1].Bid * 1.50m)
+                            buySweepVol += rows[i - 1].Ask * 0.55m;
+                        else if (i + 1 < count && rows[i + 1].Ask >= rows[i + 1].Bid * 1.50m)
+                            buySweepVol += rows[i + 1].Ask * 0.50m;
                     }
 
                     bool isLocalSellPeak = (i == 0 || rows[i].Bid >= rows[i - 1].Bid) && (i == count - 1 || rows[i].Bid >= rows[i + 1].Bid);
                     bool isLocalBuyPeak = (i == 0 || rows[i].Ask >= rows[i - 1].Ask) && (i == count - 1 || rows[i].Ask >= rows[i + 1].Ask);
 
                     bool isSellBigTrade = isLocalSellPeak &&
-                                          (rows[i].Bid >= effBigTradeMin ||
-                                           (sellSweepVol >= effBigTradeMin && rows[i].Bid > rows[i].Ask * 1.25m) ||
-                                           (sellSweepVol >= adaptiveBlockLots && rows[i].Bid > rows[i].Ask * 1.35m && rows[i].VolumeZScore >= 1.0m));
+                                          ((rows[i].Bid >= effBigTradeMin && rows[i].Bid >= rows[i].Ask * 1.45m) ||
+                                           (sellSweepVol >= effBigTradeMin && rows[i].Bid >= effBigTradeMin * 0.65m && rows[i].Bid >= rows[i].Ask * 1.60m && rows[i].VolumeZScore >= 1.25m) ||
+                                           (sellSweepVol >= adaptiveBlockLots && rows[i].Bid >= rows[i].Ask * 1.75m && rows[i].VolumeZScore >= 1.55m && rows[i].DeltaZScore >= 1.35m));
 
                     bool isBuyBigTrade = isLocalBuyPeak &&
-                                         (rows[i].Ask >= effBigTradeMin ||
-                                          (buySweepVol >= effBigTradeMin && rows[i].Ask > rows[i].Bid * 1.25m) ||
-                                          (buySweepVol >= adaptiveBlockLots && rows[i].Ask > rows[i].Bid * 1.35m && rows[i].VolumeZScore >= 1.0m));
+                                         ((rows[i].Ask >= effBigTradeMin && rows[i].Ask >= rows[i].Bid * 1.45m) ||
+                                          (buySweepVol >= effBigTradeMin && rows[i].Ask >= effBigTradeMin * 0.65m && rows[i].Ask >= rows[i].Bid * 1.60m && rows[i].VolumeZScore >= 1.25m) ||
+                                          (buySweepVol >= adaptiveBlockLots && rows[i].Ask >= rows[i].Bid * 1.75m && rows[i].VolumeZScore >= 1.55m && rows[i].DeltaZScore >= 1.35m));
 
                     if (isSellBigTrade)
                     {
                         rows[i].HasBigTradeSell = true;
                         rows[i].BigTradeSellVol = Math.Round(Math.Max(rows[i].Bid, sellSweepVol), 0);
 
-                        // BigTrade Vendeur (Losange Rouge ◆) Piégé en bas : vente massive dans la partie basse suivie d'un rejet / clôture au-dessus
-                        if (rows[i].Price <= lowerTrapLimit && candle.Close >= rows[i].Price + step)
+                        // BigTrade Vendeur (Losange Rouge ◆) Piégé en bas : vente massive dans les 45% bas suivie d'un franc rejet au-dessus
+                        if (rows[i].Price <= lowerTrapLimit && candle.Close >= rows[i].Price + step * 2m)
                         {
                             rows[i].TrappedBigTradeSide = 1;
                             if (bestTrappedSellersIndex < 0 || rows[i].BigTradeSellVol > rows[bestTrappedSellersIndex].BigTradeSellVol)
@@ -4239,8 +4239,8 @@ namespace ATAS.Indicators.Custom
                         rows[i].HasBigTradeBuy = true;
                         rows[i].BigTradeBuyVol = Math.Round(Math.Max(rows[i].Ask, buySweepVol), 0);
 
-                        // BigTrade Acheteur (Losange Vert ◆) Piégé en haut : achat massif dans la partie haute suivi d'un rejet / clôture en dessous
-                        if (rows[i].Price >= upperTrapLimit && candle.Close <= rows[i].Price - step && rows[i].TrappedBigTradeSide == 0)
+                        // BigTrade Acheteur (Losange Vert ◆) Piégé en haut : achat massif dans les 45% hauts suivi d'un franc rejet en dessous
+                        if (rows[i].Price >= upperTrapLimit && candle.Close <= rows[i].Price - step * 2m && rows[i].TrappedBigTradeSide == 0)
                         {
                             rows[i].TrappedBigTradeSide = -1;
                             if (bestTrappedBuyersIndex < 0 || rows[i].BigTradeBuyVol > rows[bestTrappedBuyersIndex].BigTradeBuyVol)
