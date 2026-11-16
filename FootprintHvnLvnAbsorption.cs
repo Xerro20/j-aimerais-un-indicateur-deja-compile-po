@@ -663,9 +663,9 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrPeriod = value; RecalculateValues(); }
         }
 
-        private decimal _quantAtrStopMultiplier = 0.90m;
+        private decimal _quantAtrStopMultiplier = 0.85m;
         [Display(Name = "Distance Max Stop-Loss (Multiplicateur ATR)", GroupName = GrpQuantEngine, Order = 50,
-            Description = "Calcule le Stop-Loss structurel sous/sur le losange BigTrade piégé et l'extrême de la bougie.")]
+            Description = "Calcule le Stop-Loss structurel serré et protégé sous/sur le losange BigTrade piégé et l'extrême du swing (évite les grosses pertes).")]
         [Range(0.2, 5.0)]
         public decimal QuantAtrStopMultiplier
         {
@@ -673,20 +673,20 @@ namespace ATAS.Indicators.Custom
             set { _quantAtrStopMultiplier = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp1RiskReward = 1.00m;
-        [Display(Name = "Ratio Risk/Reward TP1 (Sortie 50% + Breakeven)", GroupName = GrpQuantEngine, Order = 60,
-            Description = "Distance de prise de profit TP1 (1.0R) : encaisse 50% (ou 100% si 1 lot) et verrouille le Stop en gain.")]
-        [Range(0.3, 10.0)]
+        private decimal _quantTp1RiskReward = 1.80m;
+        [Display(Name = "Ratio Risk/Reward TP1 (Swing Amplitude 1.8R + Profit-Lock)", GroupName = GrpQuantEngine, Order = 60,
+            Description = "Distance de prise de profit TP1 (1.8R, anti-microscalping) : encaisse 50% si >=2 lots (ou verrouille +1.05R si 1 lot) et laisse courir vers TP2.")]
+        [Range(0.5, 10.0)]
         public decimal QuantTp1RiskReward
         {
             get => _quantTp1RiskReward;
             set { _quantTp1RiskReward = value; RecalculateValues(); }
         }
 
-        private decimal _quantTp2RiskReward = 2.00m;
-        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Final / Mur Options X-Ray)", GroupName = GrpQuantEngine, Order = 70,
-            Description = "Objectif de prise de profit final TP2 (2.0R ou aligné sur PUT WALL / MAX PAIN / CALL WALL).")]
-        [Range(0.6, 15.0)]
+        private decimal _quantTp2RiskReward = 3.20m;
+        [Display(Name = "Ratio Risk/Reward TP2 (Objectif Swing Final 3.2R / Mur Options X-Ray)", GroupName = GrpQuantEngine, Order = 70,
+            Description = "Objectif de prise de profit Swing final TP2 (3.2R ou étiré vers CALL WALL / PUT WALL / MAX PAIN).")]
+        [Range(1.2, 15.0)]
         public decimal QuantTp2RiskReward
         {
             get => _quantTp2RiskReward;
