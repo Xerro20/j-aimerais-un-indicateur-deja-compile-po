@@ -50,8 +50,8 @@ Deux binaires compilés prêts à l'emploi pour ATAS X sont disponibles à la ra
 | **Nom dans ATAS X** | `ATAS X - Bot BigTrades Piégés (Losanges ◆) + Reversal + Options X-Ray + HVN/LVN` |
 | **Catégorie ATAS X** | `Order Flow - Custom` |
 | **Framework cible** | `.NET 10.0` (`ATAS X` Windows & macOS) |
-| **Taille du binaire** | `162 304 octets` (158,5 Ko) |
-| **SHA-256** | `6d04958d0dbe9351a6da71cbcd2aa314c7279933830c3ed5b7ef88c74b3420c5` |
+| **Taille du binaire** | `164 352 octets` (160,5 Ko) |
+| **SHA-256** | `484f1ff201f999d6ea8b604d996c8eeb02d3ad81754f5e1494086ac73096868a` |
 
 ---
 
