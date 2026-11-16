@@ -4634,12 +4634,14 @@ namespace ATAS.Indicators.Custom
             int activeQty = 0;
             int initialQty = Math.Max(1, _botTradeQuantity);
             int entryBar = -1;
+            int lastEntryBar = -999;
             int lastLossExitBar = -999;
             decimal entryPrice = 0m;
             decimal stopPrice = 0m;
             decimal initialRiskPts = step * 2m;
             decimal tp1Price = 0m;
             decimal tp2Price = 0m;
+            decimal maxFavPeakPrice = 0m;
             bool tp1Hit = false;
             decimal bankedPartialUsd = 0m;
             VisualTradeSignal activeSignal = default;
@@ -4661,36 +4663,39 @@ namespace ATAS.Indicators.Custom
 
                 var c = GetCandle(b);
 
-                // 1. Gestion dynamique de la position ouverte du Bot sur la bougie b
+                // 1. Gestion dynamique Swing (Anti-Microscalping) de la position ouverte du Bot sur la bougie b
                 if (activeDir != 0 && b > entryBar)
                 {
-                    decimal tp1DistPts = Math.Max(step * 2m, Math.Abs(tp1Price - entryPrice));
-                    decimal maxFavExcursion = activeDir > 0 ? (c.High - entryPrice) : (entryPrice - c.Low);
+                    if (activeDir > 0 && c.High > maxFavPeakPrice)
+                        maxFavPeakPrice = c.High;
+                    else if (activeDir < 0 && (maxFavPeakPrice <= 0m || c.Low < maxFavPeakPrice))
+                        maxFavPeakPrice = c.Low;
+
+                    decimal tp1DistPts = Math.Max(step * 4m, Math.Abs(tp1Price - entryPrice));
+                    decimal maxFavExcursion = activeDir > 0 ? (maxFavPeakPrice - entryPrice) : (entryPrice - maxFavPeakPrice);
                     decimal favPeakPrice = activeDir > 0 ? c.High : c.Low;
                     bool favorableClose = activeDir > 0 ? (c.Close >= c.Open) : (c.Close <= c.Open);
 
-                    // Mise à jour intra-bougie de l'Early Profit-Lock lorsque l'excursion favorable a précédé tout repli vers le stop
-                    if (isCme && !tp1Hit)
+                    // Protection Anti-Microscalping : on ne remonte JAMAIS le stop à quelques ticks dès 0.45R !
+                    // Le Breakeven+ de sécurité (+0.25R) ne s'active que si le prix a déjà parcouru au moins +1.25R (ou 78% de TP1)
+                    if (!tp1Hit)
                     {
-                        int minBeTriggerSteps = Math.Max(commStepFloor + 2, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 3);
-                        int beLockSteps = Math.Max(commStepFloor + 1, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2);
-                        decimal earlyBeTrigger = Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, initialRiskPts * 0.48m));
+                        decimal safeBeTrigger = Math.Max(initialRiskPts * 1.25m, tp1DistPts * 0.78m);
                         bool favPeakReachedFirst = favorableClose || (Math.Abs(c.Open - favPeakPrice) <= Math.Abs(c.Open - stopPrice));
 
-                        if (maxFavExcursion >= earlyBeTrigger && favPeakReachedFirst)
+                        if (maxFavExcursion >= safeBeTrigger && favPeakReachedFirst)
                         {
-                            decimal softBe = RoundToTick(entryPrice + activeDir * (step * beLockSteps), tickSize);
-                            if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
-                                stopPrice = softBe;
+                            decimal lockDist = Math.Max(step * (commStepFloor + 2), RoundToTick(initialRiskPts * 0.25m, tickSize));
+                            decimal safeBe = RoundToTick(entryPrice + activeDir * lockDist, tickSize);
+                            if ((activeDir > 0 && safeBe > stopPrice) || (activeDir < 0 && safeBe < stopPrice))
+                                stopPrice = safeBe;
                         }
                     }
 
                     bool stopTriggered = activeDir > 0 ? (c.Low <= stopPrice) : (c.High >= stopPrice);
                     bool tp2Triggered = activeDir > 0 ? (c.High >= tp2Price) : (c.Low <= tp2Price);
                     bool tp1Triggered = !tp1Hit && (activeDir > 0 ? (c.High >= tp1Price) : (c.Low <= tp1Price));
-                    bool tp1CloserToOpen = isCme
-                        ? (Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice) * 1.25m)
-                        : (Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice));
+                    bool tp1CloserToOpen = Math.Abs(c.Open - tp1Price) <= Math.Abs(c.Open - stopPrice);
 
                     // Si TP1 et Stop sont touchés sur la même bougie et que TP1 était plus proche de l'ouverture (ou clôture favorable), TP1 est exécuté en premier
                     if (tp1Triggered && stopTriggered && (favorableClose || tp1CloserToOpen))
@@ -4715,7 +4720,7 @@ namespace ATAS.Indicators.Custom
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                             entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                            tp2Price, totalTradePnl, "TP2 TARGET", true, activeSignal);
+                            tp2Price, totalTradePnl, "TP2 SWING TARGET", true, activeSignal);
 
                         activeDir = 0;
                         activeQty = 0;
@@ -4725,9 +4730,9 @@ namespace ATAS.Indicators.Custom
                     {
                         tp1Hit = true;
 
-                        // Si 1 seul contrat (ou sortie complète sur TP1), encaisse 100% du profit immédiatement sur TP1
-                        if (activeQty == 1 || !_botAutoBreakevenOnTp1)
+                        if (!_botAutoBreakevenOnTp1)
                         {
+                            // Sortie 100% sur TP1 uniquement si l'utilisateur a explicitement désactivé le mode Runner
                             decimal fullTp1Pnl = activeDir * (tp1Price - entryPrice) * pointVal * activeQty
                                 - (commPerSide * 2m * activeQty);
                             decimal totalTradePnl = Math.Round(bankedPartialUsd + fullTp1Pnl, 2);
@@ -4740,22 +4745,45 @@ namespace ATAS.Indicators.Custom
                             activeQty = 0;
                             bankedPartialUsd = 0m;
                         }
+                        else if (activeQty == 1)
+                        {
+                            // 1 seul contrat : NE COUPE PAS à TP1 ! Verrouille +1.05R de profit garanti et laisse courir vers TP2 (3.2R+) !
+                            decimal singleLockOffset = Math.Max(RoundToTick(initialRiskPts * 1.05m, tickSize), RoundToTick(tp1DistPts * 0.60m, tickSize));
+                            stopPrice = RoundToTick(entryPrice + activeDir * singleLockOffset, tickSize);
+
+                            bool hitSingleLockSameBar = activeDir > 0
+                                ? (c.Close <= stopPrice && c.Low <= stopPrice && !favorableClose)
+                                : (c.Close >= stopPrice && c.High >= stopPrice && !favorableClose);
+
+                            if (hitSingleLockSameBar)
+                            {
+                                decimal remPnl = activeDir * (stopPrice - entryPrice) * pointVal * activeQty
+                                    - (commPerSide * 2m * activeQty);
+                                decimal totalTradePnl = Math.Round(bankedPartialUsd + remPnl, 2);
+
+                                FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
+                                    entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
+                                    stopPrice, totalTradePnl, "TP1 LOCK + RUNNER", true, activeSignal);
+
+                                activeDir = 0;
+                                activeQty = 0;
+                                bankedPartialUsd = 0m;
+                            }
+                        }
                         else
                         {
-                            // Multi-contrats : encaisse 50% immédiatement sur TP1 et verrouille le Stop du solde en gain net de commissions
+                            // Multi-contrats (>= 2) : encaisse 50% sur TP1 (1.8R) et verrouille le Runner à +0.45R pour laisser respirer vers TP2 (3.2R+)
                             int half = activeQty / 2;
                             bankedPartialUsd += activeDir * (tp1Price - entryPrice) * pointVal * half
                                 - (commPerSide * 2m * half);
                             activeQty -= half;
 
-                            decimal lockOffset = isCme
-                                ? Math.Max(step * Math.Max(2, commStepFloor + 1), RoundToTick(tp1DistPts * 0.45m, tickSize))
-                                : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
+                            decimal lockOffset = Math.Max(step * Math.Max(3, commStepFloor + 2), RoundToTick(initialRiskPts * 0.45m, tickSize));
                             stopPrice = RoundToTick(entryPrice + activeDir * lockOffset, tickSize);
 
                             bool hitProfitLockAfterTp1 = activeDir > 0
-                                ? (c.Close <= stopPrice && c.Low <= stopPrice)
-                                : (c.Close >= stopPrice && c.High >= stopPrice);
+                                ? (c.Close <= stopPrice && c.Low <= stopPrice && !favorableClose)
+                                : (c.Close >= stopPrice && c.High >= stopPrice && !favorableClose);
 
                             if (hitProfitLockAfterTp1)
                             {
@@ -4765,7 +4793,7 @@ namespace ATAS.Indicators.Custom
 
                                 FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                                     entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                                    stopPrice, totalTradePnl, "TP1 + PROFIT LOCK", true, activeSignal);
+                                    stopPrice, totalTradePnl, "TP1 + RUNNER LOCK", true, activeSignal);
 
                                 activeDir = 0;
                                 activeQty = 0;
@@ -4784,65 +4812,39 @@ namespace ATAS.Indicators.Custom
 
                         FinalizeBotTrade(ref state, tradeHistory, tradeReturns,
                             entryBar, b, activeDir, entryPrice, stopPrice, tp1Price, tp2Price,
-                            stopPrice, totalTradePnl, wasProfitStop ? "PROFIT LOCK / TRAIL" : "STOP LOSS", wasProfitStop, activeSignal);
+                            stopPrice, totalTradePnl, wasProfitStop ? "SWING TRAIL PROFIT" : "STOP LOSS", wasProfitStop, activeSignal);
 
                         activeDir = 0;
                         activeQty = 0;
                         bankedPartialUsd = 0m;
                     }
 
-                    // Protection dynamique : Early Profit-Lock & Trailing Stop après TP1
-                    if (activeDir != 0)
+                    // Trailing Stop Structurel Swing (uniquement après TP1 pour laisser respirer la tendance jusqu'à TP2)
+                    if (activeDir != 0 && tp1Hit)
                     {
-                        if (!isCme)
-                        {
-                            // --- Comportement 100% original pour BTC Binance Futures ---
-                            if (!tp1Hit && maxFavExcursion >= Math.Max(step * 2m, initialRiskPts * 0.45m))
-                            {
-                                decimal softBe = RoundToTick(entryPrice + activeDir * step, tickSize);
-                                if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
-                                    stopPrice = softBe;
-                            }
-                            else if (tp1Hit)
-                            {
-                                decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
-                                decimal favPeak = activeDir > 0 ? c.High : c.Low;
-                                decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
+                        decimal trailGap = Math.Max(RoundToTick(initialRiskPts * 0.85m, tickSize), RoundToTick(tp1DistPts * 0.55m, tickSize));
+                        decimal candidateTrail = RoundToTick(maxFavPeakPrice - activeDir * trailGap, tickSize);
 
-                                if (activeDir > 0 && candidateTrail > stopPrice)
-                                    stopPrice = candidateTrail;
-                                else if (activeDir < 0 && candidateTrail < stopPrice)
-                                    stopPrice = candidateTrail;
+                        // Au-delà de +2.2R d'excursion, suivi sous le creux / sommet structurel des 2 dernières bougies
+                        if (maxFavExcursion >= initialRiskPts * 2.20m && b > entryBar + 1)
+                        {
+                            var prevC = GetCandle(b - 1);
+                            if (activeDir > 0)
+                            {
+                                decimal structSwingStop = RoundToTick(Math.Min(c.Low, prevC.Low) - step * 2m, tickSize);
+                                candidateTrail = Math.Max(candidateTrail, structSwingStop);
+                            }
+                            else
+                            {
+                                decimal structSwingStop = RoundToTick(Math.Max(c.High, prevC.High) + step * 2m, tickSize);
+                                candidateTrail = Math.Min(candidateTrail, structSwingStop);
                             }
                         }
-                        else
-                        {
-                            // --- Calibration Haute Protection Hors BTC Binance (ES/MES, NQ/MNQ, GC/MGC, CL/MCL, Indices & Alts) ---
-                            int minBeTriggerSteps = Math.Max(commStepFloor + 2, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 3);
-                            int beLockSteps = Math.Max(commStepFloor + 1, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2);
-                            decimal closeExcursion = activeDir > 0 ? (c.Close - entryPrice) : (entryPrice - c.Close);
 
-                            if (!tp1Hit &&
-                                (maxFavExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, initialRiskPts * 0.45m)) ||
-                                 (b >= entryBar + 2 && closeExcursion >= step * minBeTriggerSteps)))
-                            {
-                                decimal softBe = RoundToTick(entryPrice + activeDir * (step * beLockSteps), tickSize);
-                                if ((activeDir > 0 && softBe > stopPrice) || (activeDir < 0 && softBe < stopPrice))
-                                    stopPrice = softBe;
-                            }
-                            else if (tp1Hit)
-                            {
-                                int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 2;
-                                decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.40m, tickSize));
-                                decimal favPeak = activeDir > 0 ? c.High : c.Low;
-                                decimal candidateTrail = RoundToTick(favPeak - activeDir * trailGap, tickSize);
-
-                                if (activeDir > 0 && candidateTrail > stopPrice)
-                                    stopPrice = candidateTrail;
-                                else if (activeDir < 0 && candidateTrail < stopPrice)
-                                    stopPrice = candidateTrail;
-                            }
-                        }
+                        if (activeDir > 0 && candidateTrail > stopPrice)
+                            stopPrice = candidateTrail;
+                        else if (activeDir < 0 && candidateTrail < stopPrice)
+                            stopPrice = candidateTrail;
                     }
 
                     // Vérification temps réel du PnL latent vis-à-vis du Max Drawdown & Max Profit
@@ -4934,10 +4936,11 @@ namespace ATAS.Indicators.Custom
                     {
                         decimal curOpenPnl = bankedPartialUsd + activeDir * (c.Close - entryPrice) * pointVal * activeQty;
                         decimal revPnl = curOpenPnl - (commPerSide * 2m * activeQty);
+                        decimal minProfitForFlip = initialRiskPts * pointVal * activeQty * 0.80m;
 
-                        // Sur tout sauf BTC Binance (isCme), interdiction de couper en perte sur un simple bruit opposé :
-                        // on n'inverse que si le trade courant est en gain (ou TP1 déjà encaissé), sur retournement institutionnel majeur (>= 78%) ou si l'ordre réel a été exécuté
-                        bool allowReversal = isLockedRealOrder || !isCme || revPnl >= 0m || tp1Hit || (sig.ConfluenceScore >= 78 && b >= entryBar + 2);
+                        // Interdiction stricte de couper un trade en perte ou en micro-gain sur un simple bruit opposé :
+                        // on n'inverse que si TP1 est déjà atteint, si le trade gagne déjà >= +0.8R, ou sur retournement institutionnel extrême (score >= 90 après >= 4 bougies)
+                        bool allowReversal = isLockedRealOrder || tp1Hit || revPnl >= minProfitForFlip || (sig.ConfluenceScore >= 90 && b >= entryBar + 4);
                         if (allowReversal)
                         {
                             if (revPnl < 0m)
@@ -4969,18 +4972,20 @@ namespace ATAS.Indicators.Custom
                         bankedPartialUsd = 0m;
                     }
 
-                    // Ouverture d'une nouvelle position Quant au prix exact du signal affiché / exécuté
-                    bool cooldownOk = isLockedRealOrder || !isCme || (b - lastLossExitBar >= 2) || sig.ConfluenceScore >= 76;
+                    // Ouverture d'une nouvelle position Quant avec Cooldown anti-surtrading (minimum 3 bougies entre entrées, 4 bougies après un SL)
+                    bool cooldownOk = isLockedRealOrder || ((b - lastEntryBar >= 3) && (b - lastLossExitBar >= 4 || sig.ConfluenceScore >= 88));
                     if (activeDir == 0 && cooldownOk)
                     {
                         activeDir = sig.Direction;
                         activeQty = initialQty;
                         entryBar = b;
+                        lastEntryBar = b;
                         entryPrice = sig.EntryPrice;
                         stopPrice = sig.StopPrice;
-                        initialRiskPts = Math.Max(step * 2m, Math.Abs(sig.EntryPrice - sig.StopPrice));
+                        initialRiskPts = Math.Max(step * 4m, Math.Abs(sig.EntryPrice - sig.StopPrice));
                         tp1Price = sig.Tp1Price;
                         tp2Price = sig.Tp2Price;
+                        maxFavPeakPrice = sig.EntryPrice;
                         tp1Hit = false;
                         bankedPartialUsd = 0m;
                         activeSignal = sig;
