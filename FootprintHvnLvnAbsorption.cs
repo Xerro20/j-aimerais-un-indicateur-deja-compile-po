@@ -5628,43 +5628,33 @@ namespace ATAS.Indicators.Custom
             {
                 int refBar = Math.Max(0, CurrentBar - 1);
                 decimal atr = ComputeQuantAtr(refBar, tickSize);
-                decimal riskPts;
-                decimal tp1Dist;
-                decimal tp2Dist;
+                decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
+                decimal stepValUsd = Math.Max(0.05m, contractInfo.TradedPointValueUsd * step);
+                int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
 
-                if (!isCme)
-                {
-                    riskPts = Math.Max(step * 4m, RoundToTick(atr * 0.65m, tickSize));
-                    tp1Dist = Math.Clamp(RoundToTick(riskPts * _quantTp1RiskReward, tickSize), step * 3m, Math.Max(step * 4m, RoundToTick(atr * 0.85m, tickSize)));
-                    tp2Dist = Math.Clamp(RoundToTick(riskPts * _quantTp2RiskReward, tickSize), tp1Dist + step * 3m, Math.Max(tp1Dist + step * 3m, RoundToTick(atr * 1.55m, tickSize)));
-                }
-                else
-                {
-                    decimal commRtUsd = Math.Max(0.50m, contractInfo.TradedCommissionPerSideUsd * 2m);
-                    decimal stepValUsd = Math.Max(0.05m, contractInfo.TradedPointValueUsd * step);
-                    int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
+                int baseMinStopSteps = isCme
+                    ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 10 : 6)
+                    : 5;
+                int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 4);
 
-                    int baseMinStopSteps = prof switch
-                    {
-                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 8,
-                        MarketProfilePreset.CmeSp500_ES_MES => 5,
-                        _ => 5
-                    };
-                    int minStopSteps = Math.Max(baseMinStopSteps, commStepFloor + 3);
-                    int baseMinTp1Steps = prof switch
-                    {
-                        MarketProfilePreset.CmeNasdaq_NQ_MNQ => 7,
-                        MarketProfilePreset.CmeSp500_ES_MES => 4,
-                        _ => 4
-                    };
-                    int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 3);
+                int baseMinTp1Steps = isCme
+                    ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 16 : 10)
+                    : 8;
+                int minTp1Steps = Math.Max(baseMinTp1Steps, commStepFloor + 8);
 
-                    riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.65m, tickSize));
-                    decimal cmeTp1Rr = Math.Max(0.85m, Math.Min(1.05m, _quantTp1RiskReward));
-                    decimal cmeTp2Rr = Math.Max(1.65m, Math.Min(2.15m, _quantTp2RiskReward));
-                    tp1Dist = Math.Clamp(RoundToTick(riskPts * cmeTp1Rr, tickSize), step * minTp1Steps, Math.Max(step * (minTp1Steps + 3), RoundToTick(atr * 0.90m, tickSize)));
-                    tp2Dist = Math.Clamp(RoundToTick(riskPts * cmeTp2Rr, tickSize), tp1Dist + step * 3m, Math.Max(tp1Dist + step * 3m, RoundToTick(atr * 1.65m, tickSize)));
-                }
+                int baseMinTp2Steps = isCme
+                    ? (prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 32 : 20)
+                    : 16;
+
+                decimal riskPts = Math.Max(step * minStopSteps, RoundToTick(atr * 0.65m, tickSize));
+                decimal effTp1Rr = Math.Max(1.50m, _quantTp1RiskReward);
+                decimal effTp2Rr = Math.Max(2.60m, _quantTp2RiskReward);
+
+                decimal minTp1Floor = Math.Max(step * minTp1Steps, RoundToTick(atr * 1.15m, tickSize));
+                decimal minTp2Floor = Math.Max(step * baseMinTp2Steps, RoundToTick(atr * 2.25m, tickSize));
+
+                decimal tp1Dist = Math.Max(minTp1Floor, RoundToTick(riskPts * effTp1Rr, tickSize));
+                decimal tp2Dist = Math.Max(Math.Max(minTp2Floor, tp1Dist + step * 8m), RoundToTick(riskPts * effTp2Rr, tickSize));
 
                 _liveTrackedDir = realDir;
                 _liveTrackedEntryPrice = fillPx;
@@ -5679,9 +5669,9 @@ namespace ATAS.Indicators.Custom
             else if (pos.AveragePrice > 0m && !_liveTrackedTp1Hit && Math.Abs(_liveTrackedEntryPrice - fillPx) >= tickSize)
             {
                 // Recalage automatique sur le prix moyen d'exécution réel (pos.AveragePrice) sans jamais remonter le Stop-Loss dans le corps de la bougie
-                decimal prevRiskPts = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
-                decimal tp1Dist = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
-                decimal tp2Dist = Math.Max(tp1Dist + step * 2m, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
+                decimal prevRiskPts = Math.Max(step * 4m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
+                decimal tp1Dist = Math.Max(step * 6m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
+                decimal tp2Dist = Math.Max(tp1Dist + step * 6m, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
 
                 decimal candidateStop = RoundToTick(fillPx - realDir * prevRiskPts, tickSize);
                 decimal structuralStop = realDir > 0
@@ -5690,7 +5680,7 @@ namespace ATAS.Indicators.Custom
 
                 _liveTrackedEntryPrice = fillPx;
                 _liveTrackedStopPrice = structuralStop;
-                _liveTrackedInitialRiskPts = Math.Max(step * 2m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
+                _liveTrackedInitialRiskPts = Math.Max(step * 4m, Math.Abs(_liveTrackedEntryPrice - _liveTrackedStopPrice));
                 _liveTrackedTp1Price = RoundToTick(fillPx + realDir * tp1Dist, tickSize);
                 _liveTrackedTp2Price = RoundToTick(fillPx + realDir * tp2Dist, tickSize);
             }
@@ -5758,8 +5748,6 @@ namespace ATAS.Indicators.Custom
                 decimal tickSize = InstrumentInfo?.TickSize > 0m ? InstrumentInfo.TickSize : 0.25m;
                 decimal step = tickSize * Math.Max(1, _ticksPerRow);
                 var contractInfo = ResolveContractAndCrossTradingInfo(tickSize);
-                bool isCme = contractInfo.IsCmeMarket;
-                MarketProfilePreset prof = contractInfo.EffectiveProfile;
                 decimal pointVal = contractInfo.TradedPointValueUsd;
 
                 EnsureLivePositionTrackingInitialized(pos, livePrice, tickSize);
@@ -5770,45 +5758,36 @@ namespace ATAS.Indicators.Custom
                 if (absQty <= 0)
                     return;
 
-                int curBarIdx = Math.Max(0, CurrentBar - 1);
-                decimal checkFavPrice = livePrice;
-                if (CurrentBar > 0 && curBarIdx > _liveTrackedSignalBar)
-                {
-                    var curC = GetCandle(curBarIdx);
-                    checkFavPrice = _liveTrackedDir > 0
-                        ? Math.Max(livePrice, curC.High)
-                        : Math.Min(livePrice, curC.Low);
-                }
-
+                // Utilisation exclusive du prix temps réel livePrice (évite de déclencher prématurément un trailing stop sur un ancien sommet intra-bougie)
                 if (_liveMaxFavorablePrice <= 0m)
-                    _liveMaxFavorablePrice = checkFavPrice;
-                else if (_liveTrackedDir > 0 && checkFavPrice > _liveMaxFavorablePrice)
-                    _liveMaxFavorablePrice = checkFavPrice;
-                else if (_liveTrackedDir < 0 && checkFavPrice < _liveMaxFavorablePrice)
-                    _liveMaxFavorablePrice = checkFavPrice;
+                    _liveMaxFavorablePrice = livePrice;
+                else if (_liveTrackedDir > 0 && livePrice > _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = livePrice;
+                else if (_liveTrackedDir < 0 && livePrice < _liveMaxFavorablePrice)
+                    _liveMaxFavorablePrice = livePrice;
 
-                decimal tp1DistPts = Math.Max(step * 2m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
-                decimal tp2DistPts = Math.Max(tp1DistPts + step, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
+                decimal tp1DistPts = Math.Max(step * 4m, Math.Abs(_liveTrackedTp1Price - _liveTrackedEntryPrice));
+                decimal tp2DistPts = Math.Max(tp1DistPts + step * 4m, Math.Abs(_liveTrackedTp2Price - _liveTrackedEntryPrice));
                 decimal tp1TargetUsd = tp1DistPts * pointVal * absQty;
                 decimal tp2TargetUsd = tp2DistPts * pointVal * absQty;
                 decimal markToMarketUsd = _liveTrackedDir * (livePrice - _liveTrackedEntryPrice) * pointVal * absQty;
                 decimal openUnrealizedUsd = (pos.UnrealizedPnL != 0m) ? pos.UnrealizedPnL : markToMarketUsd;
 
-                bool tp2Hit = (_liveTrackedDir > 0 ? (checkFavPrice >= _liveTrackedTp2Price) : (checkFavPrice <= _liveTrackedTp2Price)) ||
+                bool tp2Hit = (_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp2Price) : (livePrice <= _liveTrackedTp2Price)) ||
                               (tp2TargetUsd > 0m && openUnrealizedUsd >= tp2TargetUsd);
 
                 bool tp1Hit = !_liveTrackedTp1Hit &&
-                              ((_liveTrackedDir > 0 ? (checkFavPrice >= _liveTrackedTp1Price) : (checkFavPrice <= _liveTrackedTp1Price)) ||
+                              ((_liveTrackedDir > 0 ? (livePrice >= _liveTrackedTp1Price) : (livePrice <= _liveTrackedTp1Price)) ||
                                (tp1TargetUsd > 0m && openUnrealizedUsd >= tp1TargetUsd));
 
-                // 1. Prise de profit finale TP2
+                // 1. Prise de profit finale Swing TP2
                 if (tp2Hit)
                 {
                     _lastLiveExitSentUtc = DateTime.UtcNow;
                     _liveTrackedDir = 0;
                     _liveTrackedTp1Hit = false;
                     _liveTp1PartialOrderSent = false;
-                    SendLiveMarketCloseOrReduce(tm, pos, absQty, $"QUANT_BOT_TP2_PROFIT_{contractInfo.TradedSymbol}");
+                    SendLiveMarketCloseOrReduce(tm, pos, absQty, $"QUANT_BOT_TP2_SWING_PROFIT_{contractInfo.TradedSymbol}");
                     return;
                 }
 
@@ -5816,26 +5795,40 @@ namespace ATAS.Indicators.Custom
                 decimal stepValUsd = Math.Max(0.05m, pointVal * step);
                 int commStepFloor = Math.Max(1, (int)Math.Ceiling(commRtUsd / stepValUsd));
 
-                // 2. Prise de profit TP1 (Sortie 100% si 1 contrat, ou Sortie 50% + Profit-Lock Stop si >= 2 contrats)
+                // 2. Prise de profit TP1 (Anti-Microscalping : si 1 contrat, verrouille +1.05R et laisse courir vers TP2 ; si >= 2 contrats, sort 50% et verrouille +0.45R)
                 if (tp1Hit)
                 {
                     _liveTrackedTp1Hit = true;
-                    decimal lockOffset = isCme
-                        ? Math.Max(step * Math.Max(2, commStepFloor + 1), RoundToTick(tp1DistPts * 0.45m, tickSize))
-                        : Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
-                    _liveTrackedStopPrice = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
 
-                    if (absQty == 1 || !_botAutoBreakevenOnTp1)
+                    if (!_botAutoBreakevenOnTp1)
                     {
                         _lastLiveExitSentUtc = DateTime.UtcNow;
                         _liveTrackedDir = 0;
                         _liveTrackedTp1Hit = false;
                         _liveTp1PartialOrderSent = false;
-                        SendLiveMarketCloseOrReduce(tm, pos, 1, $"QUANT_BOT_TP1_FULL_PROFIT_{contractInfo.TradedSymbol}");
+                        SendLiveMarketCloseOrReduce(tm, pos, absQty, $"QUANT_BOT_TP1_FULL_PROFIT_{contractInfo.TradedSymbol}");
                         return;
+                    }
+                    else if (absQty == 1)
+                    {
+                        decimal singleLockOffset = Math.Max(RoundToTick(_liveTrackedInitialRiskPts * 1.05m, tickSize), RoundToTick(tp1DistPts * 0.60m, tickSize));
+                        decimal lockedStop = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * singleLockOffset, tickSize);
+                        if ((_liveTrackedDir > 0 && lockedStop > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && lockedStop < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = lockedStop;
+                        }
                     }
                     else if (!_liveTp1PartialOrderSent)
                     {
+                        decimal lockOffset = Math.Max(step * Math.Max(3, commStepFloor + 2), RoundToTick(_liveTrackedInitialRiskPts * 0.45m, tickSize));
+                        decimal lockedStop = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockOffset, tickSize);
+                        if ((_liveTrackedDir > 0 && lockedStop > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && lockedStop < _liveTrackedStopPrice))
+                        {
+                            _liveTrackedStopPrice = lockedStop;
+                        }
+
                         _liveTp1PartialOrderSent = true;
                         _lastLiveExitSentUtc = DateTime.UtcNow;
                         int halfQty = Math.Max(1, absQty / 2);
@@ -5844,60 +5837,38 @@ namespace ATAS.Indicators.Custom
                     }
                 }
 
-                // 3. Mise à jour Early Profit-Lock et Trailing Stop dynamique après TP1
+                // 3. Protection Anti-Microscalping : aucun resserrement prématuré à 0.45R !
+                // Le Breakeven+ (+0.25R) ne s'active qu'au-delà de +1.25R, et le Trailing Stop Swing s'active après TP1
                 decimal favExcursion = _liveTrackedDir > 0
                     ? (_liveMaxFavorablePrice - _liveTrackedEntryPrice)
                     : (_liveTrackedEntryPrice - _liveMaxFavorablePrice);
 
-                if (!isCme)
+                if (!_liveTrackedTp1Hit)
                 {
-                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * 2m, _liveTrackedInitialRiskPts * 0.45m))
+                    decimal safeBeTrigger = Math.Max(_liveTrackedInitialRiskPts * 1.25m, tp1DistPts * 0.78m);
+                    if (favExcursion >= safeBeTrigger)
                     {
-                        decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * step, tickSize);
-                        if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
-                            (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
+                        decimal lockDist = Math.Max(step * (commStepFloor + 2), RoundToTick(_liveTrackedInitialRiskPts * 0.25m, tickSize));
+                        decimal safeBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * lockDist, tickSize);
+                        if ((_liveTrackedDir > 0 && safeBe > _liveTrackedStopPrice) ||
+                            (_liveTrackedDir < 0 && safeBe < _liveTrackedStopPrice))
                         {
-                            _liveTrackedStopPrice = softBe;
-                        }
-                    }
-                    else if (_liveTrackedTp1Hit)
-                    {
-                        decimal trailGap = Math.Max(step * 2m, RoundToTick(tp1DistPts * 0.45m, tickSize));
-                        decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
-                        if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
-                            (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
-                        {
-                            _liveTrackedStopPrice = candidateTrail;
+                            _liveTrackedStopPrice = safeBe;
                         }
                     }
                 }
                 else
                 {
-                    int minBeTriggerSteps = Math.Max(commStepFloor + 2, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 3);
-                    int beLockSteps = Math.Max(commStepFloor + 1, prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 3 : 2);
-                    if (!_liveTrackedTp1Hit && favExcursion >= Math.Max(step * minBeTriggerSteps, Math.Min(tp1DistPts * 0.65m, _liveTrackedInitialRiskPts * 0.45m)))
+                    decimal trailGap = Math.Max(RoundToTick(_liveTrackedInitialRiskPts * 0.85m, tickSize), RoundToTick(tp1DistPts * 0.55m, tickSize));
+                    decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
+                    if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
+                        (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
                     {
-                        decimal softBe = RoundToTick(_liveTrackedEntryPrice + _liveTrackedDir * (step * beLockSteps), tickSize);
-                        if ((_liveTrackedDir > 0 && softBe > _liveTrackedStopPrice) ||
-                            (_liveTrackedDir < 0 && softBe < _liveTrackedStopPrice))
-                        {
-                            _liveTrackedStopPrice = softBe;
-                        }
-                    }
-                    else if (_liveTrackedTp1Hit)
-                    {
-                        int minTrailSteps = prof == MarketProfilePreset.CmeNasdaq_NQ_MNQ ? 4 : 2;
-                        decimal trailGap = Math.Max(step * minTrailSteps, RoundToTick(tp1DistPts * 0.40m, tickSize));
-                        decimal candidateTrail = RoundToTick(_liveMaxFavorablePrice - _liveTrackedDir * trailGap, tickSize);
-                        if ((_liveTrackedDir > 0 && candidateTrail > _liveTrackedStopPrice) ||
-                            (_liveTrackedDir < 0 && candidateTrail < _liveTrackedStopPrice))
-                        {
-                            _liveTrackedStopPrice = candidateTrail;
-                        }
+                        _liveTrackedStopPrice = candidateTrail;
                     }
                 }
 
-                // 4. Exécution du Stop-Loss ou du Trailing Stop en gain
+                // 4. Exécution du Stop-Loss ou du Trailing Stop Swing en gain
                 bool stopHit = _liveTrackedDir > 0 ? (livePrice <= _liveTrackedStopPrice) : (livePrice >= _liveTrackedStopPrice);
                 if (stopHit)
                 {
@@ -5908,7 +5879,7 @@ namespace ATAS.Indicators.Custom
                     _liveTrackedTp1Hit = false;
                     _liveTp1PartialOrderSent = false;
                     SendLiveMarketCloseOrReduce(tm, pos, absQty, isTrailingProfit
-                        ? $"QUANT_BOT_TRAIL_PROFIT_{contractInfo.TradedSymbol}"
+                        ? $"QUANT_BOT_SWING_TRAIL_PROFIT_{contractInfo.TradedSymbol}"
                         : $"QUANT_BOT_STOP_LOSS_{contractInfo.TradedSymbol}");
                 }
             }
@@ -5988,10 +5959,15 @@ namespace ATAS.Indicators.Custom
                         return; // Déjà en position dans la même direction
                     }
 
-                    if (contractInfo.IsCmeMarket && currentSign != 0 && currentSign != signal.Direction)
+                    // Cooldown live entre deux ordres (évite le surtrading de micro-mouvements)
+                    if (currentSign == 0 && _lastLiveBotOrderBar >= 0 && (sigBar - _lastLiveBotOrderBar < 3))
+                        return;
+
+                    if (currentSign != 0 && currentSign != signal.Direction)
                     {
                         decimal openUnr = pos?.UnrealizedPnL ?? 0m;
-                        bool canReverseLive = openUnr >= 0m || _liveTrackedTp1Hit || signal.ConfluenceScore >= 78;
+                        decimal minProfitToFlip = Math.Max(step * 4m, _liveTrackedInitialRiskPts) * contractInfo.TradedPointValueUsd * Math.Abs(posVol) * 0.80m;
+                        bool canReverseLive = _liveTrackedTp1Hit || openUnr >= minProfitToFlip || (signal.ConfluenceScore >= 90 && (sigBar - _liveTrackedSignalBar >= 4));
                         if (!canReverseLive)
                             return;
                     }
