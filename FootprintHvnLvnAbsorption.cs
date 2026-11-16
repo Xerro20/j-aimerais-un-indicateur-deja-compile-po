@@ -7201,7 +7201,7 @@ namespace ATAS.Indicators.Custom
             if (ChartInfo == null || optMetrics.XRayCallWall <= 0m || optMetrics.XRayPutWall <= 0m || optMetrics.XRayMaxPain <= 0m)
                 return;
 
-            decimal strikeStep = GetEffectiveOptionsStrikeStep(tickSize);
+            decimal strikeStep = GetEffectiveOptionsStrikeStep(optMetrics.XRayMaxPain);
             if (strikeStep <= 0m) strikeStep = 50m;
 
             int xLeftLine = Math.Max(chartRegion.Left + 40, ChartInfo.GetXByBar(Math.Max(firstBar, lastBar - 55)));
